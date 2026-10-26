@@ -18,9 +18,11 @@ jobs:
         if: runner.os == 'Windows'
         shell: powershell
         run: |
-          $tokens = $null
-          $parseErrors = $null
-          [void][System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD 'bootstrap/launch.ps1'), [ref]$tokens, [ref]$parseErrors)
-          if ($parseErrors.Count) { $parseErrors | Format-List; exit 1 }
+          foreach ($script in Get-ChildItem bootstrap,tests -Filter *.ps1) {
+            $tokens = $null
+            $parseErrors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($script.FullName, [ref]$tokens, [ref]$parseErrors)
+            if ($parseErrors.Count) { $parseErrors | Format-List; exit 1 }
+          }
       - name: Проверить сервер и запуск BAT
         run: python -m unittest discover -s tests -v
