@@ -25,6 +25,16 @@ DEFAULT_THRESHOLDS = PROJECT / "tests" / "quality" / "thresholds.json"
 DEFAULT_REPORT_DIR = PROJECT / ".runtime" / "quality-reports"
 
 
+
+def console_print(*values, file=None):
+    """Не падать из-за системной кодировки Windows (cp1251/cp1252)."""
+    stream = file if file is not None else sys.stdout
+    line = " ".join(str(value) for value in values) + "\n"
+    encoding = getattr(stream, "encoding", None) or "utf-8"
+    stream.write(line.encode(encoding, errors="backslashreplace").decode(encoding))
+
+
+
 def safe_ratio(numerator, denominator):
     return round(numerator / denominator, 6) if denominator else 1.0
 
@@ -292,15 +302,15 @@ def main(argv=None):
     report["passed"] = not failures
     report["failures"] = failures
     destination = save_report(report, options.output)
-    print("Контрольных документов:", report["dataset_documents"],
+    console_print("Контрольных документов:", report["dataset_documents"],
           "| поисковых вопросов:", report["dataset_queries"])
     for key, value in report["metrics"].items():
-        print(f"  {key}: {value:.3f}" + (f" (минимум {thresholds[key]:.3f})" if key in thresholds else ""))
-    print("Результат:", "ПРОЙДЕН" if report["passed"] else "РЕГРЕССИЯ")
-    print("Отчёт:", destination)
+        console_print(f"  {key}: {value:.3f}" + (f" (минимум {thresholds[key]:.3f})" if key in thresholds else ""))
+    console_print("Результат:", "ПРОЙДЕН" if report["passed"] else "РЕГРЕССИЯ")
+    console_print("Отчёт:", destination)
     if failures:
         for failure in failures:
-            print("Не пройдено:", failure, file=sys.stderr)
+            console_print("Не пройдено:", failure, file=sys.stderr)
     return 1 if options.check and failures else 0
 
 
