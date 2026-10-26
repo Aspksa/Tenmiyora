@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "description": "Минимальные качества для синтетического размеченного набора. Пороги — регрессионные, не оценка реальной точности на пользовательских документах.",
+  "minimum": {
+    "statement_precision": 0.9,
+    "statement_recall": 0.9,
+    "branch_precision": 0.8,
+    "branch_recall": 0.8,
+    "source_integrity": 1,
+    "duplicate_free_rate": 1,
+    "retrieval_hit_at_k": 0.85,
+    "retrieval_top1_accuracy": 0.7,
+    "retrieval_mrr": 0.8,
+    "negative_query_accuracy": 1,
+    "conflict_precision": 1,
+    "conflict_recall": 1
+  }
+}
