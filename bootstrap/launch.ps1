@@ -16,6 +16,8 @@ $script:consoleHidden = $false
 $script:logPath = $null
 $lock = $null
 $exitCode = 0
+$script:pendingUpdate = $null
+$script:restoreUpdate = $false
 
 function Write-Status([string]$Message) {
     Write-Host $Message
@@ -62,6 +64,42 @@ function Hide-Console {
             $script:consoleHidden = $true
         }
     }
+}
+
+function Stop-Server {
+    if ($script:childStarted -and -not $script:child.HasExited) {
+        if ($script:session -and $script:session.pid -eq $script:child.Id) {
+            try { Invoke-RestMethod -Method Post -Uri ($script:session.url + '/shutdown') -TimeoutSec 2 -UseBasicParsing -Headers @{'X-Tenmiyora-Token'=$script:session.token} | Out-Null } catch { }
+        }
+        if (-not $script:child.WaitForExit(3000)) { $script:child.Kill(); [void]$script:child.WaitForExit(3000) }
+    }
+}
+
+function Run-UpdateWorker([string]$Job, [string]$Action, [string]$ExpectedHash) {
+    if ($Job -notmatch '^[0-9a-f]{32}$') { throw 'Неверный номер обновления.' }
+    $worker = Join-Path $runtime ('updates\staging\' + $Job + '\worker.py')
+    if (-not (Test-Path -LiteralPath $worker) -or (Get-ArchiveSha256 $worker) -ne $ExpectedHash) { throw 'Установщик обновления повреждён. Резервные копии сохранены в .runtime\updates.' }
+    $workerInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $workerInfo.FileName = $python
+    $workerInfo.Arguments = '-I -X utf8 "' + $worker + '" --root "' + $root + '" --job ' + $Job + ' --action ' + $Action
+    $workerInfo.WorkingDirectory = $root
+    $workerInfo.UseShellExecute = $false
+    $workerInfo.CreateNoWindow = $true
+    $workerInfo.RedirectStandardOutput = $true
+    $workerInfo.RedirectStandardError = $true
+    $workerProcess = New-Object System.Diagnostics.Process
+    $workerProcess.StartInfo = $workerInfo
+    try {
+        [void]$workerProcess.Start()
+        $workerOut = $workerProcess.StandardOutput.ReadToEndAsync()
+        $workerError = $workerProcess.StandardError.ReadToEndAsync()
+        while (-not $workerProcess.WaitForExit(100)) {
+            if ($script:tray) { [System.Windows.Forms.Application]::DoEvents() }
+        }
+        if ($workerOut.Result.Trim()) { Write-Status $workerOut.Result.Trim() }
+        if ($workerError.Result.Trim()) { Write-Status $workerError.Result.Trim() }
+        return $workerProcess.ExitCode
+    } finally { $workerProcess.Dispose() }
 }
 
 function Find-Python([bool]$PortableOnly) {
@@ -135,7 +173,7 @@ try {
     }
     $stamp = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
     $script:logPath = Join-Path $runtime "launch-$stamp.log"
-    Write-Status '✦ Tenmiyora · v0.4.0 · Подготовка'
+    Write-Status '✦ Tenmiyora · v0.5.0 · Подготовка'
     # Recover an orphaned instance only after an authenticated health check.
     $previous = Get-Session
     if (Test-Session $previous) {
@@ -150,6 +188,21 @@ try {
         Write-Status '⚙ Рабочий Python не найден. Подготовка локальной среды без установки в Windows'
         $python = Install-PortablePython -RuntimeDirectory $runtime -ProbePath (Join-Path $PSScriptRoot 'probe.py') -ManifestPath (Join-Path $PSScriptRoot 'python-runtime.json')
     }
+    $transactionPath = Join-Path $runtime 'updates\transaction.json'
+    if (Test-Path -LiteralPath $transactionPath) {
+        $script:pendingUpdate = [IO.File]::ReadAllText($transactionPath, $utf8) | ConvertFrom-Json
+        if ($script:pendingUpdate.phase -eq 'applying') {
+            Write-Status '↻ Восстановление прерванного обновления'
+            if ((Run-UpdateWorker $script:pendingUpdate.job 'recover' $script:pendingUpdate.worker_sha) -ne 0) { throw 'Автоматическое восстановление не завершено. Сохраните папку .runtime\updates и журнал ошибки.' }
+            $script:pendingUpdate = $null
+            $exitCode=75
+            exit 75
+        }
+        if ($script:pendingUpdate.phase -ne 'awaiting_health') { throw 'Неизвестное состояние установки обновления.' }
+    }
+    $restartPath = Join-Path $runtime 'updates\restart.json'
+    $restartData = $null
+    if (Test-Path -LiteralPath $restartPath) { $restartData = [IO.File]::ReadAllText($restartPath, $utf8) | ConvertFrom-Json }
     $info = New-Object System.Diagnostics.ProcessStartInfo
     $info.FileName = $python
     $info.Arguments = '-I -X utf8 "' + (Join-Path $PSScriptRoot 'server.py') + '"'
@@ -158,6 +211,8 @@ try {
     $info.CreateNoWindow = $true
     $info.RedirectStandardOutput = $true
     $info.RedirectStandardError = $true
+    $info.EnvironmentVariables['TENMIYORA_MANAGED'] = '1'
+    if ($restartData -and $restartData.port -ge 1 -and $restartData.port -le 65535) { $info.EnvironmentVariables['TENMIYORA_PORT'] = [string]$restartData.port }
     $info.EnvironmentVariables['TENMIYORA_STATE'] = $statePath
     $info.EnvironmentVariables['TENMIYORA_PARENT_PID'] = [string]$PID
     $info.EnvironmentVariables['TENMIYORA_SERVER_LOG'] = (Join-Path $runtime "server-$stamp.log")
@@ -176,6 +231,13 @@ try {
         Start-Sleep -Milliseconds 100
     }
     if (-not $ready) { throw 'Сервер не ответил за 20 секунд. Подробности находятся в .runtime.' }
+    if ($script:pendingUpdate) {
+        $planVersion = $script:pendingUpdate.version
+        if ($script:session.version -ne $planVersion) { throw 'Запущена неожиданная версия после обновления.' }
+        if ((Run-UpdateWorker $script:pendingUpdate.job 'finish' $script:pendingUpdate.worker_sha) -ne 0) { throw 'Новая версия не прошла окончательную проверку файлов.' }
+        $script:pendingUpdate = $null
+    }
+    Remove-Item -LiteralPath $restartPath -Force -ErrorAction SilentlyContinue
     Write-Status "✓ Готово: $($script:session.url)"
     Write-Status "Журналы: $runtime"
     try {
@@ -217,9 +279,27 @@ namespace Tenmiyora {
         if ($script:tray) { $script:tray.Dispose(); $script:tray=$null }
         Write-Status '⚠ Трей недоступен. Оставьте консоль открытой; Ctrl+C завершает работу.'
     }
-    if ($options -notcontains '--no-browser') { Open-Site }
+    if ($options -notcontains '--no-browser' -and (-not $restartData -or $restartData.url -ne $script:session.url)) { Open-Site }
     if ($options -notcontains '--console') { Hide-Console }
     while (-not $script:stop) {
+        $requestPath = Join-Path $runtime 'updates\request.json'
+        if (Test-Path -LiteralPath $requestPath) {
+            $updateRequest = [IO.File]::ReadAllText($requestPath, $utf8) | ConvertFrom-Json
+            Remove-Item -LiteralPath $requestPath -Force
+            if ($updateRequest.token -eq $script:session.token -and $updateRequest.job -match '^[0-9a-f]{32}$') {
+                $workerPath = Join-Path $runtime ('updates\staging\' + $updateRequest.job + '\worker.py')
+                if ((Get-ArchiveSha256 $workerPath) -ne $updateRequest.worker_sha) { throw 'Проверка установщика обновления не пройдена.' }
+                $port = ([Uri]$script:session.url).Port
+                @{port=$port; url=$script:session.url} | ConvertTo-Json | Set-Content -LiteralPath $restartPath -Encoding UTF8
+                Write-Status '↻ Установка обновления и перезапуск Tenmiyora'
+                Stop-Server
+                $workerCode = Run-UpdateWorker $updateRequest.job 'apply' $updateRequest.worker_sha
+                if ($workerCode -ne 0 -and (Test-Path -LiteralPath $transactionPath)) { throw 'Установка не завершена; требуется восстановление из резервной копии.' }
+                $exitCode=75
+                $script:stop=$true
+                break
+            }
+        }
         if ($script:child.HasExited) { throw "Сервер неожиданно завершился (код $($script:child.ExitCode)): $($stderr.Result)" }
         if ($script:tray) { [System.Windows.Forms.Application]::DoEvents() }
         Start-Sleep -Milliseconds 150
@@ -227,19 +307,18 @@ namespace Tenmiyora {
 } catch {
     Show-Console
     $exitCode=1
+    if ($script:pendingUpdate) { $script:restoreUpdate=$true }
     try { Write-Status "✕ $($_.Exception.Message)" } catch { Write-Host "✕ $($_.Exception.Message)" }
 } finally {
-    if ($script:childStarted -and -not $script:child.HasExited) {
-        if ($script:session -and $script:session.pid -eq $script:child.Id) {
-            try {
-                Invoke-RestMethod -Method Post -Uri ($script:session.url + '/shutdown') -TimeoutSec 2 -UseBasicParsing -Headers @{'X-Tenmiyora-Token'=$script:session.token} | Out-Null
-            } catch { }
-        }
-        if (-not $script:child.WaitForExit(3000)) { $script:child.Kill(); [void]$script:child.WaitForExit(3000) }
+    Stop-Server
+    if ($script:restoreUpdate) {
+        try {
+            if ((Run-UpdateWorker $script:pendingUpdate.job 'rollback' $script:pendingUpdate.worker_sha) -eq 0) { $exitCode=75 }
+        } catch { Show-Console; Write-Host "✕ Восстановление не завершено: $($_.Exception.Message)" }
     }
     if ($script:tray) { $script:tray.Visible=$false; $script:tray.Dispose() }
     if ($script:child) { $script:child.Dispose() }
     if ($lock) { $lock.Dispose() }
-    if ($exitCode -ne 0) { Show-Console }
+    if ($exitCode -ne 0 -and $exitCode -ne 75) { Show-Console }
 }
 exit $exitCode

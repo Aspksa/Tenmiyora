@@ -8,7 +8,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -29,5 +29,6 @@ jobs:
       - name: Проверить JavaScript и положение окон
         run: |
           node --check web/app.js
+          node --check web/updates.js
           node --check web/layout.js
           node --test tests/layout.test.cjs

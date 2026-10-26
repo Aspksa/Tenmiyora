@@ -251,6 +251,12 @@
   window.addEventListener('resize', () => { applyAppearance(); fitWindows(); });
   if (window.visualViewport) visualViewport.addEventListener('resize', fitWindows);
   window.addEventListener('pagehide', () => { if (ready) fetch('/api/preferences', {method: 'POST', credentials: 'same-origin', keepalive: true, headers: {'Content-Type': 'application/json', 'X-Tenmiyora-Client': 'web'}, body: JSON.stringify({appearance: state.appearance, layout: state.layout})}).catch(() => {}); });
+  window.TenmiyoraUpdates = {
+    flush: () => Promise.all([flushSave(), connectionSaveQueue]),
+    busy: () => !ready || pending || Boolean($('chat-input').value.trim() || $('api-key').value) ||
+      (currentProvider() === 'cloudru' ? CLOUDRU_URL : $('api-url').value.trim()) !== state.connection.url ||
+      $('api-model').value.trim() !== state.connection.model || $('save-status').textContent === 'Сохранение…'
+  };
   async function startup() {
     $('fatal-error').hidden = true;
     try { const result = await api('state'); state = result; ready = true; applyAppearance(); renderConnection(true); renderMessages(); $('server-status').textContent = 'Сервер запущен'; }

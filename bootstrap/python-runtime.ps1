@@ -60,7 +60,7 @@ function Save-PythonArchive([string]$Url, [string]$Destination) {
     try {
         for ($attempt = 1; $attempt -le 2; $attempt++) {
             try {
-                Invoke-WebRequest -Uri $Url -OutFile $Destination -UseBasicParsing -TimeoutSec 60 -MaximumRedirection 0 -UserAgent 'Tenmiyora-Bootstrap/0.4.0' | Out-Null
+                Invoke-WebRequest -Uri $Url -OutFile $Destination -UseBasicParsing -TimeoutSec 60 -MaximumRedirection 0 -UserAgent 'Tenmiyora-Bootstrap/0.5.0' | Out-Null
                 return
             } catch {
                 Remove-Item -LiteralPath $Destination -Force -ErrorAction SilentlyContinue
