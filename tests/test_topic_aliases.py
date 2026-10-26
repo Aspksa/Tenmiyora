@@ -49,7 +49,7 @@ class AliasTests(unittest.TestCase):
         with self.store.db() as db:
             alias=db.execute("SELECT canonical_id FROM topic_aliases").fetchone()
             self.assertEqual(alias["canonical_id"],first)
-            self.assertGreater(db.execute("SELECT COUNT(*) FROM knowledge_items").fetchone()[0],before)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM knowledge_items").fetchone()[0],before)
             self.assertIsNotNone(db.execute("SELECT id FROM branches WHERE id=?",(old,)).fetchone())
             self.assertGreaterEqual(db.execute("SELECT COUNT(*) FROM topic_alias_claims WHERE source_id=?",
                                                (proof,)).fetchone()[0],2)
