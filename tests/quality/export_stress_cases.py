@@ -29,9 +29,10 @@ def export(directory):
     }
     for entry in corpus["documents"]:
         path = root / entry["filename"]
-        if path.exists() and path.read_text(encoding="utf-8") != entry["text"]:
+        raw = entry["text"].encode("utf-8")
+        if path.exists() and path.read_bytes() != raw:
             raise ValueError("Файл уже существует и отличается: " + entry["filename"])
-        path.write_text(entry["text"],encoding="utf-8")
+        path.write_bytes(raw)
         manifest["documents"].append({
             "id":entry["id"], "file":entry["filename"], "family":entry["family"],
             "challenge":entry["challenge"], "sha256":hashlib.sha256(
