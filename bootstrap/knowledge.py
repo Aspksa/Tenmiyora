@@ -525,6 +525,8 @@ class KnowledgeStore:
                 from relation_suggestions import store as store_suggestions
                 candidate_count = store_suggestions(
                     conn, fid, file["sha256"], relation_candidates, now())
+                from relation_verification import reconcile_all
+                reconcile_all(conn,now())
             self.log(conn, "смысловой анализ",
                      f"{file['name']}: записей {created}; неподтверждённых отношений {candidate_count}")
             conn.execute("UPDATE files SET status=? WHERE id=?",
