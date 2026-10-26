@@ -401,12 +401,14 @@ class KnowledgeStore:
         from topic_discovery import discover
         from topic_aliases import parse_pair, candidate_sentences
         from knowledge_relations import parse_relation, raw_sentences
+        from natural_relations import parse_natural
         from memory_engine import sentences
         entries = list(sentences(text[:4000]))
         if (classify(text[:4000]) == ["Общие знания"] and
                 not discover(text[:4000], entries) and
                 sum(bool(parse_pair(stmt)) for stmt in candidate_sentences(text[:4000])) < 2 and
-                not any(parse_relation(stmt) for stmt in raw_sentences(text[:4000]))):
+                not any(parse_relation(stmt) or parse_natural(stmt)
+                        for stmt in raw_sentences(text[:4000]))):
             return 0
         source_id = secrets.token_hex(12)
         with self.lock, self.db() as conn:
