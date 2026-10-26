@@ -301,6 +301,12 @@ class MemoryEngine:
         if query_term == source_term:
             return True
         short = min(len(query_term), len(source_term))
+        # База/базе, сумма/сумме: только близкие четырёхбуквенные формы.
+        if (short == 4 and len(query_term) <= 5 and len(source_term) <= 5
+                and query_term[:3] == source_term[:3]
+                and query_term[-1] in "аеёиоуыэюя"
+                and source_term[-1] in "аеёиоуыэюя"):
+            return True
         # Ограниченное совпадение основ русского слова, без внешней морфологии.
         return short >= 5 and query_term[:max(4, (short * 3) // 4)] == source_term[:max(4, (short * 3) // 4)]
 
@@ -376,6 +382,47 @@ class MemoryEngine:
             result = select(matches)
             if result:
                 return result
+            # Запрос из 2–3 понятий иногда относится к двум отдельным
+            # предложениям одного документа. Сверяем покрытие источника,
+            # возвращая реальные фрагменты, а не выдуманную сводку.
+            if 2 <= len(terms) <= 3:
+                grouped = {}
+                for row in matches:
+                    d = dict(row)
+                    if EXPLICITLY_DISPUTED.search(d["excerpt"]):
+                        continue
+                    words = set(TOKEN.findall(canon(d["excerpt"])))
+                    indices = {i for i, term in enumerate(terms)
+                               if any(self._term_match(term, word) for word in words)}
+                    if not indices:
+                        continue
+                    source = (d["source_type"], d["source_id"])
+                    entry = grouped.setdefault(source, {"indices": set(), "rows": []})
+                    entry["indices"].update(indices)
+                    if len(entry["rows"]) < 6:
+                        entry["rows"].append((len(indices), d))
+                sufficient = [
+                    value for value in grouped.values()
+                    if len(value["indices"]) >= require
+                ]
+                sufficient.sort(key=lambda value: -len(value["indices"]))
+                if sufficient:
+                    supported = sorted(sufficient[0]["rows"], key=lambda x: -x[0])
+                    evidence = []
+                    covered = set()
+                    for _, data in supported:
+                        words = set(TOKEN.findall(canon(data["excerpt"])))
+                        found = {i for i, term in enumerate(terms)
+                                 if any(self._term_match(term, word) for word in words)}
+                        if not found - covered:
+                            continue
+                        covered.update(found)
+                        data.pop("rank", None)
+                        evidence.append(data)
+                        if len(covered) >= require or len(evidence) >= limit:
+                            break
+                    if len(covered) >= require:
+                        return evidence[:limit]
             # Старые факты проходят РОВНО такую же проверку достаточности.
             rows = db.execute("""SELECT f.excerpt,f.locator,f.source_type,f.source_id,
                 b.name AS branch FROM facts f JOIN branches b ON b.id=f.branch
