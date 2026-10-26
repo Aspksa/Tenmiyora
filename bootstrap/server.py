@@ -307,6 +307,7 @@ class Workspace:
             try:
                 source = self.knowledge.semantic_source(fid)
                 if source is None:
+                    self.knowledge.mark_semantic(fid, "готово; нет подходящего текста для анализа")
                     continue
                 name, text, existing = source
                 samples = samples_from_text(text)
