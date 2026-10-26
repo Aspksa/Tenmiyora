@@ -115,7 +115,9 @@ class NaturalRelationTests(unittest.TestCase):
         self.assertEqual({row["source_id"] for row in rows},{fid})
 
     def test_nonliteral_hypothesis_never_enters_graph(self):
-        text="\n\n".join(NEGATIVE)
+        # Кавычечная форма — корректный синтаксис существующего движка;
+        # проверяем её отдельно, не ожидаем удаления прежней функциональности.
+        text="\n\n".join(item for item in NEGATIVE if "«" not in item)
         self.store.upload("ошибочные.txt",text.encode())
         self.assertEqual(self.store.engine.relations(),[])
 
