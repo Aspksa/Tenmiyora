@@ -119,9 +119,12 @@
   document.addEventListener('keydown', (event) => { if (event.key === 'Escape') { if (!settings.hidden && (chat.hidden || Number(settings.style.zIndex) > Number(chat.style.zIndex))) closeSettings(); else if (!chat.hidden) closeChat(); } });
   for (const element of [chat, settings]) element.addEventListener('pointerdown', () => front(element));
   function route() {
-    const view = location.hash === '#settings' ? 'settings' : 'home';
-    $('home-view').hidden = view !== 'home'; $('settings-view').hidden = view !== 'settings'; $('page-title').textContent = view === 'settings' ? 'Настройки' : 'Главная';
+    const requested = location.hash.slice(1);
+    const view = ['home', 'brain', 'disk', 'settings'].includes(requested) ? requested : 'home';
+    for (const name of ['home', 'brain', 'disk', 'settings']) $(name + '-view').hidden = view !== name;
+    $('page-title').textContent = ({home: 'Главная', brain: 'Мозг Tenmiyora', disk: 'Диск Tenmiyora', settings: 'Настройки'})[view];
     document.querySelectorAll('[data-nav]').forEach((item) => { item.classList.toggle('active', item.dataset.nav === view); if (item.dataset.nav === view) item.setAttribute('aria-current', 'page'); else item.removeAttribute('aria-current'); });
+    window.TenmiyoraModules?.show(view);
   }
   window.addEventListener('hashchange', route); route();
   for (const [id, property] of [['avatar-size', 'size'], ['avatar-opacity', 'opacity']]) $(id).addEventListener('input', () => { state.appearance[property] = Number($(id).value); applyAppearance(); scheduleSave(); });

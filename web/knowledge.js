@@ -1,0 +1,232 @@
+/* Диск и Мозг Tenmiyora. Никаких внешних библиотек и CDN. */
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  let folder = null, searchTimer, loading = false;
+  let selectedBranch = null;
+  const headers = {'X-Tenmiyora-Client': 'web'};
+  function message(text) {
+    const area = $('toast');
+    area.textContent = text; area.hidden = false;
+    clearTimeout(message.timer);
+    message.timer = setTimeout(() => { area.hidden = true; }, 5000);
+  }
+  async function request(path, body) {
+    const response = await fetch('/api/' + path, {
+      method: body === undefined ? 'GET' : 'POST',
+      credentials: 'same-origin',
+      headers: {...headers, ...(body === undefined ? {} : {'Content-Type': 'application/json'})},
+      ...(body === undefined ? {} : {body: JSON.stringify(body)})
+    });
+    let payload;
+    try { payload = await response.json(); }
+    catch { throw Error('Сервер не ответил. Проверьте работу Tenmiyora.'); }
+    if (!response.ok) throw Error(payload.error || 'Не удалось выполнить действие.');
+    return payload;
+  }
+  function element(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = String(text);
+    return node;
+  }
+  function button(label, callback, className) {
+    const node = element('button', className, label);
+    node.type = 'button';
+    node.addEventListener('click', callback);
+    return node;
+  }
+  function readableBytes(bytes) {
+    return bytes < 1024 ? bytes + ' Б' : bytes < 1048576 ?
+      (bytes / 1024).toFixed(1) + ' КБ' : (bytes / 1048576).toFixed(1) + ' МБ';
+  }
+  function date(value) {
+    try { return new Date(value).toLocaleString('ru-RU', {dateStyle: 'short', timeStyle: 'short'}); }
+    catch { return ''; }
+  }
+  function icon(name) {
+    const wrapper = element('span', 'disk-icon');
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    use.setAttribute('href', name === 'folder' ? '#i-folder' : '#i-file');
+    svg.append(use); wrapper.append(svg); return wrapper;
+  }
+  async function loadDisk() {
+    if (loading) return;
+    loading = true;
+    try {
+      const q = $('disk-search').value.trim();
+      const data = await request('disk?' + new URLSearchParams({folder: folder || '', q}));
+      const breadcrumbs = $('disk-breadcrumbs');
+      breadcrumbs.replaceChildren(button('Мой диск', () => navigate(null)));
+      for (const crumb of data.breadcrumbs) {
+        breadcrumbs.append(element('span', '', '/'));
+        breadcrumbs.append(button(crumb.name, () => navigate(crumb.id)));
+      }
+      const list = $('disk-list');
+      list.replaceChildren();
+      const total = data.folders.length + data.files.length;
+      $('disk-count').textContent = total + ' элементов';
+      for (const item of data.folders) list.append(makeRow('folder', item));
+      for (const item of data.files) list.append(makeRow('file', item));
+      if (!total) list.append(element('p', 'disk-empty', q ? 'По вашему запросу ничего не найдено.' : 'Папка пуста. Перетащите сюда файлы или создайте папку.'));
+    } catch (error) { message(error.message); }
+    finally { loading = false; }
+  }
+  function navigate(id) {
+    folder = id;
+    $('disk-search').value = '';
+    loadDisk();
+  }
+  function makeRow(kind, item) {
+    const row = element('div', 'disk-row');
+    row.append(icon(kind));
+    const main = element('div', 'disk-item-content');
+    main.append(button(item.name, () => kind === 'folder' ? navigate(item.id) : download(item), 'disk-item-name'));
+    main.append(element('small', 'disk-item-meta', kind === 'folder' ?
+      'Папка · ' + date(item.created) :
+      readableBytes(item.size) + ' · ' + item.status + ' · ' + date(item.created)));
+    row.append(main);
+    const actions = element('div', 'disk-row-actions');
+    if (kind === 'file') actions.append(button('Скачать', () => download(item)));
+    actions.append(button('Имя', async () => {
+      const next = prompt('Новое имя:', item.name);
+      if (next === null || next.trim() === item.name) return;
+      try {
+        await request('disk/rename', {kind, id: item.id, name: next.trim()});
+        await loadDisk();
+      } catch (error) { message(error.message); }
+    }));
+    actions.append(button('Удалить', async () => {
+      if (!confirm('Удалить «' + item.name + '»? Связанные знания из файла тоже будут удалены.')) return;
+      try {
+        await request('disk/delete', {kind, id: item.id});
+        await loadDisk();
+        if (location.hash === '#brain') await loadBrain();
+      } catch (error) { message(error.message); }
+    }));
+    row.append(actions);
+    return row;
+  }
+  async function download(item) {
+    try {
+      const response = await fetch('/api/disk/download?id=' + encodeURIComponent(item.id),
+        {credentials: 'same-origin', headers});
+      if (!response.ok) throw Error('Не удалось скачать файл.');
+      const blob = await response.blob(), url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = item.name;
+      document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    } catch (error) { message(error.message); }
+  }
+  async function upload(files) {
+    for (const file of files) {
+      if (file.size > 25 * 1024 * 1024) {
+        message(file.name + ': файл больше 25 МБ'); continue;
+      }
+      $('disk-count').textContent = 'Загрузка: ' + file.name;
+      try {
+        const response = await fetch('/api/disk/upload', {
+          method: 'POST', credentials: 'same-origin',
+          headers: {...headers, 'X-Tenmiyora-Filename': encodeURIComponent(file.name),
+                    'X-Tenmiyora-Folder': folder || '',
+                    'X-Tenmiyora-Mime': file.type || 'application/octet-stream'},
+          body: file
+        });
+        const result = await response.json();
+        if (!response.ok) throw Error(result.error || 'Ошибка загрузки.');
+        message('Сохранён «' + file.name + '». ' + result.status + '.');
+      } catch (error) { message(file.name + ': ' + error.message); }
+    }
+    await loadDisk();
+  }
+  $('disk-file-input').addEventListener('change', event => {
+    upload([...event.target.files]); event.target.value = '';
+  });
+  $('disk-upload-button').addEventListener('click', () => $('disk-file-input').click());
+  $('disk-new-folder').addEventListener('click', async () => {
+    const name = prompt('Название новой папки:');
+    if (name === null) return;
+    try {
+      await request('disk/folder', {parent: folder, name: name.trim()});
+      await loadDisk();
+    } catch (error) { message(error.message); }
+  });
+  const dropzone = $('disk-dropzone');
+  dropzone.addEventListener('click', () => $('disk-file-input').click());
+  dropzone.addEventListener('keydown', event => {
+    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); $('disk-file-input').click(); }
+  });
+  for (const target of [dropzone, $('disk-view')]) {
+    target.addEventListener('dragover', event => {
+      if (!event.dataTransfer?.types.includes('Files')) return;
+      event.preventDefault(); dropzone.classList.add('drag-over');
+    });
+    target.addEventListener('dragleave', event => {
+      if (!event.relatedTarget || !target.contains(event.relatedTarget)) dropzone.classList.remove('drag-over');
+    });
+    target.addEventListener('drop', event => {
+      event.preventDefault(); dropzone.classList.remove('drag-over');
+      if (event.dataTransfer?.files.length) upload([...event.dataTransfer.files]);
+    });
+  }
+  $('disk-search').addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(loadDisk, 220);
+  });
+
+  async function loadBrain() {
+    try {
+      const data = await request('brain');
+      const branches = data.branches || [];
+      $('brain-branches-count').textContent = branches.length;
+      $('brain-facts-count').textContent = branches.reduce((count, row) => count + row.facts, 0);
+      $('brain-events-count').textContent = data.recent.length;
+      const list = $('brain-tree');
+      list.replaceChildren();
+      const roots = branches.filter(item => item.parent === null);
+      function addNode(node, depth) {
+        const item = button(node.name, () => selectBranch(node), 'brain-branch' + (depth ? ' child' : ''));
+        item.append(element('small', '', node.facts + ' записей'));
+        item.classList.toggle('active', node.id === selectedBranch);
+        list.append(item);
+        branches.filter(child => child.parent === node.id).forEach(child => addNode(child, depth + 1));
+      }
+      roots.forEach(root => addNode(root, 0));
+      if (!branches.length) list.append(element('p', 'module-muted', 'Пока нет знаний. Загрузите текстовый документ на Диск или поделитесь содержательной информацией в чате.'));
+      const events = $('brain-events'); events.replaceChildren();
+      if (!data.recent.length) events.append(element('p', 'module-muted', 'Рост памяти пока не начался.'));
+      for (const event of data.recent) {
+        const row = element('div', 'brain-event');
+        row.append(element('span', '', event.action + ': ' + event.detail));
+        row.append(element('time', '', date(event.time)));
+        events.append(row);
+      }
+    } catch (error) { message(error.message); }
+  }
+  async function selectBranch(branch) {
+    selectedBranch = branch.id;
+    $('brain-detail-title').textContent = branch.name;
+    try {
+      const data = await request('brain/facts?branch=' + encodeURIComponent(branch.id));
+      const detail = $('brain-detail'); detail.replaceChildren();
+      if (!data.facts.length) detail.append(element('p', 'module-muted', 'В этой ветке пока нет прямых записей. Откройте её подразделы.'));
+      for (const fact of data.facts) {
+        const item = element('div', 'brain-fact');
+        item.append(element('p', '', fact.excerpt));
+        item.append(element('small', '', (fact.source_type === 'chat' ? 'Чат · ' : 'Файл · ') + fact.locator));
+        detail.append(item);
+      }
+      await loadBrain();
+    } catch (error) { message(error.message); }
+  }
+  $('brain-refresh').addEventListener('click', loadBrain);
+  window.TenmiyoraModules = {
+    show(view) {
+      if (view === 'brain') loadBrain();
+      if (view === 'disk') loadDisk();
+    }
+  };
+  const initial = location.hash.replace('#', '');
+  if (initial === 'brain' || initial === 'disk') window.TenmiyoraModules.show(initial);
+})();
