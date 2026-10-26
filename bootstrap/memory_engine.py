@@ -16,6 +16,7 @@ from semantic import normalize_label
 from topic_router import classify, choose_child
 from topic_discovery import discover
 from topic_aliases import init_schema as init_alias_schema, learn as learn_aliases, remove_source as remove_alias_source, resolve as resolve_alias
+from knowledge_relations import init_schema as init_relation_schema, ingest as ingest_relations, remove_source as remove_relations, query as query_relations
 
 TOKEN = re.compile(r"[a-zа-яё0-9_]{3,}", re.IGNORECASE)
 SENTENCE = re.compile(r"(?<=[.!?])\s+(?=[А-ЯЁA-Z])|\n\s*\n")
@@ -177,6 +178,7 @@ class MemoryEngine:
                 );
             """)
             init_alias_schema(db)
+            init_relation_schema(db)
             try:
                 db.execute("CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts USING fts5(statement, branch_name, tokenize='unicode61')")
                 self.fts = True
@@ -247,9 +249,10 @@ class MemoryEngine:
             # не надо отбрасывать их из-за общего требования 5 слов.
             with self.store.lock, self.store.db() as db:
                 merged = learn_aliases(db,source_type,source_id,text,now(),digest)
-                if merged:
+                relations = ingest_relations(db,source_type,source_id,name,text,now())
+                if merged or relations:
                     self.audit(db,"объединение названий",source_type,source_id,
-                               f"подтверждено {merged} связей")
+                               f"синонимов {merged}; отношений {relations}")
             return 0
         count = 0
         roots = set()
@@ -281,9 +284,10 @@ class MemoryEngine:
                     count += self._insert(db, leaf, source_type, source_id, stmt,
                                           f"{name}, утверждение {offset}")
             aliases = learn_aliases(db,source_type,source_id,text,now(),digest)
+            relations = ingest_relations(db,source_type,source_id,name,text,now())
             self._relate(db, roots, source_type, source_id)
             self.audit(db, "извлечение утверждений", source_type, source_id,
-                       f"добавлено {count}; проверенных синонимичных связей {aliases}")
+                       f"добавлено {count}; синонимов {aliases}; отношений {relations}")
         return count
 
     def _relate(self, db, roots, source_type, source_id):
@@ -327,6 +331,7 @@ class MemoryEngine:
         db.execute("DELETE FROM discovery_evidence WHERE source_type=? AND source_id=?",
                    (source_type,source_id))
         remove_alias_source(db,source_type,source_id,now())
+        remove_relations(db,source_type,source_id)
         # Очищаем только автоматически открытые, больше никем не используемые
         # ветки; ручные/давние ветки не затрагиваем.
         stale = db.execute("""SELECT t.branch_id FROM discovered_topics t
@@ -340,6 +345,11 @@ class MemoryEngine:
             db.execute("DELETE FROM branches WHERE id=?", (node["branch_id"],))
         self.audit(db,"удаление индексированных знаний",source_type,source_id,
                    f"снято {len(old)} записей")
+
+    def relations(self, term=None, limit=100):
+        """Read literal, source-backed relations; no model inference."""
+        with self.store.lock, self.store.db() as db:
+            return query_relations(db,term,limit)
 
     def reserve_semantic(self, daily=10):
         """Атомарный лимит обращений, переживающий перезапуск."""
