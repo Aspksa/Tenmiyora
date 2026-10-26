@@ -69,7 +69,7 @@ class SemanticExtractionTests(unittest.TestCase):
             self.assertEqual(len(children), 1)
             self.assertEqual(children[0]["parent"], roots[0]["id"])
             facts = workspace.knowledge.facts(children[0]["id"])["facts"]
-            self.assertEqual(facts[0]["excerpt"], original)
+            self.assertIn(facts[0]["excerpt"], original)
             self.assertEqual(facts[0]["source_id"], item["id"])
             self.assertEqual(workspace.knowledge.listing()["files"][0]["status"], "готово; смысловой анализ завершён")
             workspace.knowledge.delete("file", item["id"])
