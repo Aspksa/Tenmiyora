@@ -43,4 +43,5 @@ jobs:
         run: |
           node --check web/app.js
           node --check web/layout.js
+          node --check web/knowledge.js
           node --test tests/layout.test.cjs
