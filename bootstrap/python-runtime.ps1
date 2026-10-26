@@ -41,6 +41,18 @@ function Get-PythonArchitecture {
     }
 }
 
+function Get-ArchiveSha256([string]$Path) {
+    $algorithm = [Security.Cryptography.SHA256]::Create()
+    $stream = $null
+    try {
+        $stream = [IO.File]::OpenRead($Path)
+        return [BitConverter]::ToString($algorithm.ComputeHash($stream)).Replace('-', '').ToLowerInvariant()
+    } finally {
+        if ($stream) { $stream.Dispose() }
+        $algorithm.Dispose()
+    }
+}
+
 function Save-PythonArchive([string]$Url, [string]$Destination) {
     [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
     $oldProgress = $ProgressPreference
@@ -82,7 +94,7 @@ function Install-PortablePython([string]$RuntimeDirectory, [string]$ProbePath, [
         Write-Status "↻ Загрузка официального Python $($manifest.version) ($architecture), около 12 МБ"
         Save-PythonArchive -Url $package.url -Destination $archive
         Write-Status '◈ Проверка SHA-256 архива'
-        $actualHash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash
+        $actualHash = Get-ArchiveSha256 -Path $archive
         if ($actualHash -ine $package.sha256) { throw 'SHA-256 не совпал. Архив повреждён или подменён; установка отменена.' }
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         [IO.Compression.ZipFile]::ExtractToDirectory($archive, $unpacked)

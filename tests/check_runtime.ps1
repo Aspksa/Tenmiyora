@@ -23,6 +23,9 @@ try {
     $env:PROCESSOR_ARCHITECTURE = 'AMD64'
     $env:PROCESSOR_ARCHITEW6432 = $null
     [void][IO.Directory]::CreateDirectory($temporary)
+    $knownFile = Join-Path $temporary 'known.txt'
+    [IO.File]::WriteAllText($knownFile, 'abc', (New-Object System.Text.UTF8Encoding($false)))
+    Assert-True ((Get-ArchiveSha256 $knownFile) -eq 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad') 'Incorrect SHA-256 result'
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $fixture = Join-Path $temporary 'fixture'
     [void][IO.Directory]::CreateDirectory($fixture)
@@ -37,7 +40,7 @@ try {
     $manifestPath = Join-Path $temporary 'manifest.json'
     $manifest = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '..\bootstrap\python-runtime.json')) | ConvertFrom-Json
     $script:version = $manifest.version
-    $goodHash = (Get-FileHash -LiteralPath $script:fixtureArchive -Algorithm SHA256).Hash
+    $goodHash = Get-ArchiveSha256 -Path $script:fixtureArchive
     $manifest.packages.amd64.sha256 = $goodHash
     $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
 
