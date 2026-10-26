@@ -62,6 +62,25 @@ class InternalLabTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"Нельзя принять"):
             self.store.brain_lab_accept(newer["generation"])
 
+    def test_lab_code_is_included_in_algorithm_fingerprint(self):
+        from brain_lab import CORE_FILES
+        self.assertIn("brain_lab.py",CORE_FILES)
+        paths=[Path(__file__).resolve().parents[1]/"bootstrap"/name
+               for name in CORE_FILES]
+        self.assertTrue(all(path.is_file() for path in paths))
+        original=algorithm_signature()
+        self.assertEqual(len(original),64)
+        # Контрольный хеш обязан зависеть от содержимого файлов, а не
+        # только от имени/размера или даты изменения.
+        from brain_lab import _digest_paths
+        with tempfile.TemporaryDirectory() as root:
+            test=Path(root)/"brain_lab.py"
+            test.write_bytes(b"def trial(): return 1")
+            first=_digest_paths([test])
+            test.write_bytes(b"def trial(): return 2")
+            second=_digest_paths([test])
+        self.assertNotEqual(first,second)
+
     def test_algorithm_change_requires_fresh_trials_for_acceptance(self):
         with patch("brain_lab._trial",return_value=(METRICS,[])):
             result=self.store.brain_lab_experiment(1)
