@@ -150,7 +150,7 @@ def classify(text):
     selection = [first]
     if len(ordered) > 1:
         second = ordered[1]
-        if scores[second] >= 5 and scores[second] >= scores[first] * 0.75:
+        if scores[second] >= 5 and scores[second] >= scores[first] * 0.70:
             selection.append(second)
     return selection
 
