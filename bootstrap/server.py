@@ -31,6 +31,8 @@ STATIC = {
     "/styles.css": ("styles.css", "text/css; charset=utf-8"),
     "/layout.js": ("layout.js", "text/javascript; charset=utf-8"),
     "/app.js": ("app.js", "text/javascript; charset=utf-8"),
+    "/knowledge.js": ("knowledge.js", "text/javascript; charset=utf-8"),
+    "/knowledge.css": ("knowledge.css", "text/css; charset=utf-8"),
     "/assets/mark.svg": ("assets/mark.svg", "image/svg+xml"),
     "/assets/tenmiyora-avatar.png": ("assets/tenmiyora-avatar.png", "image/png"),
 }
