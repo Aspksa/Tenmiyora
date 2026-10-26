@@ -26,7 +26,7 @@ from knowledge import KnowledgeStore, MAX_UPLOAD
 from semantic import make_messages, parse_topics, samples_from_text
 from relation_suggestions import validate_candidates
 
-VERSION = "0.7.3"
+VERSION = "0.8.0"
 CLOUDRU_URL = "https://foundation-models.api.cloud.ru/v1"
 WEB_ROOT = Path(__file__).resolve().parents[1] / "web"
 STATIC = {
@@ -520,7 +520,7 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/state":
             if self.authorized(browser=True):
                 self.json_reply(200, self.server.workspace.public())
-        elif path in ("/api/brain", "/api/brain/facts", "/api/disk", "/api/disk/download"):
+        elif path in ("/api/brain", "/api/brain/facts", "/api/disk", "/api/disk/download", "/api/document"):
             if not self.authorized(browser=True):
                 return
             try:
@@ -534,6 +534,8 @@ class Handler(BaseHTTPRequestHandler):
                     self.json_reply(200, store.facts(int(value("branch"))))
                 elif path == "/api/disk":
                     self.json_reply(200, store.listing(value("folder") or None, value("q")))
+                elif path == "/api/document":
+                    self.json_reply(200, store.document_overview(value("id")))
                 else:
                     meta, data = store.download(value("id"))
                     self.reply(200, data, "application/octet-stream", filename=meta["name"])
@@ -577,6 +579,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         store = self.server.workspace.knowledge
         actions = {
+                   "/api/document/ask": lambda p: store.document_answer(p.get("id"),p.get("question")),
                    "/api/disk/folder": lambda p: store.create_folder(p.get("parent"), p.get("name")),
                    "/api/disk/rename": lambda p: store.rename(p.get("kind"), p.get("id"), p.get("name")),
                    "/api/disk/delete": lambda p: store.delete(p.get("kind"), p.get("id")),
