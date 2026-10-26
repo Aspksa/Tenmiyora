@@ -137,6 +137,31 @@ class KnowledgeApiTests(unittest.TestCase):
         self.assertEqual(request["messages"][0]["role"], "system")
         self.assertIn("python.txt", request["messages"][0]["content"])
 
+    def test_multistep_path_respects_external_memory_consent(self):
+        store = self.host.workspace
+        store.knowledge.upload("first.txt",
+            "«Клапан» является частью «Насос».".encode("utf-8"))
+        store.knowledge.upload("second.txt",
+            "«Насос» является частью «Предприятие».".encode("utf-8"))
+        store.connection({"provider": "cloudru", "model": "test", "key": "fake"})
+        mock_response = {"choices": [{"message": {"content": "Ответ"},
+                                      "finish_reason": "stop"}]}
+        message = "Как связаны «Клапан» и «Предприятие»?"
+        with patch.object(store, "provider", return_value=mock_response) as provider, \
+             patch.dict("os.environ", {"TENMIYORA_MEMORY_EXTERNAL_ENABLED": "0"}):
+            store.chat({"message": message})
+        sent = provider.call_args.args[1]["messages"]
+        self.assertFalse(any("first.txt" in row["content"] for row in sent))
+        self.assertFalse(any("Цепочка 1" in row["content"] for row in sent))
+        with patch.object(store, "provider", return_value=mock_response) as provider, \
+             patch.dict("os.environ", {"TENMIYORA_MEMORY_EXTERNAL_ENABLED": "1"}):
+            store.chat({"message": message})
+        sent = provider.call_args.args[1]["messages"]
+        contexts = [row["content"] for row in sent if row["role"] == "system"]
+        self.assertTrue(any("Цепочка 1" in ctx for ctx in contexts))
+        self.assertTrue(any("first.txt" in ctx and "second.txt" in ctx
+                            for ctx in contexts))
+
     def test_external_chat_does_not_receive_disk_contents_without_consent(self):
         store = self.host.workspace
         store.knowledge.upload("private.txt",
