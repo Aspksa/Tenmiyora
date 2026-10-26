@@ -144,7 +144,8 @@ class ProvenanceTests(unittest.TestCase):
         info=self.store.engine.source_provenance(first)
         self.assertTrue(info["possible_borrowing"])
         self.assertIn("possible_text_borrowing",info["risk_flags"])
-        self.assertEqual(info["possible_borrowing"][0]["right_id"],second)
+        pair=info["possible_borrowing"][0]
+        self.assertEqual({pair["left_id"],pair["right_id"]},{first,second})
         report=self.report()
         self.assertEqual(report["document_support_count"],2)
         self.assertEqual(report["support_count"],1)
