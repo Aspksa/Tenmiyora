@@ -138,16 +138,16 @@ def run(documents=1000,paragraphs=3,queries=80):
                            (origin["id"],)).fetchone()["sha256"]
         from json import dumps
         accepted=validate_candidates(dumps({"relations":[{
-            "subject":"Узел испытаний","predicate":"depends_on","object":"План ремонта",
+            "subject":"Узел испытаний","predicate":"part_of","object":"План ремонта",
             "evidence_id":1,"quote":sample}]}),[{"id":1,"text":sample}])
         if len(accepted)!=1:
             raise AssertionError("Контрольный кандидат некорректен.")
         store.integrate_semantic(origin["id"],[],[{"id":1,"text":sample}],
                                   expected_sha=sha,relation_candidates=accepted)
         store.upload("свидетельство_а.txt",
-                     "«Узел испытаний» зависит от «План ремонта».".encode("utf-8"))
+                     "«Узел испытаний» является частью «План ремонта».".encode("utf-8"))
         store.upload("свидетельство_б.txt",
-                     "Узел испытаний зависит от План ремонта.".encode("utf-8"))
+                     "«Узел испытаний» входит в состав «План ремонта».".encode("utf-8"))
         review_times=[]
         statuses=[]
         for _ in range(10):
