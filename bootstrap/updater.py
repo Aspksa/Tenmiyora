@@ -543,6 +543,8 @@ def rollback_update(root, reason):
             replace_file(target_path(backup / 'files', name), path)
     if (backup / 'workspace.json').exists():
         replace_file(backup / 'workspace.json', root / '.runtime/workspace.json')
+    elif 'workspace_sha' in transaction and transaction['workspace_sha'] is None:
+        (root / '.runtime/workspace.json').unlink(missing_ok=True)
     if 'disk_files' in transaction:
         disk = root / '.runtime/tenmiyora-disk'
         restored = backup / ('restore-' + uuid.uuid4().hex)

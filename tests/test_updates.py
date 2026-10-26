@@ -113,18 +113,21 @@ class UpdateTests(unittest.TestCase):
         self.assertTrue((self.directory / 'transaction.json').exists())
 
     def test_disk_and_memory_restored_after_failed_start(self):
+        (self.root / '.runtime/workspace.json').unlink()
         disk = self.root / '.runtime/tenmiyora-disk'
         (disk / 'objects').mkdir(parents=True)
         (disk / 'objects/document.txt').write_text('source document')
         (disk / 'knowledge.sqlite3').write_bytes(b'original database fixture')
         job = self.prepare()
         u.apply_update(self.root, job)
+        u.write_json(self.root / '.runtime/workspace.json', {'bad': 'new migration'})
         (disk / 'knowledge.sqlite3').write_bytes(b'failed migration')
         (disk / 'objects/new.txt').write_text('created by failed version')
         u.rollback_update(self.root, 'failed startup')
         self.assertEqual((disk / 'knowledge.sqlite3').read_bytes(), b'original database fixture')
         self.assertEqual((disk / 'objects/document.txt').read_text(), 'source document')
         self.assertFalse((disk / 'objects/new.txt').exists())
+        self.assertFalse((self.root / '.runtime/workspace.json').exists())
 
     def test_upload_and_background_analysis_defer_update(self):
         job = self.prepare()
