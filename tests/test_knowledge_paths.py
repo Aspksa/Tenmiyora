@@ -116,7 +116,7 @@ class KnowledgePathTests(unittest.TestCase):
         self.assertTrue(self.store.engine.trace_knowledge(
             "Клапан","Система водоснабжения")["paths"])
         self.store.upload("second.txt",
-            "«Насос» используется для «Очистка воды».")
+            "«Насос» используется для «Очистка воды».".encode("utf-8"))
         self.assertFalse(self.store.engine.trace_knowledge(
             "Клапан","Система водоснабжения")["paths"])
         self.assertTrue(self.store.engine.trace_knowledge(
