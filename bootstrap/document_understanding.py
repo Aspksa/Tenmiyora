@@ -38,6 +38,9 @@ CUES = (
     ("deadline", re.compile(r"\b(?:срок\w*|не\s+позднее|до\s+\d{1,2}[.]\d{1,2}[.]\d{4})\b", re.I)),
     ("purpose", re.compile(r"\b(?:цель\s+документа|целью\s+настоящего|предназначен\w*\s+для)\b", re.I)),
     ("party", re.compile(r"\b(?:покупател[ьяюе]|поставщик\w*|заказчик\w*|исполнитель\w*)\b", re.I)),
+    ("risk", re.compile(r"\b(?:неустойк\w*|штраф\w*|риск\w*|ответственност\w*|убытк\w*)\b", re.I)),
+    ("cause", re.compile(r"\b(?:вследствие|поскольку|по\s+причине|из-за)\b", re.I)),
+    ("conclusion", re.compile(r"\b(?:таким\s+образом|следовательно|вывод\w*|по\s+итогам)\b", re.I)),
 )
 CONFLICT = re.compile(r"(?i)\b(?:срок(?:\s+оплаты)?|стоимость|цена|сумма|количество)\s+[\w\s]{0,35}?(?:составляет|равен|равна)\s+(\d+(?:[.,]\d+)?)\s*(дн(?:ей|я)|рублей|руб|шт|%)?\b")
 
@@ -353,7 +356,8 @@ def answer(db,file_id,question,limit=5):
     for trigger,key in (("обязан","obligation"),("обязательств","obligation"),
                         ("срок","deadline"),("дат","date"),("цель","purpose"),
                         ("огранич","restriction"),("исключени","exception"),
-                        ("сторон","party")):
+                        ("сторон","party"),("риск","risk"),("штраф","risk"),
+                        ("причин","cause"),("вывод","conclusion")):
         if trigger in question.casefold():
             tags.append(key)
     scored=[]
