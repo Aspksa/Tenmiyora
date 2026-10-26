@@ -122,21 +122,30 @@ def signature(db):
     """Digest of *all* active files and indexed knowledge, not an approximate count."""
     state=hashlib.sha256()
     queries={
-        "files":"SELECT id,sha256 FROM files ORDER BY id",
-        "items":"""SELECT source_type,source_id,content_hash,branch_id
-           FROM knowledge_items ORDER BY id""",
-        "coverage":"SELECT file_id,file_sha,is_complete,notes FROM document_coverage ORDER BY file_id",
-        "suggestions":"""SELECT file_id,file_sha,subject,predicate,object,status
-              FROM relation_suggestions ORDER BY id""",
-        "provenance":"""SELECT file_id,file_sha,declared_author,declared_origin
-              FROM file_provenance ORDER BY file_id""",
+        "files":("files","SELECT id,sha256 FROM files ORDER BY id"),
+        "items":("knowledge_items", """SELECT source_type,source_id,content_hash,branch_id
+           FROM knowledge_items ORDER BY id"""),
+        "branches":("branches","SELECT id,parent,name FROM branches ORDER BY id"),
+        "relations":("knowledge_relations","""SELECT subject_id,predicate,object_id,
+           source_type,source_id,statement_hash,extraction_method
+           FROM knowledge_relations ORDER BY id"""),
+        "denials":("relation_denials","""SELECT subject_key,predicate,object_key,
+           source_type,source_id,statement_hash FROM relation_denials ORDER BY id"""),
+        "aliases":("topic_aliases","""SELECT alias_key,canonical_id,left_key,right_key
+           FROM topic_aliases ORDER BY alias_key"""),
+        "edges":("knowledge_edges","""SELECT left_id,right_id,relation,source_type,source_id
+           FROM knowledge_edges ORDER BY left_id,right_id,relation,source_type,source_id"""),
+        "coverage":("document_coverage","""SELECT file_id,file_sha,is_complete,notes
+           FROM document_coverage ORDER BY file_id"""),
+        "suggestions":("relation_suggestions","""SELECT file_id,file_sha,subject,predicate,object,status
+              FROM relation_suggestions ORDER BY id"""),
+        "provenance":("file_provenance","""SELECT file_id,file_sha,declared_author,declared_origin
+              FROM file_provenance ORDER BY file_id"""),
     }
     present={row["name"] for row in db.execute(
         "SELECT name FROM sqlite_master WHERE type='table'")}
-    for key,sql in queries.items():
-        if key not in ("files","items") and {
-            "coverage":"document_coverage","suggestions":"relation_suggestions",
-            "provenance":"file_provenance"}[key] not in present:
+    for key,(table,sql) in queries.items():
+        if table not in present:
             continue
         state.update(key.encode("ascii")+b":")
         for row in db.execute(sql):
