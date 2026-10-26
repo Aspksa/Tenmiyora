@@ -25,7 +25,7 @@ UNSAFE = re.compile(
 )
 UNCONFIRMED = re.compile(
     r"(?i)\b(?:не|нет|никогда|нельзя|возможно|вероятно|вероятен|"
-    r"предположительно|якобы|кажется|вроде|может|могут|могло|"
+    r"предположительно|якобы|кажется|вроде|может|могут|могло|согласно|"
     r"планируется|ожидается|предполагается|считается|"
     r"если|когда|условии|случае|однако|хотя|будто|будет|"
     r"ошибочн\w*|ложн\w*|неверн\w*|опроверг\w*)\b"
@@ -81,5 +81,12 @@ def parse_natural(text):
         normalized_object = obj.casefold().replace("ё", "е")
         if normalized_subject == normalized_object:
             return None
+        # Single-word Russian nominative/genitive variations (насос/насоса)
+        # must not create a self-loop in the concept graph.
+        if " " not in normalized_subject and " " not in normalized_object:
+            shorter,longer = sorted((normalized_subject,normalized_object),key=len)
+            if (len(shorter)>=4 and len(longer)-len(shorter)<=2
+                    and shorter[:len(shorter)-1] == longer[:len(shorter)-1]):
+                return None
         return subject, relation, obj
     return None
