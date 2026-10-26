@@ -399,9 +399,12 @@ class KnowledgeStore:
             return 0
         from topic_router import classify
         from topic_discovery import discover
+        from topic_aliases import parse_pair, candidate_sentences
         from memory_engine import sentences
+        entries = list(sentences(text[:4000]))
         if (classify(text[:4000]) == ["Общие знания"] and
-                not discover(text[:4000], list(sentences(text[:4000])))):
+                not discover(text[:4000], entries) and
+                sum(bool(parse_pair(stmt)) for stmt in candidate_sentences(text[:4000])) < 2):
             return 0
         source_id = secrets.token_hex(12)
         with self.lock, self.db() as conn:
@@ -409,27 +412,45 @@ class KnowledgeStore:
         return basic + self.engine.ingest("chat", source_id, "Сообщение пользователя", text[:4000])
 
     def branches(self):
+        from topic_aliases import projection
         with self.lock, self.db() as conn:
-            # Не удваиваем старые и новые фрагменты: индекс утверждений
-            # становится источником счётчиков, legacy facts — запасной вариант.
-            nodes = conn.execute("""SELECT b.id,b.parent,b.name,b.created,
+            rows = [dict(x) for x in conn.execute("""SELECT b.id,b.parent,b.name,b.created,
                 CASE WHEN (SELECT COUNT(*) FROM knowledge_items k WHERE k.branch_id=b.id)>0
                 THEN (SELECT COUNT(*) FROM knowledge_items k WHERE k.branch_id=b.id)
                 ELSE (SELECT COUNT(*) FROM facts f WHERE f.branch=b.id) END AS facts
-                FROM branches b ORDER BY b.parent,b.name""").fetchall()
+                FROM branches b ORDER BY b.id""")]
+            mapping = projection(conn)
+            original = {r["id"]: r for r in rows}
+            visible = {}
+            for item in rows:
+                target_id = mapping.get(item["id"], item["id"])
+                if target_id not in original:
+                    continue
+                if target_id not in visible:
+                    root = dict(original[target_id])
+                    root["parent"] = mapping.get(root["parent"],root["parent"])
+                    root["facts"] = 0
+                    visible[target_id] = root
+                visible[target_id]["facts"] += item["facts"]
             recent = conn.execute("SELECT time,action,detail FROM journal ORDER BY id DESC LIMIT 15").fetchall()
-            return {"branches": [dict(row) for row in nodes], "recent": [dict(row) for row in recent]}
+            nodes = sorted(visible.values(), key=lambda item: (item["parent"] or 0,item["name"]))
+            return {"branches": nodes, "recent": [dict(row) for row in recent]}
 
     def facts(self, branch):
+        from topic_aliases import projection
         with self.lock, self.db() as conn:
-            # Последние 100 индексированных утверждений — без нового интерфейса.
-            # Более ранние записи доступны полнотекстовому поиску.
-            rows = conn.execute("""SELECT k.id,k.statement AS excerpt,k.locator,
+            mapping = projection(conn)
+            canonical = mapping.get(branch,branch)
+            ids = [id_ for id_ in mapping if mapping[id_] == canonical] + [canonical]
+            params = ",".join("?" for _ in ids)
+            # All old IDs remain valid and their knowledge is readable.
+            rows = conn.execute(f"""SELECT k.id,k.statement AS excerpt,k.locator,
                 k.source_type,k.source_id,k.created FROM knowledge_items k
-                WHERE k.branch_id=? ORDER BY k.id DESC LIMIT 100""", (branch,)).fetchall()
+                WHERE k.branch_id IN ({params}) ORDER BY k.id DESC LIMIT 100""", ids).fetchall()
             if not rows:
-                rows = conn.execute("""SELECT f.id,f.excerpt,f.locator,f.source_type,f.source_id,f.created
-                    FROM facts f WHERE f.branch=? ORDER BY f.id DESC LIMIT 100""", (branch,)).fetchall()
+                rows = conn.execute(f"""SELECT f.id,f.excerpt,f.locator,f.source_type,
+                    f.source_id,f.created FROM facts f WHERE f.branch IN ({params})
+                    ORDER BY f.id DESC LIMIT 100""", ids).fetchall()
             return {"facts": [dict(row) for row in rows]}
 
     def retrieve(self, question, limit=6):
@@ -482,18 +503,8 @@ class KnowledgeStore:
                 return 0  # Файл удалён, пока выполнялся запрос к модели.
             created = 0
             for item in proposed:
-                root_name = item["category"]
-                row = next((r for r in conn.execute(
-                    "SELECT id,name FROM branches WHERE parent IS NULL")
-                    if normalize_label(r["name"]) == normalize_label(root_name)), None)
-                root_id = row["id"] if row else self.engine._branch(conn, root_name)
-                leaf_id = root_id
-                if item["branch"]:
-                    child_name = item["branch"]
-                    child = next((r for r in conn.execute(
-                        "SELECT id,name FROM branches WHERE parent=?", (root_id,))
-                        if normalize_label(r["name"]) == normalize_label(child_name)), None)
-                    leaf_id = child["id"] if child else self.engine._branch(conn, child_name, root_id)
+                root_id = self.engine._branch(conn, item["category"])
+                leaf_id = self.engine._branch(conn, item["branch"], root_id) if item["branch"] else root_id
                 for excerpt_id in item["evidence_ids"]:
                     excerpt = evidence.get(excerpt_id)
                     if not excerpt:
