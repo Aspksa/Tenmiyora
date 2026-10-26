@@ -298,6 +298,24 @@ class KnowledgeStore:
                     "INSERT OR IGNORE INTO facts(branch,source_type,source_id,excerpt,locator,created) VALUES(?,?,?,?,?,?)",
                     (leaf, source_type, source_id, sample, f"{name}, фрагмент {idx}", now()))
                 total += cursor.rowcount
+        # Новые темы из явных заголовков Markdown — не из догадок модели.
+        headings = list(re.finditer(r"(?m)^#{1,3} +([^\\r\\n]{5,72})\\s*$", text))[:12]
+        for index, match in enumerate(headings):
+            heading = match.group(1).strip(" #.:")
+            if not heading or SECRET_RE.search(heading):
+                continue
+            until = headings[index + 1].start() if index + 1 < len(headings) else len(text)
+            body = text[match.end():until]
+            samples = chunks(body)[:4]
+            if not samples:
+                continue
+            parent = self._branch(conn, topics[0])
+            child = self._branch(conn, heading, parent)
+            for offset, sample in enumerate(samples, 1):
+                cursor = conn.execute(
+                    "INSERT OR IGNORE INTO facts(branch,source_type,source_id,excerpt,locator,created) VALUES(?,?,?,?,?,?)",
+                    (child, source_type, source_id, sample, f"{name}, раздел «{heading}», фрагмент {offset}", now()))
+                total += cursor.rowcount
         if total:
             self.log(conn, "новые знания", f"{name}: {total}")
         return total
