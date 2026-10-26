@@ -172,6 +172,43 @@ class DocumentReadingTests(unittest.TestCase):
         self.assertTrue(result["citations"])
         self.assertTrue(any("Абзац" in x["locator"] for x in result["citations"]))
 
+    def test_pdf_page_locators_and_opt_in_local_ocr(self):
+        import types
+        from unittest.mock import patch
+        page1=type("Page",(),{"extract_text":lambda self:"Условие оплаты подтверждается на первой странице."})()
+        page2=type("Page",(),{"extract_text":lambda self:""})()
+        pypdf=types.ModuleType("pypdf")
+        pypdf.PdfReader=lambda unused:type("Reader",(),{"pages":[page1,page2]})()
+        pdfium=types.ModuleType("pypdfium2")
+        class Render:
+            def to_pil(self): return object()
+        class PDF:
+            def __init__(self,raw): pass
+            def __getitem__(self,index): return self
+            def render(self,scale): return Render()
+        pdfium.PdfDocument=PDF
+        ocr=types.ModuleType("pytesseract")
+        observed=[]
+        def read(img,lang,timeout):
+            observed.append((lang,timeout))
+            return "Покупатель обязан перечислить средства."
+        ocr.image_to_string=read
+        with patch.dict("sys.modules",{"pypdf":pypdf,"pypdfium2":pdfium,
+                                       "pytesseract":ocr}), \
+             patch.dict("os.environ",{"TENMIYORA_OCR_ENABLED":"0"}):
+            plain=extract_segments("скан.pdf",b"%PDF-1.4")
+        self.assertFalse(plain["complete"])
+        self.assertEqual(plain["segments"][0]["locator"],"Страница 1, блок 1")
+        self.assertEqual(observed,[])
+        with patch.dict("sys.modules",{"pypdf":pypdf,"pypdfium2":pdfium,
+                                       "pytesseract":ocr}), \
+             patch.dict("os.environ",{"TENMIYORA_OCR_ENABLED":"1"}):
+            decoded=extract_segments("скан.pdf",b"%PDF-1.4")
+        self.assertTrue(decoded["complete"])
+        self.assertEqual(len(decoded["segments"]),2)
+        self.assertEqual(decoded["segments"][1]["locator"],"Страница 2, блок 1")
+        self.assertEqual(observed,[("rus+eng",15)])
+
     def test_pdf_dependency_missing_is_explicit(self):
         with patch.dict("sys.modules",{"pypdf":None}):
             result=extract_segments("скан.pdf",b"%PDF-1.4\n")
