@@ -107,6 +107,20 @@ class DocumentReadingTests(unittest.TestCase):
         self.assertEqual(result["citations"],[])
         self.assertFalse(result["complete"])
 
+    def test_explicit_risks_causes_and_conclusions_are_cited(self):
+        fid=self.store.upload("анализ.txt",(
+            "Поставщик несёт ответственность за просрочку поставки.\n"
+            "Штраф составляет 100 рублей.\n"
+            "Ремонт прекращён вследствие обнаружения неисправности.\n"
+            "Таким образом, выявлена необходимость проверки оборудования."
+        ).encode("utf-8"))["id"]
+        record=self.store.document_overview(fid)
+        tags={tag for item in record["findings"] for tag in item["categories"]}
+        self.assertTrue({"risk","cause","conclusion"}.issubset(tags))
+        answer=self.store.document_answer(fid,"Какие риски и штрафы?")
+        self.assertEqual(answer["status"],"found")
+        self.assertTrue(any("Штраф" in x["quote"] for x in answer["citations"]))
+
     def test_no_answer_for_unrelated_question(self):
         item=self.store.upload("данные.txt",
             "Покупатель обязан оплатить поставку в течение 10 рабочих дней.".encode("utf-8"))
