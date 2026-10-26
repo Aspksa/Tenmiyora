@@ -30,6 +30,13 @@ jobs:
         run: python bootstrap/quality_eval.py --check --output .runtime/quality-reports
       - name: Проверить 80 сложных документов и качество поиска
         run: python bootstrap/quality_stress.py --check --output .runtime/quality-reports
+      - name: Сохранить диагностические отчёты
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-reports-${{ matrix.os }}
+          path: .runtime/quality-reports/*.json
+          if-no-files-found: warn
       - name: Проверить JavaScript и положение окон
         run: |
           node --check web/app.js
