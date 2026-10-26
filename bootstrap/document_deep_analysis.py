@@ -19,18 +19,27 @@ MAX_RESULTS = 100
 
 
 def batches(segments):
+    """Read EVERY character. A long page is split, not silently truncated."""
     current=[]
     size=0
     for row in segments:
-        text=row["excerpt"][:MAX_BATCH_CHARS]
-        item={"segment":row["ordinal"],"locator":row["locator"],"text":text}
-        if current and (size+len(text)>MAX_BATCH_CHARS or
-                        len(current)>=MAX_BATCH_SEGMENTS):
-            yield current
-            current=[]
-            size=0
-        current.append(item)
-        size+=len(text)
+        original=row["excerpt"]
+        if not original:
+            continue
+        for offset in range(0,len(original),MAX_BATCH_CHARS):
+            part=original[offset:offset+MAX_BATCH_CHARS]
+            if current and (size+len(part)>MAX_BATCH_CHARS or
+                            len(current)>=MAX_BATCH_SEGMENTS or
+                            any(item["segment"]==row["ordinal"] for item in current)):
+                yield current
+                current=[]
+                size=0
+            location=row["locator"]
+            if len(original)>MAX_BATCH_CHARS:
+                location+=f", символы {offset+1}–{offset+len(part)}"
+            current.append({"segment":row["ordinal"],"locator":location,
+                            "text":part})
+            size+=len(part)
     if current:
         yield current
 
