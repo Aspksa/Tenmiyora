@@ -17,7 +17,7 @@ class StressDatasetTests(unittest.TestCase):
         data = build_cases()
         docs = data["documents"]
         self.assertEqual(len(docs), 80)
-        self.assertEqual(len(data["queries"]), 85)
+        self.assertEqual(len(data["queries"]), 100)
         self.assertEqual(len({d["id"] for d in docs}), 80)
         self.assertEqual(len({d["text"] for d in docs}), 80)
         by_family = Counter(d["family"] for d in docs)
@@ -39,7 +39,7 @@ class StressDatasetTests(unittest.TestCase):
         positive = [q for q in data["queries"] if q["relevant_document"]]
         negative = [q for q in data["queries"] if q["relevant_document"] is None]
         self.assertEqual(len(positive), 80)
-        self.assertEqual(len(negative), 5)
+        self.assertEqual(len(negative), 20)
         self.assertEqual({q["relevant_document"] for q in positive}, ids)
         self.assertEqual(len({q["id"] for q in data["queries"]}), 85)
 
