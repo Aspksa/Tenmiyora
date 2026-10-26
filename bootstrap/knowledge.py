@@ -345,26 +345,25 @@ class KnowledgeStore:
         return cursor.lastrowid
 
     def _learn(self, conn, text, source_type, source_id, name):
+        """Legacy выдержки тоже распределяются по *своему* содержимому."""
+        from topic_router import classify, choose_child
         snippets = chunks(text)
         if not snippets:
             return 0
-        topics = categorize(text[:60_000])
         total = 0
-        for topic in topics:
-            root = self._branch(conn, topic)
-            leaf = root
-            lower = text.lower()
-            for title, words in CHILDREN.get(topic, ()):
-                if any(word in lower for word in words):
-                    leaf = self._branch(conn, title, root)
-                    break
-            for idx, sample in enumerate(snippets, 1):
+        for idx, sample in enumerate(snippets, 1):
+            for topic in classify(sample):
+                root = self.engine._branch(conn, topic)
+                child = choose_child(topic, sample)
+                leaf = self.engine._branch(conn, child, root) if child else root
                 cursor = conn.execute(
                     "INSERT OR IGNORE INTO facts(branch,source_type,source_id,excerpt,locator,created) VALUES(?,?,?,?,?,?)",
                     (leaf, source_type, source_id, sample, f"{name}, фрагмент {idx}", now()))
                 total += cursor.rowcount
-        # Новые темы из явных заголовков Markdown — не из догадок модели.
-        headings = list(re.finditer(r"(?m)^#{1,3} +([^\r\n]{5,72})\s*$", text))[:12]
+
+        # Заголовок — отдельное, локальное свидетельство направления, не
+        # повод приписать всей книге тему первых пяти страниц.
+        headings = list(re.finditer(r"(?m)^#{1,3} +([^\\r\\n]{5,72})\\s*$", text))[:12]
         for index, match in enumerate(headings):
             heading = match.group(1).strip(" #.:")
             if not heading or SECRET_RE.search(heading):
@@ -374,8 +373,11 @@ class KnowledgeStore:
             samples = chunks(body)[:4]
             if not samples:
                 continue
-            parent = self._branch(conn, topics[0])
-            child = self._branch(conn, heading, parent)
+            local_topics = classify(heading)
+            if local_topics == ["Общие знания"]:
+                local_topics = classify(samples[0])
+            parent = self.engine._branch(conn, local_topics[0])
+            child = self.engine._branch(conn, heading, parent)
             for offset, sample in enumerate(samples, 1):
                 cursor = conn.execute(
                     "INSERT OR IGNORE INTO facts(branch,source_type,source_id,excerpt,locator,created) VALUES(?,?,?,?,?,?)",
