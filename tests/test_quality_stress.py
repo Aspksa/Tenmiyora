@@ -53,6 +53,18 @@ class StressDatasetTests(unittest.TestCase):
         self.assertTrue(any("неподтверждённые" in x for x in failures))
         self.assertTrue(any("source_integrity" in x for x in failures))
 
+    def test_known_quality_weaknesses_are_reported_not_hidden(self):
+        result = {"metrics": {"negative_query_accuracy": 0.35,
+                              "conflict_recall": 0.10,
+                              "false_claim_storage_rate": 0.90},
+                  "cohorts": {"long_tail": {"anchor_recall": 0.0}}}
+        targets = {"negative_query_accuracy": 0.75, "conflict_recall": 0.5,
+                   "long_tail_anchor_recall": 0.5,
+                   "max_false_claim_storage_rate": 0.2}
+        found = quality_stress.assess_quality(result, targets)
+        self.assertEqual(len(found), 4)
+        self.assertIn("max_false_claim_storage_rate", {x["metric"] for x in found})
+
     def test_dataset_is_reproducible(self):
         first = build_cases()
         second = build_cases()
