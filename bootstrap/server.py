@@ -441,6 +441,7 @@ class Workspace:
                 raise AppError("Отправка текста внешней модели отключена. Для включения задайте "
                                "TENMIYORA_DOCUMENT_EXTERNAL_ENABLED=1 перед запуском и подтвердите запрос.",403)
             from document_deep_analysis import review
+            self.knowledge.ensure_document_index(fid)
             with self.knowledge.db() as conn:
                 result=review(conn,self.provider,connection,fid,question,batches)
             with self.knowledge.db() as conn:
