@@ -104,6 +104,7 @@ def _docx(raw,items):
 
 
 def _xlsx(raw,items):
+    notes=[]
     with _safe_zip(raw) as arc:
         paths=set(arc.namelist())
         shared=[]
@@ -133,6 +134,8 @@ def _xlsx(raw,items):
         if not names:
             names=[(x,f"Лист {i+1}","visible") for i,x in enumerate(sorted(paths))
                    if re.fullmatch(r"xl/worksheets/sheet\d+\.xml",x)]
+        if len(names)>30:
+            notes.append("Excel содержит больше 30 листов: обработаны только первые 30.")
         for source,title,state in names[:30]:
             if state!="visible":
                 # Hidden cells remain readable but explicit in their locator.
@@ -153,6 +156,7 @@ def _xlsx(raw,items):
                     if form is not None and form.text:
                         value=(value+" [формула: "+form.text+"]").strip()
                     _append(items,"cell",f"{title}!{coord}",value,title)
+    return notes
 
 
 def _pdf(raw,items):
@@ -165,6 +169,7 @@ def _pdf(raw,items):
     use_ocr=os.environ.get("TENMIYORA_OCR_ENABLED","0").strip().lower() in ("1","true","yes")
     for index,page in enumerate(reader.pages):
         if len(items)>=MAX_SEGMENTS:
+            notes.append("PDF обработан не полностью: предел количества блоков.")
             break
         text=page.extract_text() or ""
         if not text.strip() and use_ocr and index<MAX_OCR_PAGES:
@@ -194,7 +199,7 @@ def extract_segments(name,raw):
         if ext==".docx":
             _docx(raw,items)
         elif ext==".xlsx":
-            _xlsx(raw,items)
+            notes.extend(_xlsx(raw,items))
         elif ext==".pdf":
             notes.extend(_pdf(raw,items))
         elif ext in EXTRA:
@@ -318,7 +323,12 @@ def possible_conflicts(db,file_id,limit=20):
         # review, not proof of legal or semantic contradiction.
         phrase=CONFLICT.sub("<VALUE>",row["excerpt"].casefold())
         prefix=tuple(_tokens(phrase)[:14])
-        key=(row["section"],prefix)
+        unit=(match.group(2) or "").casefold()
+        if unit.startswith("дн"):
+            unit="days"
+        elif unit.startswith("руб"):
+            unit="rub"
+        key=(row["section"],prefix,unit)
         groups[key].append((match.group(1),row))
     result=[]
     for matches in groups.values():
@@ -361,15 +371,58 @@ def answer(db,file_id,question,limit=5):
         if trigger in question.casefold():
             tags.append(key)
     scored=[]
+    meaningful=set(_tokens(question))
+    # A single incidental word ("номер", "отчёт", "срок") is not enough
+    # evidence for a multi-concept question. A correct refusal is safer
+    # than inventing an answer from one token of overlap.
+    required=2 if len(meaningful)>=3 else 1
     for row in db.execute("""SELECT ordinal,kind,locator,section,excerpt FROM
         document_segments WHERE file_id=? ORDER BY ordinal""",(file_id,)):
         matched=_matched(question,row["excerpt"]+" "+row["section"])
         extra=sum(2 for tag in tags if tag in _category(row["excerpt"]) or
                   (tag=="date" and DATE.search(row["excerpt"])))
-        if matched or extra:
+        if meaningful and matched>=required:
             scored.append((matched+extra,row))
+    # Таблицы Excel: ответ на вопрос о названии показателя должен
+    # включать его значение с соседней ячейки той же строки и того же
+    # листа, а не только цитату заголовка или цифры с другого листа.
+    by_sheet_row=defaultdict(list)
+    for _,row in scored:
+        if row["kind"]=="cell":
+            address=re.fullmatch(r"(.+)!([A-Z]{1,3})([1-9][0-9]*)",row["locator"])
+            if address:
+                by_sheet_row[(address.group(1),address.group(3))].append(row)
+    # Include unmatched adjacent cells too, but only when their labeled
+    # partner already has a strong lexical match.
+    if by_sheet_row:
+        all_cells=db.execute("""SELECT ordinal,kind,locator,section,excerpt
+            FROM document_segments WHERE file_id=? AND kind='cell'""",(file_id,)).fetchall()
+        for row in all_cells:
+            address=re.fullmatch(r"(.+)!([A-Z]{1,3})([1-9][0-9]*)",row["locator"])
+            if address:
+                group=(address.group(1),address.group(3))
+                if group in by_sheet_row and not any(
+                        prev["ordinal"]==row["ordinal"] for prev in by_sheet_row[group]):
+                    by_sheet_row[group].append(row)
     scored.sort(key=lambda pair:(-pair[0],pair[1]["ordinal"]))
-    top=[row for _,row in scored[:max(1,min(limit,10))]]
+    selected=[]
+    used=set()
+    for score,row in scored:
+        if row["ordinal"] in used:
+            continue
+        selected.append(row)
+        used.add(row["ordinal"])
+        if row["kind"]=="cell" and score>=1:
+            addr=re.fullmatch(r"(.+)!([A-Z]{1,3})([1-9][0-9]*)",row["locator"])
+            if addr:
+                for neighbor in sorted(by_sheet_row.get((addr.group(1),addr.group(3)),[]),
+                                       key=lambda n:n["ordinal"])[:6]:
+                    if neighbor["ordinal"] not in used:
+                        selected.append(neighbor)
+                        used.add(neighbor["ordinal"])
+        if len(selected)>=max(1,min(limit,10)):
+            break
+    top=selected[:max(1,min(limit,10))]
     citations=[{"segment":row["ordinal"],"locator":row["locator"],
                 "quote":row["excerpt"][:1500]} for row in top]
     return {"status":"found" if citations else "not_found",
