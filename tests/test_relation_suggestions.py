@@ -40,6 +40,8 @@ class ModelRelationCandidateTests(unittest.TestCase):
             dict(CANDIDATE,subject="Выдуманный сервер"),
             dict(CANDIDATE,object="Несуществующий объект"),
             dict(CANDIDATE,predicate="guarantees"),
+            dict(CANDIDATE,predicate=["depends_on"]),
+            dict(CANDIDATE,predicate={"type":"depends_on"}),
             dict(CANDIDATE,predicate="contradicts",quote=""),
         ]
         answer=json.dumps({"relations":[CANDIDATE]+variants+[CANDIDATE]},
