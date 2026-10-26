@@ -243,6 +243,13 @@ class MemoryEngine:
         """Сохраняет самостоятельные предложения из исходного текста с локатором."""
         entries = list(sentences(text))
         if not entries:
+            # Короткие утверждения о синонимах имеют собственную проверку;
+            # не надо отбрасывать их из-за общего требования 5 слов.
+            with self.store.lock, self.store.db() as db:
+                merged = learn_aliases(db,source_type,source_id,text,now(),digest)
+                if merged:
+                    self.audit(db,"объединение названий",source_type,source_id,
+                               f"подтверждено {merged} связей")
             return 0
         count = 0
         roots = set()
