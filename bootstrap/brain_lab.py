@@ -18,6 +18,13 @@ MAX_GAPS_PER_KIND=40
 MINIMUM_SOURCE_FILES=0
 GOLD=Path(__file__).resolve().parents[1]/"tests"/"quality"/"gold.json"
 THRESHOLDS=Path(__file__).resolve().parents[1]/"tests"/"quality"/"thresholds.json"
+CORE_FILES=(
+    "knowledge.py","memory_engine.py","topic_router.py","topic_discovery.py",
+    "topic_aliases.py","semantic.py","natural_relations.py","knowledge_relations.py",
+    "knowledge_paths.py","document_understanding.py","document_deep_analysis.py",
+    "source_provenance.py","relation_verification.py","relation_suggestions.py",
+)
+LAB_ROOT=Path(__file__).resolve().parent
 
 SKILLS={
     "document_coverage_review":("Контроль полноты документов","incomplete_document"),
@@ -90,20 +97,59 @@ def init_schema(db):
       differences_json TEXT NOT NULL
     );
     """)
+    columns={row["name"] for row in db.execute("PRAGMA table_info(brain_lab_generations)")}
+    for name in ("algorithm_signature","suite_signature"):
+        if name not in columns:
+            db.execute(f"ALTER TABLE brain_lab_generations ADD COLUMN {name} TEXT")
 
 
 def signature(db):
     """Digest of *all* active files and indexed knowledge, not an approximate count."""
     state=hashlib.sha256()
-    for sql in (
-        "SELECT id,sha256 FROM files ORDER BY id",
-        """SELECT source_type,source_id,content_hash,branch_id
+    queries={
+        "files":"SELECT id,sha256 FROM files ORDER BY id",
+        "items":"""SELECT source_type,source_id,content_hash,branch_id
            FROM knowledge_items ORDER BY id""",
-    ):
+        "coverage":"SELECT file_id,file_sha,is_complete,notes FROM document_coverage ORDER BY file_id",
+        "suggestions":"""SELECT file_id,file_sha,subject,predicate,object,status
+              FROM relation_suggestions ORDER BY id""",
+        "provenance":"""SELECT file_id,file_sha,declared_author,declared_origin
+              FROM file_provenance ORDER BY file_id""",
+    }
+    present={row["name"] for row in db.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'")}
+    for key,sql in queries.items():
+        if key not in ("files","items") and {
+            "coverage":"document_coverage","suggestions":"relation_suggestions",
+            "provenance":"file_provenance"}[key] not in present:
+            continue
+        state.update(key.encode("ascii")+b":")
         for row in db.execute(sql):
             state.update(stable_json(list(row)).encode("utf-8"))
             state.update(b"\n")
     return state.hexdigest()
+
+
+def _digest_paths(items):
+    sha=hashlib.sha256()
+    for path in items:
+        sha.update(path.name.encode("utf-8"))
+        sha.update(b"\\0")
+        if not path.is_file():
+            raise RuntimeError("Отсутствует необходимый файл лаборатории: "+path.name)
+        sha.update(hashlib.sha256(path.read_bytes()).digest())
+    return sha.hexdigest()
+
+
+def algorithm_signature():
+    """Fingerprint implementation, excluding changes to the UI or user data."""
+    return _digest_paths([LAB_ROOT/name for name in CORE_FILES])
+
+
+def suite_signature():
+    """Fingerprint independent gold and guardrails; changed tests ≠ improvement."""
+    return _digest_paths([GOLD,THRESHOLDS,LAB_ROOT/"brain_lab_holdout.py",
+                          LAB_ROOT/"quality_eval.py"])
 
 
 def _candidates(db):
@@ -218,30 +264,50 @@ def run_experiment(db,trials=3):
     if type(trials) is not int or not 1<=trials<=MAX_TRIALS:
         raise ValueError("Число испытаний должно быть от 1 до 12.")
     before=signature(db)
+    from brain_lab_holdout import evaluate as holdout_evaluate
     samples=[]
+    per_trial_failures=[]
     all_failures=[]
+    algorithm=algorithm_signature()
+    suite=suite_signature()
     for i in range(trials):
         metrics,failures=_trial(13001+i)
-        samples.append(metrics)
-        all_failures.extend(failures)
+        holdout,additional=holdout_evaluate(87001+i)
+        combined={**metrics,**holdout}
+        if len(combined)!=len(metrics)+len(holdout):
+            raise RuntimeError("Пересечение имён контрольных метрик.")
+        samples.append(combined)
+        current=list(failures)+list(additional)
+        per_trial_failures.append(current)
+        all_failures.extend(current)
+    if algorithm_signature()!=algorithm or suite_signature()!=suite:
+        raise RuntimeError("Код или контрольный набор изменился во время экзамена.")
     # Repository test corpus must not mutate the user's live knowledge.
     if signature(db)!=before:
         raise RuntimeError("Память изменилась в ходе испытания; результаты отклонены.")
     worst={key:min(sample[key] for sample in samples) for key in samples[0]}
-    score=min(worst["retrieval_hit_at_k"],worst["source_integrity"],
-              worst["negative_query_accuracy"],worst["statement_recall"])
-    baseline=db.execute("""SELECT id,metrics_json,data_signature
-        FROM brain_lab_generations WHERE status='accepted'
-        ORDER BY id DESC LIMIT 1""").fetchone()
-    reference=json.loads(baseline["metrics_json"]) if baseline else None
+    score=min(worst[key] for key in (
+        "retrieval_hit_at_k","source_integrity","negative_query_accuracy",
+        "statement_recall","guardrail_citation_integrity",
+        "guardrail_negative_abstention","guardrail_source_revocation",
+        "guardrail_duplicate_resistance","guardrail_counterargument"))
+    baseline=db.execute("""SELECT id,metrics_json,data_signature,
+        algorithm_signature,suite_signature FROM brain_lab_generations
+        WHERE status='accepted' ORDER BY id DESC LIMIT 1""").fetchone()
+    comparable=bool(baseline and baseline["suite_signature"]==suite)
+    reference=json.loads(baseline["metrics_json"]) if comparable else None
     differences={key:round(value-reference[key],6) for key,value in worst.items()
                  if reference is not None and key in reference}
     regressions=sorted(key for key,delta in differences.items() if delta< -1e-8)
     if all_failures:
         verdict="failed_quality_gate"
+    elif baseline and not comparable:
+        verdict="baseline_requalification"
     elif regressions:
         verdict="regressed"
-    elif baseline and baseline["data_signature"]==before:
+    elif baseline and baseline["algorithm_signature"]==algorithm:
+        # Adding more personal files does not constitute progress of the
+        # algorithm measured on a separate synthetic corpus.
         verdict="stable_without_new_knowledge"
     elif baseline:
         verdict="candidate_for_manual_review"
@@ -249,14 +315,16 @@ def run_experiment(db,trials=3):
         verdict="first_baseline"
     when=clock()
     new=db.execute("""INSERT INTO brain_lab_generations
-        (parent_id,created,data_signature,quality_score,metrics_json,status,notes)
-        VALUES(?,?,?,?,?,'evaluated',?)""",(
+        (parent_id,created,data_signature,quality_score,metrics_json,status,notes,
+         algorithm_signature,suite_signature)
+        VALUES(?,?,?,?,?,'evaluated',?,?,?)""",(
           baseline["id"] if baseline else None,when,before,score,stable_json(worst),
-          "Испытания синтетического корпуса, не обучение весов")).lastrowid
+          "Испытания основного корпуса и независимых защит, не обучение весов",
+          algorithm,suite)).lastrowid
     for i,sample in enumerate(samples):
         db.execute("""INSERT INTO brain_lab_trials
           (generation_id,trial_no,seed,metrics_json,pass_thresholds)
-          VALUES(?,?,?,?,?)""",(new,i+1,13001+i,stable_json(sample),int(not all_failures)))
+          VALUES(?,?,?,?,?)""",(new,i+1,13001+i,stable_json(sample),int(not per_trial_failures[i])))
     db.execute("""INSERT INTO brain_lab_experiments
       (generation_id,baseline_id,created,verdict,regressions_json,differences_json)
       VALUES(?,?,?,?,?,?)""",(new,baseline["id"] if baseline else None,when,
@@ -265,6 +333,8 @@ def run_experiment(db,trials=3):
             "verdict":verdict,"minimum_metrics":worst,"score":score,
             "regressions":regressions,"quality_gate_failures":sorted(set(all_failures)),
             "knowledge_signature":before,
+            "algorithm_signature":algorithm,
+            "suite_signature":suite,
             "limits":"Синтетические задачи: не доказывает развитие весов, научную точность или автономное улучшение кода."}
 
 
@@ -272,15 +342,20 @@ def accept(db,generation):
     """Explicit acceptance of an evaluated checkpoint, not application of code."""
     if type(generation) is not int or generation<1:
         raise ValueError("Некорректный номер поколения.")
-    item=db.execute("""SELECT g.id,g.status,g.data_signature,e.verdict
+    item=db.execute("""SELECT g.id,g.status,g.data_signature,
+       g.algorithm_signature,g.suite_signature,e.verdict
       FROM brain_lab_generations g JOIN brain_lab_experiments e ON e.generation_id=g.id
       WHERE g.id=?""",(generation,)).fetchone()
     if not item or item["status"]!="evaluated":
         raise ValueError("Поколение отсутствует или уже обработано.")
-    if item["verdict"] not in ("first_baseline","candidate_for_manual_review"):
+    if item["verdict"] not in ("first_baseline","candidate_for_manual_review",
+                               "baseline_requalification"):
         raise ValueError("Нельзя принять результат с регрессией либо без нового эксперимента.")
     if signature(db)!=item["data_signature"]:
         raise ValueError("Данные изменились с момента экзамена: требуется повторная проверка.")
+    if (algorithm_signature()!=item["algorithm_signature"] or
+            suite_signature()!=item["suite_signature"]):
+        raise ValueError("Алгоритм или эталон изменился после испытания: нужен новый экзамен.")
     db.execute("""UPDATE brain_lab_generations SET status='rejected'
                WHERE status='accepted'""")
     db.execute("UPDATE brain_lab_generations SET status='accepted' WHERE id=?",(generation,))
