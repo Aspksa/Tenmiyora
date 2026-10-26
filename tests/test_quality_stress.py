@@ -65,6 +65,24 @@ class StressDatasetTests(unittest.TestCase):
         self.assertEqual(len(found), 4)
         self.assertIn("max_false_claim_storage_rate", {x["metric"] for x in found})
 
+    def test_exported_files_have_manifest_and_matching_checksums(self):
+        import hashlib
+        import importlib.util
+        import json
+        import tempfile
+        from pathlib import Path
+        spec = importlib.util.spec_from_file_location(
+            "export_stress_cases", ROOT / "tests" / "quality" / "export_stress_cases.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as folder:
+            path = module.export(folder)
+            manifest = json.loads((path/"manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(len(manifest["documents"]), 80)
+            for entry in manifest["documents"]:
+                original = (path/entry["file"]).read_bytes()
+                self.assertEqual(hashlib.sha256(original).hexdigest(),entry["sha256"])
+
     def test_dataset_is_reproducible(self):
         first = build_cases()
         second = build_cases()
