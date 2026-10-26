@@ -199,6 +199,8 @@ def extract_segments(name,raw):
             plain,status=extract_text(name,raw)
             if status!="готово":
                 notes.append(status)
+            if len(raw.decode("utf-8-sig",errors="replace"))>MAX_CHARS:
+                notes.append("Анализ неполный: исходный текст превышает 350 000 символов.")
             section=""
             for i,line in enumerate(plain.splitlines(),1):
                 if line.lstrip().startswith(("# ","## ","### ")):
@@ -381,7 +383,12 @@ def overview(db,file_id):
     if not row:
         raise ValueError("Документ не найден или пока не проиндексирован.")
     count=db.execute("SELECT COUNT(*) FROM document_segments WHERE file_id=?",(file_id,)).fetchone()[0]
+    from document_deep_analysis import batches
+    estimate=sum(1 for _ in batches(db.execute(
+        "SELECT ordinal,locator,excerpt FROM document_segments WHERE file_id=? ORDER BY ordinal",
+        (file_id,))))
     return {"file_id":file_id,"name":row["name"],"sha256":row["sha256"],
+            "estimated_model_calls":estimate,
             "segment_count":count,"characters":row["characters"],
             "complete":bool(row["is_complete"]),
             "limitations":__import__("json").loads(row["notes"]),
