@@ -19,6 +19,7 @@ MAX_DEPTH = 4
 MAX_PATHS = 8
 MAX_ADJACENCY = 100
 MAX_EXPANSIONS = 1200
+MAX_QUEUED = 3000
 MAX_EVIDENCE_PER_HOP = 3
 QUOTE = re.compile(r'«([^«»\r\n]{2,64})»|"([^"\r\n]{2,64})"')
 
@@ -112,6 +113,7 @@ def trace_paths(db, start, end, max_depth=3, max_paths=5):
                 "object": names[next_node],
                 "evidence_count":count,
                 "sources":evidence,
+                "more_sources":max(0,count-len(evidence)),
             }
             route=steps+(step,)
             if next_node == dst:
@@ -131,8 +133,12 @@ def trace_paths(db, start, end, max_depth=3, max_paths=5):
                     reason="max_paths"
                     break
             else:
+                if len(queue)>=MAX_QUEUED:
+                    partial=True
+                    reason="queue_limit"
+                    break
                 queue.append((next_node,visited+(next_node,),route))
-        if len(paths)>=max_paths:
+        if len(paths)>=max_paths or reason=="queue_limit":
             break
     if partial:
         return _result("incomplete",paths,reason,explored)
@@ -178,4 +184,13 @@ def format_context(result,max_chars=3600):
                 )
     if result.get("status")=="incomplete":
         lines.append("ВНИМАНИЕ: поиск ограничен; найденные цепочки не исчерпывающие.")
-    return "\n".join(lines)[:max_chars]
+    chosen=[]
+    total=0
+    for line in lines:
+        if total + len(line) + 1 > max_chars:
+            if total + len("\n[Цитирование усечено по размеру]")<=max_chars:
+                chosen.append("[Цитирование усечено по размеру]")
+            break
+        chosen.append(line)
+        total+=len(line)+1
+    return "\n".join(chosen)
