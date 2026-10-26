@@ -211,15 +211,15 @@ def main(argv=None):
         path.mkdir(parents=True,exist_ok=True)
         report=path/f"performance-{options.documents}.json"
         report.write_text(json.dumps(metrics,ensure_ascii=False,indent=2),encoding="utf-8")
-        print(json.dumps(metrics,ensure_ascii=False,indent=2))
-        print("Отчёт:",report)
+        print(json.dumps(metrics,ensure_ascii=True,indent=2))
+        print("Report:",str(report).encode("ascii","backslashreplace").decode("ascii"))
         if options.check and (metrics["sqlite_integrity"]!="ok" or
                  metrics["search_exact_source_hits"]!=metrics["search_queries"] or
                  metrics["review_status_set"]!=["corroborated_by_sources"]):
             return 1
         return 0
     except (ValueError,AssertionError,OSError,sqlite3.Error) as exc:
-        print(f"Ошибка нагрузочной проверки: {exc}",file=sys.stderr)
+        print("Performance benchmark error: "+ascii(str(exc)),file=sys.stderr)
         return 1
 
 
