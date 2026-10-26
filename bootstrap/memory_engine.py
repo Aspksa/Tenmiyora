@@ -19,6 +19,8 @@ from topic_aliases import init_schema as init_alias_schema, learn as learn_alias
 from knowledge_relations import init_schema as init_relation_schema, ingest as ingest_relations, remove_source as remove_relations, query as query_relations, for_question as relations_for_question
 from knowledge_paths import trace_paths, for_question as paths_for_question
 from relation_suggestions import init_schema as init_suggestion_schema, remove as remove_suggestions
+from relation_verification import (init_schema as init_review_schema,
+    ingest_denials, remove_denials, reconcile_all, evaluated_suggestions)
 
 TOKEN = re.compile(r"[a-zа-яё0-9_]{3,}", re.IGNORECASE)
 SENTENCE = re.compile(r"(?<=[.!?])\s+(?=[А-ЯЁA-Z])|\n\s*\n")
@@ -182,6 +184,7 @@ class MemoryEngine:
             init_alias_schema(db)
             init_relation_schema(db)
             init_suggestion_schema(db)
+            init_review_schema(db)
             try:
                 db.execute("CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts USING fts5(statement, branch_name, tokenize='unicode61')")
                 self.fts = True
@@ -253,9 +256,11 @@ class MemoryEngine:
             with self.store.lock, self.store.db() as db:
                 merged = learn_aliases(db,source_type,source_id,text,now(),digest)
                 relations = ingest_relations(db,source_type,source_id,name,text,now())
-                if merged or relations:
+                denied = ingest_denials(db,source_type,source_id,name,text,now())
+                reviewed = reconcile_all(db,now())
+                if merged or relations or denied:
                     self.audit(db,"объединение названий",source_type,source_id,
-                               f"синонимов {merged}; отношений {relations}")
+                               f"синонимов {merged}; отношений {relations}; отрицаний {denied}")
             return 0
         count = 0
         roots = set()
@@ -288,9 +293,11 @@ class MemoryEngine:
                                           f"{name}, утверждение {offset}")
             aliases = learn_aliases(db,source_type,source_id,text,now(),digest)
             relations = ingest_relations(db,source_type,source_id,name,text,now())
+            denied = ingest_denials(db,source_type,source_id,name,text,now())
+            reconcile_all(db,now())
             self._relate(db, roots, source_type, source_id)
             self.audit(db, "извлечение утверждений", source_type, source_id,
-                       f"добавлено {count}; синонимов {aliases}; отношений {relations}")
+                       f"добавлено {count}; синонимов {aliases}; отношений {relations}; отрицаний {denied}")
         return count
 
     def _relate(self, db, roots, source_type, source_id):
@@ -336,6 +343,8 @@ class MemoryEngine:
         remove_alias_source(db,source_type,source_id,now())
         remove_relations(db,source_type,source_id)
         remove_suggestions(db,source_type,source_id)
+        remove_denials(db,source_type,source_id)
+        reconcile_all(db,now())
         # Очищаем только автоматически открытые, больше никем не используемые
         # ветки; ручные/давние ветки не затрагиваем.
         stale = db.execute("""SELECT t.branch_id FROM discovered_topics t
@@ -370,17 +379,8 @@ class MemoryEngine:
 
     def relation_suggestions(self, file_id=None, limit=30):
         """Неподтверждённые смысловые гипотезы — НЕ рёбра рабочего графа."""
-        limit=max(1,min(100,int(limit)))
         with self.store.lock,self.store.db() as db:
-            statement="""SELECT id,file_id,file_sha,evidence_id,subject,predicate,
-                object,quote,status,created FROM relation_suggestions"""
-            args=[]
-            if file_id is not None:
-                statement+=" WHERE file_id=?"
-                args.append(str(file_id))
-            statement+=" ORDER BY id DESC LIMIT ?"
-            args.append(limit)
-            return [dict(row) for row in db.execute(statement,args)]
+            return evaluated_suggestions(db,file_id,limit)
 
     def reserve_semantic(self, daily=10):
         """Атомарный лимит обращений, переживающий перезапуск."""
