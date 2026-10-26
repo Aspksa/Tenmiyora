@@ -95,9 +95,18 @@ def reconcile(db, left_key, right_key, now):
     return True
 
 
-def learn(db, source_type, source_id, statements, now, digest):
+def candidate_sentences(text):
+    """Separate explicit synonym statements before the general >=5 token filter."""
+    if not isinstance(text,str):
+        return []
+    return [part.strip() for part in re.split(
+        r"\n\s*\n|(?<=[.!?])\s+(?=[«\"])", text[:350000])
+        if part.strip()][:10000]
+
+
+def learn(db, source_type, source_id, raw_text, now, digest):
     pairs=set()
-    for stmt in statements[:10000]:
+    for stmt in candidate_sentences(raw_text):
         parsed=parse_pair(stmt)
         if not parsed:
             continue
