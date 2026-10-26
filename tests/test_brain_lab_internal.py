@@ -81,6 +81,30 @@ class InternalLabTests(unittest.TestCase):
             second=_digest_paths([test])
         self.assertNotEqual(first,second)
 
+    def test_lab_code_is_part_of_algorithm_fingerprint(self):
+        from brain_lab import CORE_FILES
+        self.assertIn("brain_lab.py",CORE_FILES)
+
+    def test_graph_and_branch_changes_invalidate_stale_lab_results(self):
+        from brain_lab import signature
+        item=self.store.upload("связи.txt",
+            "«Насос» является частью «Система».\n\n"
+            "Договор поставки регулирует обязательства покупателя.".encode())
+        with self.store.db() as db:
+            before=signature(db)
+            relation=db.execute("SELECT id,statement_hash FROM knowledge_relations LIMIT 1").fetchone()
+            self.assertIsNotNone(relation)
+            db.execute("UPDATE knowledge_relations SET statement_hash=? WHERE id=?",
+                       ("synthetic-test-sha",relation["id"]))
+            self.assertNotEqual(signature(db),before)
+            # Test that branch reclassification also invalidates the snapshot.
+            now=signature(db)
+            branch=db.execute("SELECT id,name FROM branches LIMIT 1").fetchone()
+            self.assertIsNotNone(branch)
+            db.execute("UPDATE branches SET name=? WHERE id=?",
+                       (branch["name"]+"_changed",branch["id"]))
+            self.assertNotEqual(signature(db),now)
+
     def test_algorithm_change_requires_fresh_trials_for_acceptance(self):
         with patch("brain_lab._trial",return_value=(METRICS,[])):
             result=self.store.brain_lab_experiment(1)
