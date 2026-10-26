@@ -368,6 +368,20 @@ class MemoryEngine:
         with self.store.lock,self.store.db() as db:
             return paths_for_question(db,question,max_depth,max_paths)
 
+    def relation_suggestions(self, file_id=None, limit=30):
+        """Неподтверждённые смысловые гипотезы — НЕ рёбра рабочего графа."""
+        limit=max(1,min(100,int(limit)))
+        with self.store.lock,self.store.db() as db:
+            statement="""SELECT id,file_id,file_sha,evidence_id,subject,predicate,
+                object,quote,status,created FROM relation_suggestions"""
+            args=[]
+            if file_id is not None:
+                statement+=" WHERE file_id=?"
+                args.append(str(file_id))
+            statement+=" ORDER BY id DESC LIMIT ?"
+            args.append(limit)
+            return [dict(row) for row in db.execute(statement,args)]
+
     def reserve_semantic(self, daily=10):
         """Атомарный лимит обращений, переживающий перезапуск."""
         day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
