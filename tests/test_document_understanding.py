@@ -135,6 +135,36 @@ class DocumentReadingTests(unittest.TestCase):
             self.store.document_overview(a)
         self.assertEqual(self.store.document_overview(b)["segment_count"],1)
 
+    def test_legacy_file_is_indexed_only_when_user_opens_it(self):
+        fid=self.store.upload("наследие.txt",
+            "Покупатель обязан оплатить поставку в течение 10 дней.".encode())["id"]
+        with self.store.db() as db:
+            db.execute("DELETE FROM document_segments WHERE file_id=?",(fid,))
+            db.execute("DELETE FROM document_coverage WHERE file_id=?",(fid,))
+            before=db.execute("SELECT COUNT(*) FROM knowledge_items WHERE source_id=?",
+                              (fid,)).fetchone()[0]
+        result=self.store.document_overview(fid)
+        self.assertEqual(result["segment_count"],1)
+        with self.store.db() as db:
+            after=db.execute("SELECT COUNT(*) FROM knowledge_items WHERE source_id=?",
+                             (fid,)).fetchone()[0]
+        self.assertEqual(before,after)
+        self.assertTrue(self.store.document_answer(fid,"Обязанности покупателя")["citations"])
+
+    def test_legacy_index_requires_matching_sha(self):
+        fid=self.store.upload("повреждён.txt",
+            "Покупатель обязан соблюдать условия договора.".encode())["id"]
+        with self.store.db() as db:
+            db.execute("DELETE FROM document_segments WHERE file_id=?",(fid,))
+            db.execute("DELETE FROM document_coverage WHERE file_id=?",(fid,))
+        (self.store.objects/fid).write_bytes(b"not original")
+        with self.assertRaisesRegex(ValueError,"SHA-256"):
+            self.store.document_overview(fid)
+        with self.store.db() as db:
+            self.assertEqual(db.execute(
+                "SELECT COUNT(*) FROM document_coverage WHERE file_id=?",
+                (fid,)).fetchone()[0],0)
+
     def test_reopen_db_keeps_accurate_original_locator(self):
         fid=self.store.upload("договор.docx",docx())["id"]
         again=KnowledgeStore(self.tmp.name)
