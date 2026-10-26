@@ -36,7 +36,7 @@
       <a href="#settings" class="nav-item" data-nav="settings" aria-label="Настройки"><svg><use href="#i-settings"/></svg><span>Настройки</span></a>
     </nav>
     <div class="sidebar-note"><div class="note-star">✧</div><p>Большие идеи<br>начинаются с&nbsp;разговора.</p><span>TENMIYORA</span></div>
-    <div class="sidebar-bottom"><span class="live-dot"></span><span id="server-status">Подключение…</span><small>v0.3.0</small></div>
+    <div class="sidebar-bottom"><span class="live-dot"></span><span id="server-status">Подключение…</span><small>v0.4.0</small></div>
   </aside>
   <div class="workspace">
     <header class="topbar"><div class="breadcrumb"><span>Пространство</span><span class="slash">/</span><strong id="page-title">Главная</strong></div><div class="topbar-actions"><span class="local-badge"><svg><use href="#i-lock"/></svg>На вашем компьютере</span><button class="icon-button" data-action="settings" aria-label="Настройки Tenmiyora"><svg><use href="#i-settings"/></svg></button></div></header>
@@ -69,12 +69,12 @@
   <div class="chat-meta"><span><span class="tiny-star">✧</span> Разговор, который остаётся с вами</span><button class="text-button" id="clear-chat">Очистить</button></div>
   <div id="chat-messages" class="chat-messages" role="log" aria-label="Сообщения" aria-live="polite"></div>
   <div id="connection-hint" class="connection-hint"><span>Для ответов подключите модель.</span><button class="text-button" data-action="connection">Подключить <span>↗</span></button></div>
-  <form id="chat-form" class="chat-composer"><label class="sr-only" for="chat-input">Сообщение Tenmiyora</label><textarea id="chat-input" rows="2" placeholder="О чём вы думаете?" maxlength="32000"></textarea><div class="composer-bottom"><span id="composer-hint">Enter — отправить · Shift+Enter — новая строка</span><button id="send-message" class="send-button" type="submit" aria-label="Отправить сообщение"><svg><use href="#i-send"/></svg></button></div></form>
+  <form id="chat-form" class="chat-composer"><label class="sr-only" for="chat-input">Сообщение Tenmiyora</label><textarea id="chat-input" rows="2" placeholder="О чём вы думаете?"></textarea><div class="composer-bottom"><span id="composer-hint">Enter — отправить · Shift+Enter — новая строка</span><button id="send-message" class="send-button" type="submit" aria-label="Отправить сообщение"><svg><use href="#i-send"/></svg></button></div></form>
   <div class="window-grip"><svg><use href="#i-move"/></svg>Перемещайте окно за верхнюю панель</div>
 </section>
 <section id="settings-window" class="floating-window settings-window" role="dialog" aria-label="Настройки Tenmiyora" hidden>
   <header id="settings-handle" class="window-header"><div><span class="settings-kicker">ПОД СЕБЯ</span><h2>Настройки Tenmiyora</h2></div><button class="icon-button" id="settings-close" aria-label="Закрыть настройки"><svg><use href="#i-close"/></svg></button></header>
-  <div class="settings-tabs" role="tablist" aria-label="Раздел настроек"><button id="tab-appearance" role="tab" aria-selected="true" aria-controls="appearance-panel" data-tab="appearance">Облик и поведение</button><button id="tab-connection" role="tab" aria-selected="false" aria-controls="connection-panel" data-tab="connection" tabindex="-1">Модель для чата</button></div>
+  <div class="settings-tabs" role="tablist" aria-label="Раздел настроек"><button id="tab-appearance" role="tab" aria-selected="true" aria-controls="appearance-panel" data-tab="appearance">Облик и поведение</button><button id="tab-connection" role="tab" aria-selected="false" aria-controls="connection-panel" data-tab="connection" tabindex="-1">Cloud.ru и модели</button></div>
   <div class="settings-scroll">
     <div id="appearance-panel" role="tabpanel" aria-labelledby="tab-appearance">
       <div class="appearance-preview"><img src="/assets/tenmiyora-avatar.png" alt="Предпросмотр аватара" draggable="false"><div><strong>Tenmiyora</strong><span>Белое золото</span><small>Тёплая. Спокойная. Рядом.</small></div></div>
@@ -86,13 +86,21 @@
       <button id="reset-layout" class="secondary-button full-width"><svg><use href="#i-reset"/></svg>Вернуть исходное расположение</button><p class="settings-help">На сенсорном экране удерживайте аватар, чтобы открыть настройки. Перемещайте аватар и чат одним пальцем.</p>
     </div>
     <div id="connection-panel" role="tabpanel" aria-labelledby="tab-connection" hidden>
-      <p class="connection-intro">Подключите свою модель для ответов в чате. История хранится на этом компьютере, сообщения отправляются выбранному провайдеру.</p>
+      <div class="provider-heading"><span class="provider-mark">☁</span><div><strong id="provider-name">Cloud.ru</strong><span id="provider-subtitle">Foundation Models · подключение чата</span></div></div>
+      <p class="connection-intro">Сохраните ключ, загрузите список и выберите модель. Чат использует это подключение сразу после сохранения.</p>
       <form id="connection-form">
-        <label class="field-label" for="api-url">Адрес API</label><input id="api-url" type="url" value="https://foundation-models.api.cloud.ru/v1" placeholder="https://…/v1" autocomplete="off" required><small class="field-help">Cloud.ru или другой совместимый с OpenAI API сервис</small>
-        <label class="field-label" for="api-key">API-ключ <span id="key-status"></span></label><input id="api-key" type="password" placeholder="Введите ключ" autocomplete="off" spellcheck="false"><small class="field-help">Ключ сохраняется локально. Пустое поле сохраняет прежний ключ.</small>
-        <label class="field-label" for="api-model">Модель</label><input id="api-model" type="text" list="model-options" placeholder="Идентификатор текстовой модели" autocomplete="off"><datalist id="model-options"></datalist><button id="load-models" class="text-button model-list-button" type="button">Получить список моделей <span>↻</span></button>
-        <div class="connection-buttons"><button type="submit" class="primary-button">Сохранить подключение<svg><use href="#i-check"/></svg></button><button id="delete-key" type="button" class="text-button">Удалить ключ</button></div>
-      </form><p class="settings-help">Запросы модели могут быть платными по тарифу вашего провайдера. Автоматических запросов генерации нет.</p><p id="connection-result" class="inline-result" role="status"></p>
+        <label class="field-label" for="api-provider">Провайдер</label><select id="api-provider"><option value="cloudru">Cloud.ru · Foundation Models</option><option value="custom">Другой совместимый API</option></select>
+        <div id="custom-url-field" hidden><label class="field-label" for="api-url">Адрес API</label><input id="api-url" type="url" value="https://foundation-models.api.cloud.ru/v1" placeholder="https://…/v1" autocomplete="off" required><small class="field-help">Укажите базовый адрес совместимого с OpenAI API сервиса.</small></div>
+        <label class="field-label" for="api-key">API-ключ <span id="key-status"></span></label><input id="api-key" type="password" placeholder="Введите ключ Cloud.ru" autocomplete="off" spellcheck="false"><small class="field-help">Ключ хранится на этом компьютере. Пустое поле оставляет сохранённый ключ.</small>
+        <label class="field-label" for="api-model-select">Выбор модели</label><select id="api-model-select"><option value="">Сначала загрузите модели</option><option value="__manual__">Указать идентификатор вручную…</option></select>
+        <div id="manual-model-field" hidden><label class="field-label" for="api-model">Идентификатор модели</label><input id="api-model" type="text" placeholder="Например, идентификатор из кабинета Cloud.ru" autocomplete="off"></div>
+        <small id="model-description" class="field-help">Список придёт из вашего API-аккаунта, без заранее заданных моделей.</small>
+        <button id="load-models" class="secondary-button full-width" type="button">Загрузить / обновить модели <span>↻</span></button>
+        <div class="connection-buttons"><button type="submit" class="primary-button">Сохранить ключ и модель<svg><use href="#i-check"/></svg></button><button id="delete-key" type="button" class="text-button">Удалить ключ</button></div>
+        <button id="check-connection" class="secondary-button full-width" type="button"><svg><use href="#i-check"/></svg>Проверить подключение</button>
+      </form>
+      <p id="connection-summary" class="connection-summary">Ключ ещё не сохранён</p>
+      <p class="settings-help">Проверка запрашивает список моделей и не генерирует ответ. Отправленные сообщения могут тарифицироваться провайдером. Собственных лимитов длины, числа сообщений и токенов Tenmiyora не задаёт; действуют возможности выбранной модели.</p><p id="connection-result" class="inline-result" role="status"></p>
     </div>
   </div>
   <footer class="settings-footer"><svg><use href="#i-check"/></svg><span id="save-status" role="status">Сохранено на этом компьютере</span></footer>
