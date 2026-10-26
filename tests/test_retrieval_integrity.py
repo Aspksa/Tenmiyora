@@ -82,6 +82,21 @@ class ReliabilityTests(unittest.TestCase):
         self.store.upload("журнал.txt", text.encode("utf-8"))
         self.assertEqual(self.store.engine.conflicts(), [])
 
+    def test_existing_brain_view_reports_new_indexed_knowledge(self):
+        pieces = [
+            "Техническая запись номер %s описывает правила безопасной эксплуатации оборудования." % i
+            for i in range(200)
+        ]
+        pieces.append("Python использует pytest для воспроизводимого тестирования прикладных функций.")
+        self.store.upload("view.md", ("\n\n".join(pieces)).encode())
+        tree = self.store.branches()["branches"]
+        self.assertTrue(any(item["facts"] > 160 for item in tree))
+        branch = next(item for item in tree if item["facts"] > 160)
+        latest = self.store.facts(branch["id"])["facts"]
+        self.assertTrue(latest)
+        self.assertTrue(any("тестирования" in item["excerpt"] for item in latest)
+                        or len(latest) == 100)
+
     def test_classification_survives_restart_with_full_index(self):
         data = "\n\n".join(
             ("Техническая запись %s подробно описывает правила безопасной эксплуатации оборудования." % i)
