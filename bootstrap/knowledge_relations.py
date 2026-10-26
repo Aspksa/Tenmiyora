@@ -10,6 +10,8 @@ import hashlib
 import re
 import unicodedata
 
+from natural_relations import parse_natural
+
 PREDICATES = {
     "является частью": "part_of",
     "входит в состав": "part_of",
@@ -75,7 +77,7 @@ def raw_sentences(text):
     if not isinstance(text,str):
         return
     # Предпочитаем отдельные строки, короткие явные предложения.
-    for para in re.split(r"\n\s*\n|(?<=[.!?])\s+(?=[«\"])",text[:MAX_CHARS]):
+    for para in re.split(r"\n\s*\n|(?<=[.!?])\s+(?=[«\"А-ЯЁA-Z])",text[:MAX_CHARS]):
         for line in para.splitlines():
             line=line.strip()
             if line:
@@ -108,6 +110,11 @@ def init_schema(db):
         CREATE INDEX IF NOT EXISTS idx_relations_source
             ON knowledge_relations(source_type,source_id);
     """)
+    # Safe in-place schema upgrade for databases created by v0.6.7/0.6.8.
+    columns = {col["name"] for col in db.execute("PRAGMA table_info(knowledge_relations)")}
+    if "extraction_method" not in columns:
+        db.execute("""ALTER TABLE knowledge_relations ADD COLUMN extraction_method
+            TEXT NOT NULL DEFAULT 'explicit_quoted'""")
 
 
 def _concept(db, name):
@@ -122,9 +129,11 @@ def ingest(db,source_type,source_id,filename,text,clock):
     added=0
     seen=set()
     for ordinal, sentence in enumerate(raw_sentences(text),1):
-        match=parse_relation(sentence)
+        direct=parse_relation(sentence)
+        match=direct or parse_natural(sentence)
         if not match:
             continue
+        extraction_method="explicit_quoted" if direct else "conservative_natural"
         subject,predicate,obj=match
         digest=hashlib.sha256(sentence.encode("utf-8")).hexdigest()
         if digest in seen:
@@ -134,9 +143,9 @@ def ingest(db,source_type,source_id,filename,text,clock):
         oid=_concept(db,obj)
         res=db.execute("""INSERT OR IGNORE INTO knowledge_relations
             (subject_id,predicate,object_id,source_type,source_id,evidence,locator,
-             statement_hash,created) VALUES(?,?,?,?,?,?,?,?,?)""",
+             statement_hash,created,extraction_method) VALUES(?,?,?,?,?,?,?,?,?,?)""",
             (sid,predicate,oid,source_type,source_id,sentence,
-             f"{filename}, предложение {ordinal}",digest,clock))
+             f"{filename}, предложение {ordinal}",digest,clock,extraction_method))
         added+=res.rowcount
         if len(seen)>=MAX_EVIDENCE:
             break
@@ -156,7 +165,8 @@ def query(db,term=None,limit=100):
     limit=max(1,min(200,int(limit)))
     args=[]
     sql="""SELECT r.id,s.name AS subject,r.predicate,o.name AS object,
-        r.source_type,r.source_id,r.evidence,r.locator,r.statement_hash,r.created
+        r.source_type,r.source_id,r.evidence,r.locator,r.statement_hash,r.created,
+        r.extraction_method
         FROM knowledge_relations r
         JOIN relation_concepts s ON s.id=r.subject_id
         JOIN relation_concepts o ON o.id=r.object_id"""
