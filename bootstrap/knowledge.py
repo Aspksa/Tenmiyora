@@ -363,7 +363,7 @@ class KnowledgeStore:
 
         # Заголовок — отдельное, локальное свидетельство направления, не
         # повод приписать всей книге тему первых пяти страниц.
-        headings = list(re.finditer(r"(?m)^#{1,3} +([^\\r\\n]{5,72})\\s*$", text))[:12]
+        headings = list(re.finditer(r"(?m)^#{1,3} +([^\r\n]{5,72})\s*$", text))[:12]
         for index, match in enumerate(headings):
             heading = match.group(1).strip(" #.:")
             if not heading or SECRET_RE.search(heading):
@@ -395,7 +395,8 @@ class KnowledgeStore:
             return 0
         if "?" in text[:150]:
             return 0
-        if categorize(text) == ["Общие знания"]:
+        from topic_router import classify
+        if classify(text[:4000]) == ["Общие знания"]:
             return 0
         source_id = secrets.token_hex(12)
         with self.lock, self.db() as conn:
