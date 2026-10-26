@@ -1,5 +1,6 @@
 """Тесты независимой оценки Мозга и проверки честности контрольной разметки."""
 from copy import deepcopy
+import io
 import importlib.util
 import json
 from pathlib import Path
@@ -51,6 +52,15 @@ class QualityEvaluationTests(unittest.TestCase):
         broken["metrics"]["statement_recall"] = 0.0
         failures = quality.grade(broken, self.minimum)
         self.assertTrue(any(f["metric"] == "statement_recall" for f in failures))
+
+    def test_console_output_works_with_windows_codepages(self):
+        for encoding in ("cp1252", "cp1251"):
+            with self.subTest(encoding=encoding):
+                buffer = io.BytesIO()
+                output = io.TextIOWrapper(buffer, encoding=encoding)
+                quality.console_print("Проверка качества Tenmiyora", file=output)
+                output.flush()
+                self.assertTrue(buffer.getvalue())
 
     def test_no_network_or_workspace_dependency(self):
         with tempfile.TemporaryDirectory() as folder:
