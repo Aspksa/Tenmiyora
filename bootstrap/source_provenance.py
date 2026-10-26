@@ -8,6 +8,7 @@ conservative duplicate grouping for *active* uploaded documents only.
 from __future__ import annotations
 
 from datetime import date, datetime
+from collections import Counter
 import hashlib
 import json
 import re
@@ -100,13 +101,15 @@ def fingerprints(text):
     words=_content_tokens(text)
     if len(words)<MIN_SHINGLES+4:
         return []
-    grams=set()
+    grams=Counter()
     for i in range(len(words)-4):
         gram=" ".join(words[i:i+5])
-        grams.add(hashlib.blake2b(gram.encode("utf-8"),digest_size=8).hexdigest())
-    # Keep the smallest fingerprints consistently: bounded, deterministic
-    # bottom-k sample. Full-copy overlap is reliably detected.
-    return sorted(grams)[:MAX_FINGERPRINT]
+        key=hashlib.blake2b(gram.encode("utf-8"),digest_size=8).hexdigest()
+        grams[key]+=1
+    # Store deterministic bounded weighted shingles. Repeating a long
+    # copied boilerplate block is still detectable: set-only shingles
+    # would underweight repeated copied paragraphs.
+    return {key:grams[key] for key in sorted(grams)[:MAX_FINGERPRINT]}
 
 
 def init_schema(db):
@@ -152,13 +155,18 @@ def register(db,fid,sha,text,clock):
     others=db.execute("""SELECT p.file_id,p.fingerprints_json
         FROM file_provenance p JOIN files f ON f.id=p.file_id
         WHERE p.file_id<>? ORDER BY p.file_id LIMIT ?""",(fid,MAX_COMPARE)).fetchall()
-    a=set(stamps)
+    a=stamps
     stored=0
     for other in others:
-        b=set(json.loads(other["fingerprints_json"]))
-        if min(len(a),len(b))<MIN_SHINGLES:
+        b=json.loads(other["fingerprints_json"])
+        if not isinstance(b,dict):
             continue
-        overlap=len(a & b)/min(len(a),len(b))
+        volume_a=sum(a.values())
+        volume_b=sum(b.values())
+        if min(volume_a,volume_b)<MIN_SHINGLES:
+            continue
+        common=sum(min(volume,b.get(key,0)) for key,volume in a.items())
+        overlap=common/min(volume_a,volume_b)
         if overlap < COPY_CONTAINMENT:
             continue
         left,right=sorted((fid,other["file_id"]))
