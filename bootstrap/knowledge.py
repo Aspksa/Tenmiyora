@@ -199,6 +199,9 @@ class KnowledgeStore:
                 WHERE status='готово; смысловой анализ ожидает'""")
         from memory_engine import MemoryEngine
         self.engine = MemoryEngine(self)
+        from document_understanding import init_schema as document_schema
+        with self.lock, self.db() as conn:
+            document_schema(conn)
 
     @contextmanager
     def db(self):
@@ -261,6 +264,8 @@ class KnowledgeStore:
             parsed, status = extract_text(name, data)
         except (ValueError, zipfile.BadZipFile, ET.ParseError, OSError):
             parsed, status = "", "не удалось прочитать содержимое"
+        from document_understanding import extract_segments
+        document = extract_segments(name,data)
         updated = False
         with self.lock, self.db() as conn:
             if folder is not None and not conn.execute(
@@ -304,6 +309,8 @@ class KnowledgeStore:
                 # остаются *заявлениями документа*, не подлинным авторством.
                 from source_provenance import register as register_source
                 register_source(conn,fid,checksum,parsed,now())
+                from document_understanding import store as store_document
+                store_document(conn,fid,checksum,document)
                 if parsed.strip():
                     self._learn(conn,parsed,"file",fid,name)
                 temporary.replace(target)
@@ -480,6 +487,18 @@ class KnowledgeStore:
                 scored.append((score, dict(row)))
         scored.sort(key=lambda x: x[0], reverse=True)
         return [item for _, item in scored[:limit]]
+
+    def document_overview(self, fid):
+        from document_understanding import overview
+        with self.lock,self.db() as conn:
+            return overview(conn,str(fid))
+
+    def document_answer(self,fid,question):
+        from document_understanding import answer
+        with self.lock,self.db() as conn:
+            result=answer(conn,str(fid),question)
+            result["file_id"]=str(fid)
+            return result
 
     def semantic_source(self, fid):
         """Только локальное извлечение. Содержимое уходит модели позже, если она включена."""
