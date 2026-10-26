@@ -399,9 +399,12 @@ class KnowledgeStore:
             return 0
         from topic_router import classify
         from topic_discovery import discover
+        from topic_aliases import parse_pair
         from memory_engine import sentences
+        entries = list(sentences(text[:4000]))
         if (classify(text[:4000]) == ["Общие знания"] and
-                not discover(text[:4000], list(sentences(text[:4000])))):
+                not discover(text[:4000], entries) and
+                sum(bool(parse_pair(stmt)) for stmt in entries) < 2):
             return 0
         source_id = secrets.token_hex(12)
         with self.lock, self.db() as conn:
