@@ -251,33 +251,91 @@ class KnowledgeStore:
                     "breadcrumbs": crumb}
 
     def upload(self, name, data, folder=None, mime="application/octet-stream"):
+        """Повторная загрузка того же имени обновляет файл с архивированием версии."""
         name = clean_name(name)
         if not isinstance(data, bytes) or len(data) > MAX_UPLOAD:
             raise ValueError("Максимальный размер файла — 25 МБ.")
         mime = mime[:120] if isinstance(mime, str) else "application/octet-stream"
+        checksum = hashlib.sha256(data).hexdigest()
+        try:
+            parsed, status = extract_text(name, data)
+        except (ValueError, zipfile.BadZipFile, ET.ParseError, OSError):
+            parsed, status = "", "не удалось прочитать содержимое"
+        updated = False
         with self.lock, self.db() as conn:
-            if folder is not None and not conn.execute("SELECT 1 FROM folders WHERE id=?", (folder,)).fetchone():
+            if folder is not None and not conn.execute(
+                    "SELECT 1 FROM folders WHERE id=?", (folder,)).fetchone():
                 raise ValueError("Папка не найдена.")
-            fid = secrets.token_hex(16)
+            previous = conn.execute("""SELECT id,name,sha256,size,status FROM files
+                WHERE folder IS ? AND name=? ORDER BY created DESC LIMIT 1""",
+                (folder, name)).fetchone()
+            if previous and previous["sha256"] == checksum:
+                return {"id": previous["id"], "name": name,
+                        "status": "без изменений", "size": len(data)}
+            fid = previous["id"] if previous else secrets.token_hex(16)
+            updated = previous is not None
             target = self.objects / fid
-            with target.open("xb") as stream:
-                stream.write(data)
-                stream.flush()
-                os.fsync(stream.fileno())
+            temporary = self.objects / (fid + "-stage-" + secrets.token_hex(5))
+            archived = None
             try:
-                try:
-                    parsed, status = extract_text(name, data)
-                except (ValueError, zipfile.BadZipFile, ET.ParseError, OSError):
-                    parsed, status = "", "не удалось прочитать содержимое"
-                conn.execute("INSERT INTO files VALUES(?,?,?,?,?,?,?,?)",
-                             (fid, folder, name, len(data), mime, hashlib.sha256(data).hexdigest(), status, now()))
+                with temporary.open("xb") as stream:
+                    stream.write(data)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                if updated:
+                    directory = self.root / "versions" / fid
+                    directory.mkdir(parents=True, exist_ok=True)
+                    archived = directory / (previous["sha256"] + ".bin")
+                    if not archived.exists():
+                        shutil.copy2(target, archived)
+                    conn.execute("""INSERT OR IGNORE INTO file_versions
+                        (file_id,sha256,size,relative_path,saved_at) VALUES(?,?,?,?,?)""",
+                        (fid,previous["sha256"],previous["size"],
+                         str(archived.relative_to(self.root)),now()))
+                    conn.execute("DELETE FROM facts WHERE source_type='file' AND source_id=?",(fid,))
+                    self.engine.remove_source(conn,"file",fid)
+                    conn.execute("""UPDATE files SET size=?,mime=?,sha256=?,status=?,created=? WHERE id=?""",
+                                 (len(data),mime,checksum,status,now(),fid))
+                else:
+                    conn.execute("INSERT INTO files VALUES(?,?,?,?,?,?,?,?)",
+                                 (fid,folder,name,len(data),mime,checksum,status,now()))
                 if parsed.strip():
-                    self._learn(conn, parsed, "file", fid, name)
-                self.log(conn, "загрузка", name)
+                    self._learn(conn,parsed,"file",fid,name)
+                temporary.replace(target)
+                self.log(conn,"обновление файла" if updated else "загрузка",name)
+                self.engine.audit(conn,"новая версия" if updated else "новый файл",
+                                  "file",fid,checksum)
             except Exception:
-                target.unlink(missing_ok=True)
+                temporary.unlink(missing_ok=True)
+                if updated and archived is not None and archived.exists():
+                    shutil.copy2(archived,target)
+                if not updated:
+                    target.unlink(missing_ok=True)
                 raise
-            return {"id": fid, "name": name, "status": status, "size": len(data)}
+        if parsed.strip():
+            try:
+                self.engine.ingest("file",fid,name,parsed)
+            except Exception:
+                with self.lock, self.db() as conn:
+                    conn.execute("UPDATE files SET status=? WHERE id=?",
+                                 ("готово; индекс утверждений требует проверки",fid))
+                raise
+        return {"id":fid,"name":name,"status":status,"size":len(data)}
+
+    def restore_file_version(self, fid, sha256):
+        """Локальный откат файла через ту же транзакционную загрузку."""
+        with self.lock,self.db() as conn:
+            current = conn.execute("SELECT name,folder,mime FROM files WHERE id=?",(fid,)).fetchone()
+            version = conn.execute("""SELECT relative_path FROM file_versions
+                WHERE file_id=? AND sha256=?""",(fid,sha256)).fetchone()
+            if not current or not version:
+                raise ValueError("Версия файла не найдена.")
+            # Путь генерируется сервером, не берётся напрямую от пользователя.
+            raw = (self.root / version["relative_path"]).read_bytes()
+            if hashlib.sha256(raw).hexdigest() != sha256:
+                raise ValueError("Архивная версия повреждена.")
+            name,folder,mime = current["name"],current["folder"],current["mime"]
+        return self.upload(name,raw,folder,mime)
 
     def _branch(self, conn, name, parent=None):
         row = conn.execute("SELECT id FROM branches WHERE parent IS ? AND name=?", (parent, name)).fetchone()
