@@ -273,7 +273,7 @@ class MemoryEngine:
                     leaf = self._branch(db, child, root) if child else root
                     count += self._insert(db, leaf, source_type, source_id, stmt,
                                           f"{name}, утверждение {offset}")
-            aliases = learn_aliases(db,source_type,source_id,entries,now(),digest)
+            aliases = learn_aliases(db,source_type,source_id,text,now(),digest)
             self._relate(db, roots, source_type, source_id)
             self.audit(db, "извлечение утверждений", source_type, source_id,
                        f"добавлено {count}; проверенных синонимичных связей {aliases}")
