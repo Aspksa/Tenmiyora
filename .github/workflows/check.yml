@@ -8,7 +8,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 12
+    timeout-minutes: 16
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -26,8 +26,28 @@ jobs:
           }
       - name: Подготовить декодер PDF для контрольных документов
         run: python -m pip install "pypdf>=5,<7"
-      - name: Проверить сервер и запуск BAT
+      - name: Проверить сервер, Мозг и запуск BAT
         run: python -m unittest discover -s tests -v
+      - name: Проверить JavaScript и положение окон
+        run: |
+          node --check web/app.js
+          node --check web/layout.js
+          node --check web/knowledge.js
+          node --test tests/layout.test.cjs
+
+  quality:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Подготовить декодер PDF для контрольных документов
+        run: python -m pip install "pypdf>=5,<7"
       - name: Экзамен качества DOCX XLSX PDF и цитирования
         run: python bootstrap/document_quality_exam.py --check --output .runtime/quality-reports
       - name: Измерить качество извлечения знаний и поиска
@@ -43,9 +63,3 @@ jobs:
           name: quality-reports-${{ matrix.os }}
           path: .runtime/quality-reports/*.json
           if-no-files-found: warn
-      - name: Проверить JavaScript и положение окон
-        run: |
-          node --check web/app.js
-          node --check web/layout.js
-          node --check web/knowledge.js
-          node --test tests/layout.test.cjs
