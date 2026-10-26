@@ -18,6 +18,7 @@ from topic_discovery import discover
 from topic_aliases import init_schema as init_alias_schema, learn as learn_aliases, remove_source as remove_alias_source, resolve as resolve_alias
 from knowledge_relations import init_schema as init_relation_schema, ingest as ingest_relations, remove_source as remove_relations, query as query_relations, for_question as relations_for_question
 from knowledge_paths import trace_paths, for_question as paths_for_question
+from relation_suggestions import init_schema as init_suggestion_schema, remove as remove_suggestions
 
 TOKEN = re.compile(r"[a-zа-яё0-9_]{3,}", re.IGNORECASE)
 SENTENCE = re.compile(r"(?<=[.!?])\s+(?=[А-ЯЁA-Z])|\n\s*\n")
@@ -180,6 +181,7 @@ class MemoryEngine:
             """)
             init_alias_schema(db)
             init_relation_schema(db)
+            init_suggestion_schema(db)
             try:
                 db.execute("CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts USING fts5(statement, branch_name, tokenize='unicode61')")
                 self.fts = True
@@ -333,6 +335,7 @@ class MemoryEngine:
                    (source_type,source_id))
         remove_alias_source(db,source_type,source_id,now())
         remove_relations(db,source_type,source_id)
+        remove_suggestions(db,source_type,source_id)
         # Очищаем только автоматически открытые, больше никем не используемые
         # ветки; ручные/давние ветки не затрагиваем.
         stale = db.execute("""SELECT t.branch_id FROM discovered_topics t
