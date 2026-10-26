@@ -14,6 +14,7 @@ import unicodedata
 from knowledge import CATEGORIES, CHILDREN, SECRET_RE, categorize, chunks, now
 from semantic import normalize_label
 from topic_router import classify, choose_child
+from topic_discovery import discover
 
 TOKEN = re.compile(r"[a-zа-яё0-9_]{3,}", re.IGNORECASE)
 SENTENCE = re.compile(r"(?<=[.!?])\s+(?=[А-ЯЁA-Z])|\n\s*\n")
@@ -135,6 +136,18 @@ class MemoryEngine:
                   UNIQUE(branch_id,source_type,source_id,content_hash)
                 );
                 CREATE INDEX IF NOT EXISTS idx_knowledge_sources ON knowledge_items(source_type,source_id);
+                CREATE TABLE IF NOT EXISTS discovered_topics(
+                  branch_id INTEGER PRIMARY KEY REFERENCES branches(id),
+                  method TEXT NOT NULL, created TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS discovery_evidence(
+                  branch_id INTEGER NOT NULL REFERENCES branches(id),
+                  source_type TEXT NOT NULL, source_id TEXT NOT NULL,
+                  statement_hash TEXT NOT NULL, created TEXT NOT NULL,
+                  PRIMARY KEY(branch_id,source_type,source_id,statement_hash)
+                );
+                CREATE INDEX IF NOT EXISTS idx_discovery_source
+                  ON discovery_evidence(source_type,source_id);
                 CREATE INDEX IF NOT EXISTS idx_knowledge_claims ON knowledge_items(source_type,source_id,claim_key);
                 CREATE TABLE IF NOT EXISTS knowledge_edges(
                   left_id INTEGER NOT NULL REFERENCES branches(id),
@@ -228,14 +241,29 @@ class MemoryEngine:
             return 0
         count = 0
         roots = set()
+        detected = discover(text, entries)
+        per_statement = {}
+        for label, indices in detected.items():
+            for index in indices:
+                per_statement.setdefault(index, []).append(label)
         with self.store.lock, self.store.db() as db:
             for offset, stmt in enumerate(entries, 1):
-                # Классификация *только* текущего утверждения: обложка или
-                # первые страницы не меняют тему независимого раздела.
+                # Новая категория принимается только после подтверждения
+                # минимум двумя разными исходными утверждениями.
                 categories = classify(stmt)
+                proposed = per_statement.get(offset - 1, [])
+                if categories == ["Общие знания"] and proposed:
+                    categories = proposed[:2]
                 for category in categories:
                     root = self._branch(db, category)
                     roots.add(root)
+                    if category in detected:
+                        db.execute("INSERT OR IGNORE INTO discovered_topics VALUES(?,?,?)",
+                                   (root, "two_source_statements", now()))
+                        db.execute("""INSERT OR IGNORE INTO discovery_evidence
+                            (branch_id,source_type,source_id,statement_hash,created)
+                            VALUES(?,?,?,?,?)""",
+                            (root, source_type, source_id, digest(stmt), now()))
                     child = choose_child(category, stmt)
                     leaf = self._branch(db, child, root) if child else root
                     count += self._insert(db, leaf, source_type, source_id, stmt,
@@ -282,6 +310,18 @@ class MemoryEngine:
                    (source_type,source_id))
         db.execute("DELETE FROM knowledge_edges WHERE source_type=? AND source_id=?",
                    (source_type,source_id))
+        db.execute("DELETE FROM discovery_evidence WHERE source_type=? AND source_id=?",
+                   (source_type,source_id))
+        # Очищаем только автоматически открытые, больше никем не используемые
+        # ветки; ручные/давние ветки не затрагиваем.
+        stale = db.execute("""SELECT t.branch_id FROM discovered_topics t
+            WHERE NOT EXISTS (SELECT 1 FROM discovery_evidence e WHERE e.branch_id=t.branch_id)
+              AND NOT EXISTS (SELECT 1 FROM knowledge_items k WHERE k.branch_id=t.branch_id)
+              AND NOT EXISTS (SELECT 1 FROM facts f WHERE f.branch=t.branch_id)
+              AND NOT EXISTS (SELECT 1 FROM branches b WHERE b.parent=t.branch_id)""").fetchall()
+        for node in stale:
+            db.execute("DELETE FROM discovered_topics WHERE branch_id=?", (node["branch_id"],))
+            db.execute("DELETE FROM branches WHERE id=?", (node["branch_id"],))
         self.audit(db,"удаление индексированных знаний",source_type,source_id,
                    f"снято {len(old)} записей")
 
