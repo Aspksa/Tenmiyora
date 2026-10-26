@@ -192,6 +192,8 @@ def _risk(props):
             flags.append("older_than_3_years_review_applicability")
     if props["declared_kind"] not in ("primary","secondary"):
         flags.append("source_type_unknown")
+    elif props["declared_kind"]=="secondary":
+        flags.append("declared_secondary_not_primary")
     if not props["identity_verified"]:
         flags.append("identity_unverified")
     return flags
@@ -206,9 +208,15 @@ def details(db,fid):
     pairs=db.execute("""SELECT left_id,right_id,overlap,method
         FROM file_borrowing WHERE left_id=? OR right_id=?
         ORDER BY overlap DESC LIMIT 20""",(fid,fid)).fetchall()
+    risk=_risk(record)
+    count=db.execute("SELECT COUNT(*) FROM file_provenance").fetchone()[0]
+    if count>MAX_COMPARE+1:
+        risk.append("copy_scan_not_exhaustive")
+    if pairs:
+        risk.append("possible_text_borrowing")
     return {"file_id":fid,"metadata":record,
             "self_declared_not_verified":True,
-            "risk_flags":_risk(record),
+            "risk_flags":risk,
             "possible_borrowing":[dict(p) for p in pairs],
             "method_limit":"local similarity scan, at most 750 other files"}
 
@@ -241,6 +249,7 @@ def group_sources(db, rows):
             parent[max(pa,pb)]=min(pa,pb)
     by_author={}
     by_origin={}
+    by_publisher_without_author={}
     for fid in ids:
         doc=info.get(fid)
         if not doc:
@@ -254,6 +263,14 @@ def group_sources(db, rows):
                     union(fid,index[normalized])
                 else:
                     index[normalized]=fid
+        # One issuer publishing anonymous derivatives cannot be counted as
+        # multiple named authors merely because filenames differ.
+        if not doc.get("declared_author") and doc.get("declared_publisher"):
+            pub=doc["declared_publisher"].casefold().strip()
+            if pub in by_publisher_without_author:
+                union(fid,by_publisher_without_author[pub])
+            else:
+                by_publisher_without_author[pub]=fid
     for row in db.execute(
         f"""SELECT left_id,right_id FROM file_borrowing
             WHERE left_id IN ({q}) AND right_id IN ({q})""",ids+ids):
@@ -270,4 +287,10 @@ def group_sources(db, rows):
         warnings.append("claimed_identity_not_verified")
     if len(grouped)<len(ids):
         warnings.append("possible_common_authorship_or_borrowing")
+    known_publishers=[info[i]["declared_publisher"].casefold()
+                      for i in ids if info.get(i) and info[i].get("declared_publisher")]
+    if len(known_publishers)>len(set(known_publishers)):
+        warnings.append("same_declared_publisher")
+    if any(info.get(i) and info[i].get("declared_kind")=="secondary" for i in ids):
+        warnings.append("secondary_publication_declared")
     return list(grouped.values()),warnings
