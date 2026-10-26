@@ -19,7 +19,7 @@ class Source:
     def __init__(self, files, ci=True):
         self.files = files
         self.downloads = 0
-        self.release = {'commit': 'a' * 40, 'version': '0.6.7', 'ci_passed': ci,
+        self.release = {'commit': 'a' * 40, 'version': '99.0.1', 'ci_passed': ci,
                         'files': {name: {'git_sha': u.git_hash(data), 'size': len(data), 'mode': '100644'} for name, data in files.items()}}
 
     def resolve(self):
@@ -34,7 +34,7 @@ class Source:
 
 def candidate():
     files = {name: (ROOT / name).read_bytes() for name in u.REQUIRED}
-    files['bootstrap/server.py'] = files['bootstrap/server.py'].replace(b'0.6.6', b'0.6.7')
+    files['bootstrap/server.py'] = files['bootstrap/server.py'].replace(u.version_from_source(files['bootstrap/server.py']).encode(), b'99.0.1', 1)
     files['new.txt'] = b'new file'
     return files
 

@@ -15,6 +15,7 @@ from knowledge import CATEGORIES, CHILDREN, SECRET_RE, categorize, chunks, now
 from semantic import normalize_label
 from topic_router import classify, choose_child
 from topic_discovery import discover
+from topic_aliases import init_schema as init_alias_schema, learn as learn_aliases, remove_source as remove_alias_source, resolve as resolve_alias
 
 TOKEN = re.compile(r"[a-zа-яё0-9_]{3,}", re.IGNORECASE)
 SENTENCE = re.compile(r"(?<=[.!?])\s+(?=[А-ЯЁA-Z])|\n\s*\n")
@@ -175,6 +176,7 @@ class MemoryEngine:
                   saved_at TEXT NOT NULL, UNIQUE(file_id,sha256)
                 );
             """)
+            init_alias_schema(db)
             try:
                 db.execute("CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts USING fts5(statement, branch_name, tokenize='unicode61')")
                 self.fts = True
@@ -200,6 +202,9 @@ class MemoryEngine:
                    (now(), action, source_type, source_id, detail[:500]))
 
     def _branch(self, db, name, parent=None):
+        known = resolve_alias(db,name,parent)
+        if known is not None:
+            return known
         key = normalize_label(name)
         target = ALIASES.get(key, key)
         for row in db.execute("SELECT id,name FROM branches WHERE parent IS ?", (parent,)):
@@ -238,6 +243,13 @@ class MemoryEngine:
         """Сохраняет самостоятельные предложения из исходного текста с локатором."""
         entries = list(sentences(text))
         if not entries:
+            # Короткие утверждения о синонимах имеют собственную проверку;
+            # не надо отбрасывать их из-за общего требования 5 слов.
+            with self.store.lock, self.store.db() as db:
+                merged = learn_aliases(db,source_type,source_id,text,now(),digest)
+                if merged:
+                    self.audit(db,"объединение названий",source_type,source_id,
+                               f"подтверждено {merged} связей")
             return 0
         count = 0
         roots = set()
@@ -268,8 +280,10 @@ class MemoryEngine:
                     leaf = self._branch(db, child, root) if child else root
                     count += self._insert(db, leaf, source_type, source_id, stmt,
                                           f"{name}, утверждение {offset}")
+            aliases = learn_aliases(db,source_type,source_id,text,now(),digest)
             self._relate(db, roots, source_type, source_id)
-            self.audit(db, "извлечение утверждений", source_type, source_id, f"добавлено {count}")
+            self.audit(db, "извлечение утверждений", source_type, source_id,
+                       f"добавлено {count}; проверенных синонимичных связей {aliases}")
         return count
 
     def _relate(self, db, roots, source_type, source_id):
@@ -312,13 +326,15 @@ class MemoryEngine:
                    (source_type,source_id))
         db.execute("DELETE FROM discovery_evidence WHERE source_type=? AND source_id=?",
                    (source_type,source_id))
+        remove_alias_source(db,source_type,source_id,now())
         # Очищаем только автоматически открытые, больше никем не используемые
         # ветки; ручные/давние ветки не затрагиваем.
         stale = db.execute("""SELECT t.branch_id FROM discovered_topics t
             WHERE NOT EXISTS (SELECT 1 FROM discovery_evidence e WHERE e.branch_id=t.branch_id)
               AND NOT EXISTS (SELECT 1 FROM knowledge_items k WHERE k.branch_id=t.branch_id)
               AND NOT EXISTS (SELECT 1 FROM facts f WHERE f.branch=t.branch_id)
-              AND NOT EXISTS (SELECT 1 FROM branches b WHERE b.parent=t.branch_id)""").fetchall()
+              AND NOT EXISTS (SELECT 1 FROM branches b WHERE b.parent=t.branch_id)
+              AND NOT EXISTS (SELECT 1 FROM topic_aliases a WHERE a.canonical_id=t.branch_id)""").fetchall()
         for node in stale:
             db.execute("DELETE FROM discovered_topics WHERE branch_id=?", (node["branch_id"],))
             db.execute("DELETE FROM branches WHERE id=?", (node["branch_id"],))

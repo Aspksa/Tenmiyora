@@ -56,7 +56,7 @@ class WindowsUpdateTests(unittest.TestCase):
             updater.write_text(code, encoding='utf-8')
             files = {str(path.relative_to(root)).replace('\\', '/'): path.read_bytes() for directory in ['bootstrap', 'web'] for path in (root / directory).rglob('*') if path.is_file() and '__pycache__' not in path.parts}
             files['Tenmiyora.bat'] = (root / 'Tenmiyora.bat').read_bytes()
-            files['bootstrap/server.py'] = files['bootstrap/server.py'].replace(b'0.6.6', b'0.6.7')
+            files['bootstrap/server.py'] = files['bootstrap/server.py'].replace(u.version_from_source(files['bootstrap/server.py']).encode(), b'99.0.1', 1)
             source = Source(files)
             source.archive(source.release['commit'], archive)
             u.write_json(root / '.runtime/updates/config.json', {'automatic': False})
@@ -101,7 +101,7 @@ class WindowsUpdateTests(unittest.TestCase):
                 api('connection', {'provider': 'cloudru', 'model': 'test-model', 'key': 'test-only-secret'})
                 before = (root / '.runtime/workspace.json').read_bytes()
                 api('update/install', {})
-                second = wait_for(lambda: session('0.6.7', first['pid']))
+                second = wait_for(lambda: session('99.0.1', first['pid']))
                 api = browser(second)
                 wait_for(lambda: api('update/status')['phase'] == 'installed')
                 self.assertEqual(second['url'], first['url'])
@@ -109,14 +109,14 @@ class WindowsUpdateTests(unittest.TestCase):
                 self.assertIn('test-only-secret', before.decode())
                 # Valid syntax and probe, but the new server fails at startup.
                 bad = dict(files)
-                bad['bootstrap/server.py'] = bad['bootstrap/server.py'].replace(b'0.6.7', b'0.6.8') + b'\n'
+                bad['bootstrap/server.py'] = bad['bootstrap/server.py'].replace(b'99.0.1', b'99.0.2') + b'\n'
                 bad['bootstrap/server.py'] = bad['bootstrap/server.py'].replace(b'    main()', b'    raise RuntimeError("intentional startup failure")')
                 self.assertIn(b'intentional startup failure', bad['bootstrap/server.py'])
                 source = Source(bad)
-                source.release.update(commit='c' * 40, version='0.6.8')
+                source.release.update(commit='c' * 40, version='99.0.2')
                 source.archive(source.release['commit'], archive)
                 api('update/install', {})
-                third = wait_for(lambda: session('0.6.7', second['pid']))
+                third = wait_for(lambda: session('99.0.1', second['pid']))
                 api = browser(third)
                 wait_for(lambda: api('update/status')['phase'] == 'rolled_back')
                 self.assertEqual((root / '.runtime/workspace.json').read_bytes(), before)
