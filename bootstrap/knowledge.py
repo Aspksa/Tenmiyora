@@ -497,7 +497,8 @@ class KnowledgeStore:
             conn.execute("UPDATE files SET status=? WHERE id=?", (status[:120], fid))
             return True
 
-    def integrate_semantic(self, fid, proposed, samples, expected_sha=None):
+    def integrate_semantic(self, fid, proposed, samples, expected_sha=None,
+                           relation_candidates=None):
         """Добавляем только оригинальные фрагменты; данные модели — лишь маршрутизация."""
         from semantic import normalize_label
         evidence = {item["id"]: item["text"] for item in samples}
@@ -519,7 +520,13 @@ class KnowledgeStore:
                          f"{file['name']}, смысловой фрагмент {excerpt_id}", now()))
                     created += cursor.rowcount
             created += self.engine.add_semantic(conn, fid, file["name"], proposed, samples)
-            self.log(conn, "смысловой анализ", f"{file['name']}: добавлено {created} записей")
+            candidate_count = 0
+            if relation_candidates:
+                from relation_suggestions import store as store_suggestions
+                candidate_count = store_suggestions(
+                    conn, fid, file["sha256"], relation_candidates, now())
+            self.log(conn, "смысловой анализ",
+                     f"{file['name']}: записей {created}; неподтверждённых отношений {candidate_count}")
             conn.execute("UPDATE files SET status=? WHERE id=?",
                          ("готово; смысловой анализ завершён", fid))
             return created
