@@ -10,6 +10,14 @@ jobs:
   performance:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - documents: 1000
+            paragraphs: 3
+          - documents: 10000
+            paragraphs: 1
     permissions:
       contents: read
     steps:
@@ -17,12 +25,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-      - name: Измерить 1000 документов, поиск, память и проверку источников
-        run: python bootstrap/performance_benchmark.py --documents 1000 --paragraphs 3 --queries 100 --check --output .runtime/performance
+      - name: Измерить масштабируемость: поиск, память и проверка источников
+        run: python bootstrap/performance_benchmark.py --documents ${{ matrix.documents }} --paragraphs ${{ matrix.paragraphs }} --queries 100 --check --output .runtime/performance
       - name: Опубликовать машинно-читаемый отчёт
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: tenmiyora-performance-1000
+          name: tenmiyora-performance-${{ matrix.documents }}
           path: .runtime/performance/*.json
           if-no-files-found: warn
