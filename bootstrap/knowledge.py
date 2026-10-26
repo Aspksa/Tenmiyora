@@ -193,6 +193,9 @@ class KnowledgeStore:
                 CREATE INDEX IF NOT EXISTS idx_facts_source ON facts(source_type,source_id);
                 CREATE INDEX IF NOT EXISTS idx_files_folder ON files(folder);
             """)
+            # Прерванные при выключении задачи не должны выглядеть выполняющимися.
+            conn.execute("""UPDATE files SET status='готово; анализ прерван при остановке'
+                WHERE status='готово; смысловой анализ ожидает'""")
     @contextmanager
     def db(self):
         conn = sqlite3.connect(self.db_path, timeout=15)
@@ -362,6 +365,63 @@ class KnowledgeStore:
                 scored.append((score, dict(row)))
         scored.sort(key=lambda x: x[0], reverse=True)
         return [item for _, item in scored[:limit]]
+
+    def semantic_source(self, fid):
+        """Только локальное извлечение. Содержимое уходит модели позже, если она включена."""
+        with self.lock, self.db() as conn:
+            row = conn.execute("SELECT name,status FROM files WHERE id=?", (fid,)).fetchone()
+            if not row or not row["status"].startswith("готово"):
+                return None
+            name = row["name"]
+            raw = (self.objects / fid).read_bytes()
+            labels = [item["name"] for item in conn.execute(
+                "SELECT name FROM branches ORDER BY id DESC LIMIT 80").fetchall()]
+        parsed, status = extract_text(name, raw)
+        return (name, parsed, labels) if status == "готово" and parsed.strip() else None
+
+    def mark_semantic(self, fid, status):
+        with self.lock, self.db() as conn:
+            row = conn.execute("SELECT id FROM files WHERE id=?", (fid,)).fetchone()
+            if not row:
+                return False
+            conn.execute("UPDATE files SET status=? WHERE id=?", (status[:120], fid))
+            return True
+
+    def integrate_semantic(self, fid, proposed, samples):
+        """Добавляем только оригинальные фрагменты; данные модели — лишь маршрутизация."""
+        from semantic import normalize_label
+        evidence = {item["id"]: item["text"] for item in samples}
+        with self.lock, self.db() as conn:
+            file = conn.execute("SELECT name FROM files WHERE id=?", (fid,)).fetchone()
+            if not file:
+                return 0  # Файл удалён, пока выполнялся запрос к модели.
+            created = 0
+            for item in proposed:
+                root_name = item["category"]
+                row = next((r for r in conn.execute(
+                    "SELECT id,name FROM branches WHERE parent IS NULL")
+                    if normalize_label(r["name"]) == normalize_label(root_name)), None)
+                root_id = row["id"] if row else self._branch(conn, root_name)
+                leaf_id = root_id
+                if item["branch"]:
+                    child_name = item["branch"]
+                    child = next((r for r in conn.execute(
+                        "SELECT id,name FROM branches WHERE parent=?", (root_id,))
+                        if normalize_label(r["name"]) == normalize_label(child_name)), None)
+                    leaf_id = child["id"] if child else self._branch(conn, child_name, root_id)
+                for excerpt_id in item["evidence_ids"]:
+                    excerpt = evidence.get(excerpt_id)
+                    if not excerpt:
+                        continue
+                    cursor = conn.execute(
+                        "INSERT OR IGNORE INTO facts(branch,source_type,source_id,excerpt,locator,created) VALUES(?,?,?,?,?,?)",
+                        (leaf_id, "file", fid, excerpt,
+                         f"{file['name']}, смысловой фрагмент {excerpt_id}", now()))
+                    created += cursor.rowcount
+            self.log(conn, "смысловой анализ", f"{file['name']}: добавлено {created} записей")
+            conn.execute("UPDATE files SET status=? WHERE id=?",
+                         ("готово; смысловой анализ завершён", fid))
+            return created
 
     def download(self, fid):
         with self.lock, self.db() as conn:

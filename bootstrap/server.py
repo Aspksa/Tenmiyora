@@ -11,6 +11,7 @@ import json
 import logging
 import math
 import os
+import queue
 from pathlib import Path
 import secrets
 import sys
@@ -22,8 +23,9 @@ import urllib.request
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from knowledge import KnowledgeStore, MAX_UPLOAD
+from semantic import make_messages, parse_topics, samples_from_text
 
-VERSION = "0.5.0"
+VERSION = "0.5.1"
 CLOUDRU_URL = "https://foundation-models.api.cloud.ru/v1"
 WEB_ROOT = Path(__file__).resolve().parents[1] / "web"
 STATIC = {
@@ -117,6 +119,9 @@ class Workspace:
         self.directory = Path(directory) if directory else None
         self._temporary_knowledge = tempfile.TemporaryDirectory() if directory is None else None
         self.knowledge = KnowledgeStore(self.directory if self.directory else self._temporary_knowledge.name)
+        self.semantic_queue = queue.Queue(maxsize=12)
+        self.semantic_guard = threading.Lock()
+        self.semantic_thread = None
         self.data = deepcopy(DEFAULT)
         if self.directory:
             self.directory.mkdir(parents=True, exist_ok=True)
@@ -192,7 +197,7 @@ class Workspace:
             public = self.public()
             return {"connection": public["connection"], "model_cache": public["model_cache"]}
 
-    def provider(self, suffix, payload=None, connection=None):
+    def provider(self, suffix, payload=None, connection=None, timeout=None, max_bytes=None):
         if connection is None:
             with self.lock:
                 connection = deepcopy(self.data["connection"])
@@ -202,9 +207,14 @@ class Workspace:
         request = urllib.request.Request(url, headers={"Authorization": "Bearer " + connection["key"], "Content-Type": "application/json", "User-Agent": "Tenmiyora/" + VERSION}, data=json.dumps(payload, ensure_ascii=False, allow_nan=False).encode("utf-8") if payload is not None else None)
         try:
             opener = urllib.request.build_opener(NoRedirect())
-            # A long model response must not be cut off by an application deadline or byte cap.
-            with opener.open(request, timeout=None if suffix == "/chat/completions" else 30) as response:
-                return json.loads(response.read())
+            # Чат остаётся без искусственного ограничения; фоновый анализ
+            # документов имеет отдельные пределы времени и размера ответа.
+            deadline = timeout if timeout is not None else (None if suffix == "/chat/completions" else 30)
+            with opener.open(request, timeout=deadline) as response:
+                data = response.read(max_bytes + 1 if max_bytes else -1)
+                if max_bytes and len(data) > max_bytes:
+                    raise AppError("Ответ классификатора слишком большой.", 502)
+                return json.loads(data)
         except urllib.error.HTTPError as error:
             hints = {400: "Проверьте поддержку чата выбранной моделью и размер её контекста.", 401: "Проверьте API-ключ.", 403: "Проверьте доступ к модели.", 404: "Проверьте адрес API и идентификатор модели.", 429: "Достигнут лимит провайдера. Повторите позже."}
             raise AppError(f"Провайдер вернул HTTP {error.code}. " + hints.get(error.code, "Повторите запрос позже."), 502) from None
@@ -261,6 +271,65 @@ class Workspace:
             self.save()
             public = self.public()
             return {"connection": public["connection"], "model_cache": public["model_cache"]}
+
+    def schedule_semantic(self, fid):
+        """Один анализ на новый поддерживаемый файл; никаких скрытых повторов."""
+        if os.environ.get("TENMIYORA_SEMANTIC_ENABLED", "1").strip().lower() in ("0", "false", "off"):
+            return False
+        with self.lock:
+            connection = deepcopy(self.data["connection"])
+        if not connection["key"] or not connection["model"]:
+            return False
+        if not self.knowledge.mark_semantic(fid, "готово; смысловой анализ ожидает"):
+            return False
+        try:
+            self.semantic_queue.put_nowait((fid, connection))
+        except queue.Full:
+            self.knowledge.mark_semantic(fid, "готово; очередь смыслового анализа занята")
+            return False
+        with self.semantic_guard:
+            if self.semantic_thread is None or not self.semantic_thread.is_alive():
+                self.semantic_thread = threading.Thread(
+                    target=self._semantic_worker, name="TenmiyoraSemantic", daemon=True)
+                self.semantic_thread.start()
+        return True
+
+    def _semantic_worker(self):
+        while True:
+            try:
+                fid, connection = self.semantic_queue.get_nowait()
+            except queue.Empty:
+                with self.semantic_guard:
+                    if self.semantic_queue.empty():
+                        self.semantic_thread = None
+                        return
+                continue
+            try:
+                source = self.knowledge.semantic_source(fid)
+                if source is None:
+                    self.knowledge.mark_semantic(fid, "готово; нет подходящего текста для анализа")
+                    continue
+                name, text, existing = source
+                samples = samples_from_text(text)
+                if not samples:
+                    self.knowledge.mark_semantic(fid, "готово; недостаточно текста для смыслового анализа")
+                    continue
+                messages = make_messages(samples, existing)
+                result = self.provider(
+                    "/chat/completions",
+                    {"model": connection["model"], "messages": messages, "stream": False},
+                    connection=connection, timeout=40, max_bytes=65_536)
+                answer = result["choices"][0]["message"]["content"]
+                proposals = parse_topics(answer, samples)
+                self.knowledge.integrate_semantic(fid, proposals, samples)
+            except (AppError, ValueError, IndexError, KeyError, TypeError, OSError):
+                logging.exception("Смысловая классификация не удалась (файл ID %s)", fid)
+                self.knowledge.mark_semantic(fid, "готово; смысловой анализ не выполнен")
+            except Exception:
+                logging.exception("Неожиданная ошибка смыслового анализа (файл ID %s)", fid)
+                self.knowledge.mark_semantic(fid, "готово; смысловой анализ не выполнен")
+            finally:
+                self.semantic_queue.task_done()
 
     def chat(self, payload):
         content = payload.get("message", "")
@@ -458,6 +527,8 @@ class Handler(BaseHTTPRequestHandler):
                     raise AppError("Файл передан не полностью.")
                 result = self.server.workspace.knowledge.upload(
                     name, payload, folder, self.headers.get("X-Tenmiyora-Mime", "application/octet-stream"))
+                if result["status"] == "готово" and self.server.workspace.schedule_semantic(result["id"]):
+                    result["status"] = "готово; смысловой анализ выполняется"
                 self.json_reply(200, result)
             except (ValueError, TypeError, AppError) as error:
                 self.json_reply(error.status if isinstance(error, AppError) else 400, {"error": str(error)})
