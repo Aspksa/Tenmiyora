@@ -17,6 +17,7 @@ from topic_router import classify, choose_child
 from topic_discovery import discover
 from topic_aliases import init_schema as init_alias_schema, learn as learn_aliases, remove_source as remove_alias_source, resolve as resolve_alias
 from knowledge_relations import init_schema as init_relation_schema, ingest as ingest_relations, remove_source as remove_relations, query as query_relations, for_question as relations_for_question
+from knowledge_paths import trace_paths, for_question as paths_for_question
 
 TOKEN = re.compile(r"[a-zа-яё0-9_]{3,}", re.IGNORECASE)
 SENTENCE = re.compile(r"(?<=[.!?])\s+(?=[А-ЯЁA-Z])|\n\s*\n")
@@ -354,6 +355,15 @@ class MemoryEngine:
     def contextual_relations(self,question,limit=4):
         with self.store.lock,self.store.db() as db:
             return relations_for_question(db,question,limit)
+
+    def trace_knowledge(self, start, end, max_depth=3, max_paths=5):
+        """Подтверждающие документы для каждого шага маршрута."""
+        with self.store.lock,self.store.db() as db:
+            return trace_paths(db,start,end,max_depth,max_paths)
+
+    def contextual_paths(self,question,max_depth=3,max_paths=2):
+        with self.store.lock,self.store.db() as db:
+            return paths_for_question(db,question,max_depth,max_paths)
 
     def reserve_semantic(self, daily=10):
         """Атомарный лимит обращений, переживающий перезапуск."""
