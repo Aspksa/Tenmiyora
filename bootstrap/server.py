@@ -24,6 +24,7 @@ import urllib.request
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from knowledge import KnowledgeStore, MAX_UPLOAD
 from semantic import make_messages, parse_topics, samples_from_text
+from relation_suggestions import validate_candidates
 
 VERSION = "0.6.8"
 CLOUDRU_URL = "https://foundation-models.api.cloud.ru/v1"
@@ -333,7 +334,10 @@ class Workspace:
                     connection=connection, timeout=40, max_bytes=65_536)
                 answer = result["choices"][0]["message"]["content"]
                 proposals = parse_topics(answer, samples)
-                self.knowledge.integrate_semantic(fid, proposals, samples, expected_sha=checksum)
+                relation_candidates = validate_candidates(answer, samples)
+                self.knowledge.integrate_semantic(
+                    fid, proposals, samples, expected_sha=checksum,
+                    relation_candidates=relation_candidates)
             except (AppError, ValueError, IndexError, KeyError, TypeError, OSError):
                 logging.error("Смысловая классификация не удалась для файла %s", fid)
                 self.knowledge.mark_semantic(fid, "готово; смысловой анализ не выполнен",
