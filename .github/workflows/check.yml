@@ -26,6 +26,8 @@ jobs:
           }
       - name: Проверить сервер и запуск BAT
         run: python -m unittest discover -s tests -v
+      - name: Измерить качество извлечения знаний и поиска
+        run: python bootstrap/quality_eval.py --check --output .runtime/quality-reports
       - name: Проверить JavaScript и положение окон
         run: |
           node --check web/app.js
