@@ -96,6 +96,18 @@ def init_schema(db):
       regressions_json TEXT NOT NULL,
       differences_json TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS brain_lab_decisions(
+      id INTEGER PRIMARY KEY,
+      generation_id INTEGER NOT NULL REFERENCES brain_lab_generations(id),
+      action TEXT NOT NULL CHECK(action IN ('accept','revert')),
+      verdict TEXT NOT NULL,
+      created TEXT NOT NULL,
+      data_signature TEXT NOT NULL,
+      algorithm_signature TEXT NOT NULL,
+      suite_signature TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_brain_lab_decision_generation
+      ON brain_lab_decisions(generation_id,id);
     """)
     columns={row["name"] for row in db.execute("PRAGMA table_info(brain_lab_generations)")}
     for name in ("algorithm_signature","suite_signature"):
@@ -134,7 +146,7 @@ def _digest_paths(items):
     sha=hashlib.sha256()
     for path in items:
         sha.update(path.name.encode("utf-8"))
-        sha.update(b"\\0")
+        sha.update(b"\0")
         if not path.is_file():
             raise RuntimeError("Отсутствует необходимый файл лаборатории: "+path.name)
         sha.update(hashlib.sha256(path.read_bytes()).digest())
@@ -359,6 +371,11 @@ def accept(db,generation):
     db.execute("""UPDATE brain_lab_generations SET status='rejected'
                WHERE status='accepted'""")
     db.execute("UPDATE brain_lab_generations SET status='accepted' WHERE id=?",(generation,))
+    db.execute("""INSERT INTO brain_lab_decisions
+      (generation_id,action,verdict,created,data_signature,
+       algorithm_signature,suite_signature) VALUES(?,'accept',?,?,?,?,?)""",
+      (generation,item["verdict"],clock(),item["data_signature"],
+       item["algorithm_signature"],item["suite_signature"]))
     return {"accepted_generation":generation,"changed_live_code":False,
             "changed_model_weights":False}
 
@@ -370,6 +387,13 @@ def revert(db,generation):
       WHERE id=? AND status='accepted'""",(generation,)).rowcount
     if affected==0:
         raise ValueError("Выбранное поколение не было принятым.")
+    item=db.execute("""SELECT data_signature,algorithm_signature,
+       suite_signature FROM brain_lab_generations WHERE id=?""",(generation,)).fetchone()
+    db.execute("""INSERT INTO brain_lab_decisions
+      (generation_id,action,verdict,created,data_signature,
+       algorithm_signature,suite_signature) VALUES(?,'revert',?,?,?,?,?)""",
+       (generation,"manual_revert",clock(),item["data_signature"],
+        item["algorithm_signature"] or "",item["suite_signature"] or ""))
     # A checkpoint is a measurement, not a snapshot of the entire SQLite DB.
     return {"reverted_generation":generation,"changed_live_code":False,
             "changed_document_memory":False}
@@ -383,9 +407,10 @@ def report(db):
     count=db.execute("SELECT COUNT(*) FROM brain_lab_generations").fetchone()[0]
     totals={row["kind"]:row["n"] for row in db.execute(
         "SELECT kind,COUNT(*) AS n FROM brain_lab_gaps WHERE status='open' GROUP BY kind")}
+    audit_count=db.execute("SELECT COUNT(*) FROM brain_lab_decisions").fetchone()[0]
     return {"latest_generation":dict(latest) if latest else None,
             "accepted_generation":dict(accepted) if accepted else None,
             "generation_count":count,"gaps":gaps(db),"gap_counts":totals,
-            "skills":skills(db),
+            "skills":skills(db),"decision_count":audit_count,
             "safety":"No cloud, no generated code execution, no automatic promotion, no weight training.",
             "scope":"Brain Lab measurements are diagnostic, not factual validation."}
