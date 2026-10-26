@@ -299,7 +299,7 @@ class KnowledgeStore:
                     (leaf, source_type, source_id, sample, f"{name}, фрагмент {idx}", now()))
                 total += cursor.rowcount
         # Новые темы из явных заголовков Markdown — не из догадок модели.
-        headings = list(re.finditer(r"(?m)^#{1,3} +([^\\r\\n]{5,72})\\s*$", text))[:12]
+        headings = list(re.finditer(r"(?m)^#{1,3} +([^\r\n]{5,72})\s*$", text))[:12]
         for index, match in enumerate(headings):
             heading = match.group(1).strip(" #.:")
             if not heading or SECRET_RE.search(heading):
