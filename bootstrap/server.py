@@ -18,7 +18,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-VERSION = "0.3.0"
+VERSION = "0.4.0"
+CLOUDRU_URL = "https://foundation-models.api.cloud.ru/v1"
 WEB_ROOT = Path(__file__).resolve().parents[1] / "web"
 STATIC = {
     "/": ("index.html", "text/html; charset=utf-8"),
@@ -31,7 +32,8 @@ STATIC = {
 DEFAULT = {
     "appearance": {"size": 340, "opacity": 100, "visible": True, "pinned": False, "motion": True},
     "layout": {}, "messages": [],
-    "connection": {"url": "https://foundation-models.api.cloud.ru/v1", "model": "", "key": ""},
+    "connection": {"url": CLOUDRU_URL, "model": "", "key": "", "verified_at": None},
+    "model_cache": {"url": "", "models": [], "details": [], "loaded_at": None},
 }
 
 
@@ -81,6 +83,26 @@ def validate_url(value):
     return parsed.geturl()
 
 
+def describe_model(item):
+    """Use provider metadata first; label name-based exclusions as inferences."""
+    model_id = item["id"]
+    endpoints = item.get("supported_endpoints", [])
+    if isinstance(endpoints, list) and endpoints:
+        normalized = [str(endpoint).lower().replace(".", "/") for endpoint in endpoints]
+        if any("chat/completions" in endpoint for endpoint in normalized):
+            return {"id": model_id, "kind": "chat", "hint": "Поддержка чата указана провайдером", "inferred": False}
+        return {"id": model_id, "kind": "other", "hint": "В списке методов провайдера нет chat/completions", "inferred": False}
+    tags = {str(item.get(field, "")).lower().replace("_", "-") for field in ("type", "task", "model_type", "pipeline_tag")}
+    if tags & {"llm", "chat", "text-generation", "chat-completion", "chat-completions", "conversational"}:
+        return {"id": model_id, "kind": "chat", "hint": "Текстовая модель по данным провайдера", "inferred": False}
+    if tags & {"embedding", "embeddings", "rerank", "reranker", "asr", "tts", "text-to-speech", "automatic-speech-recognition", "text-to-image"}:
+        return {"id": model_id, "kind": "other", "hint": "Специализированная модель для другой задачи", "inferred": False}
+    name = model_id.lower()
+    if any(marker in name for marker in ("embedding", "rerank", "bge-", "nomic-embed", "whisper", "gigaasr", "salutespeech", "text-to-speech", "stable-diffusion", "dall-e", "flux.1", "flux-")):
+        return {"id": model_id, "kind": "other", "hint": "По названию — модель для другой задачи; тип не подтверждён API", "inferred": True}
+    return {"id": model_id, "kind": "unknown", "hint": "Тип не указан API; поддержка чата проверяется при отправке", "inferred": False}
+
+
 class Workspace:
     def __init__(self, directory=None):
         self.lock = threading.RLock()
@@ -98,7 +120,9 @@ class Workspace:
                     validate_url(connection["url"])
                     if not isinstance(connection.get("key"), str) or not isinstance(connection.get("model"), str) or not isinstance(stored.get("messages"), list):
                         raise ValueError
-                    self.data = {"appearance": appearance, "layout": layout, "messages": stored["messages"], "connection": connection}
+                    self.data = {"appearance": appearance, "layout": layout, "messages": stored["messages"],
+                                 "connection": dict(DEFAULT["connection"], **connection),
+                                 "model_cache": stored.get("model_cache", deepcopy(DEFAULT["model_cache"]))}
                 except (ValueError, KeyError, TypeError, AppError):
                     raise AppError("Файл .runtime/workspace.json повреждён. Сохраните его копию и уберите из рабочей папки для нового запуска.", 500) from None
 
@@ -121,6 +145,7 @@ class Workspace:
         with self.lock:
             result = deepcopy(self.data)
             result["connection"]["has_key"] = bool(result["connection"].pop("key", ""))
+            result["connection"]["provider"] = "cloudru" if result["connection"]["url"] == CLOUDRU_URL else "custom"
             result["version"] = VERSION
             return result
 
@@ -133,7 +158,7 @@ class Workspace:
         return {"ok": True}
 
     def connection(self, payload):
-        url = validate_url(payload.get("url"))
+        url = CLOUDRU_URL if payload.get("provider") == "cloudru" else validate_url(payload.get("url"))
         model = payload.get("model", "")
         key = payload.get("key")
         if not isinstance(model, str) or len(model) > 300 or any(ord(char) < 32 for char in model):
@@ -148,9 +173,15 @@ class Workspace:
                 new_key = ""
             if payload.get("remove_key"):
                 new_key = ""
-            self.data["connection"] = {"url": url, "model": model.strip(), "key": new_key}
+            changed_credentials = url != previous["url"] or new_key != previous["key"]
+            changed = changed_credentials or model.strip() != previous["model"]
+            self.data["connection"] = {"url": url, "model": model.strip(), "key": new_key,
+                                       "verified_at": None if changed else previous.get("verified_at")}
+            if changed_credentials:
+                self.data["model_cache"] = deepcopy(DEFAULT["model_cache"])
             self.save()
-            return {"connection": self.public()["connection"]}
+            public = self.public()
+            return {"connection": public["connection"], "model_cache": public["model_cache"]}
 
     def provider(self, suffix, payload=None, connection=None):
         if connection is None:
@@ -159,16 +190,14 @@ class Workspace:
         if not connection["key"]:
             raise AppError("Сохраните API-ключ в настройках подключения.", 409)
         url = validate_url(connection["url"]) + suffix
-        request = urllib.request.Request(url, headers={"Authorization": "Bearer " + connection["key"], "Content-Type": "application/json", "User-Agent": "Tenmiyora/" + VERSION}, data=json.dumps(payload).encode("utf-8") if payload is not None else None)
+        request = urllib.request.Request(url, headers={"Authorization": "Bearer " + connection["key"], "Content-Type": "application/json", "User-Agent": "Tenmiyora/" + VERSION}, data=json.dumps(payload, ensure_ascii=False, allow_nan=False).encode("utf-8") if payload is not None else None)
         try:
             opener = urllib.request.build_opener(NoRedirect())
-            with opener.open(request, timeout=90) as response:
-                raw = response.read(8 * 1024 * 1024 + 1)
-                if len(raw) > 8 * 1024 * 1024:
-                    raise AppError("Ответ провайдера слишком большой.", 502)
-                return json.loads(raw)
+            # A long model response must not be cut off by an application deadline or byte cap.
+            with opener.open(request, timeout=None if suffix == "/chat/completions" else 30) as response:
+                return json.loads(response.read())
         except urllib.error.HTTPError as error:
-            hints = {400: "Проверьте, что выбрана текстовая модель с поддержкой чата.", 401: "Проверьте API-ключ.", 403: "Проверьте доступ к модели.", 404: "Проверьте адрес API и идентификатор модели.", 429: "Достигнут лимит провайдера. Повторите позже."}
+            hints = {400: "Проверьте поддержку чата выбранной моделью и размер её контекста.", 401: "Проверьте API-ключ.", 403: "Проверьте доступ к модели.", 404: "Проверьте адрес API и идентификатор модели.", 429: "Достигнут лимит провайдера. Повторите позже."}
             raise AppError(f"Провайдер вернул HTTP {error.code}. " + hints.get(error.code, "Повторите запрос позже."), 502) from None
         except (urllib.error.URLError, TimeoutError, OSError):
             raise AppError("Не удалось связаться с провайдером. Проверьте интернет и адрес API.", 502) from None
@@ -176,15 +205,58 @@ class Workspace:
             raise AppError("Провайдер вернул ответ в неизвестном формате.", 502) from None
 
     def models(self):
-        result = self.provider("/models")
+        with self.lock:
+            connection = deepcopy(self.data["connection"])
+        result = self.provider("/models", connection=connection)
         if not isinstance(result, dict) or not isinstance(result.get("data"), list):
             raise AppError("Не удалось прочитать список моделей.", 502)
-        return {"models": sorted({item["id"] for item in result["data"] if isinstance(item, dict) and isinstance(item.get("id"), str)})}
+        details = {}
+        for item in result["data"]:
+            if isinstance(item, dict) and isinstance(item.get("id"), str) and item["id"].strip():
+                details[item["id"]] = describe_model(item)
+        ids = sorted(details)
+        cache = {"url": connection["url"], "models": ids, "details": [details[model] for model in ids],
+                 "loaded_at": datetime.now(timezone.utc).isoformat()}
+        with self.lock:
+            current = self.data["connection"]
+            if current["url"] != connection["url"] or current["key"] != connection["key"]:
+                raise AppError("Подключение изменилось во время проверки. Получите список заново.", 409)
+            self.data["model_cache"] = cache
+            self.save()
+        return deepcopy(cache)
+
+    def check_connection(self):
+        with self.lock:
+            checked = deepcopy(self.data["connection"])
+        catalog = self.models()
+        selected = checked["model"]
+        if selected and selected not in catalog["models"]:
+            raise AppError("API доступен, но выбранная модель отсутствует в полученном списке. Выберите другую модель или проверьте её идентификатор.", 409)
+        detail = next((item for item in catalog["details"] if item["id"] == selected), None)
+        if detail and detail["kind"] == "other":
+            raise AppError("API доступен, но выбранная модель предназначена для другой задачи. Выберите диалоговую модель.", 409)
+        with self.lock:
+            current = self.data["connection"]
+            if any(current[field] != checked[field] for field in ("url", "key", "model")):
+                raise AppError("Подключение изменилось во время проверки. Повторите проверку.", 409)
+            current["verified_at"] = datetime.now(timezone.utc).isoformat()
+            self.save()
+        return {"connection": self.public()["connection"], "model_cache": catalog,
+                "message": "API доступен. Выбранная модель есть в списке; генерация не запускалась." if selected else "API доступен. Теперь выберите модель для чата; генерация не запускалась."}
+
+    def delete_key(self):
+        with self.lock:
+            self.data["connection"]["key"] = ""
+            self.data["connection"]["verified_at"] = None
+            self.data["model_cache"] = deepcopy(DEFAULT["model_cache"])
+            self.save()
+            public = self.public()
+            return {"connection": public["connection"], "model_cache": public["model_cache"]}
 
     def chat(self, payload):
         content = payload.get("message", "")
-        if not isinstance(content, str) or not content.strip() or len(content) > 32000:
-            raise AppError("Введите сообщение длиной до 32 000 символов.")
+        if not isinstance(content, str) or not content.strip():
+            raise AppError("Введите сообщение.")
         if not self.chat_lock.acquire(blocking=False):
             raise AppError("Дождитесь завершения предыдущего ответа.", 409)
         try:
@@ -208,7 +280,8 @@ class Workspace:
             except (KeyError, IndexError, TypeError, ValueError):
                 raise AppError("Модель вернула пустой или неподдерживаемый ответ. Попробуйте другую текстовую модель.", 502) from None
             with self.lock:
-                self.data["messages"].append({"role": "assistant", "content": answer, "time": datetime.now(timezone.utc).isoformat()})
+                self.data["messages"].append({"role": "assistant", "content": answer, "time": datetime.now(timezone.utc).isoformat(),
+                                                "finish_reason": result["choices"][0].get("finish_reason")})
                 self.save()
                 return {"messages": deepcopy(self.data["messages"])}
         finally:
@@ -328,7 +401,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         actions = {"/api/preferences": self.server.workspace.preferences, "/api/connection": self.server.workspace.connection,
                    "/api/chat": self.server.workspace.chat, "/api/models": lambda _: self.server.workspace.models(),
-                   "/api/clear-chat": lambda _: self.server.workspace.clear_chat()}
+                   "/api/clear-chat": lambda _: self.server.workspace.clear_chat(),
+                   "/api/delete-key": lambda _: self.server.workspace.delete_key(),
+                   "/api/check-connection": lambda _: self.server.workspace.check_connection()}
         if self.path not in actions:
             self.reply(404)
             return
@@ -338,7 +413,7 @@ class Handler(BaseHTTPRequestHandler):
             if self.headers.get_content_type() != "application/json":
                 raise AppError("Ожидается JSON.", 415)
             length = int(self.headers.get("Content-Length", "0"))
-            if not 0 < length <= 128 * 1024:
+            if length <= 0 or (self.path != "/api/chat" and length > 128 * 1024):
                 raise AppError("Неверный размер запроса.", 413)
             self.connection.settimeout(10)
             payload = json.loads(self.rfile.read(length))

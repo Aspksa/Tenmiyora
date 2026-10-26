@@ -5,7 +5,8 @@
   const avatar = $('avatar'), chat = $('chat-window'), settings = $('settings-window');
   let state = {appearance: {size: 340, opacity: 100, visible: true, pinned: false, motion: true}, layout: {}, messages: [], connection: {url: 'https://foundation-models.api.cloud.ru/v1', model: '', has_key: false}};
   let ready = false, pending = false, saveTimer, toastTimer, saveQueue = Promise.resolve(), layer = 50;
-  let lastChatFocus = null, lastSettingsFocus = null;
+  let lastChatFocus = null, lastSettingsFocus = null, connectionSaveQueue = Promise.resolve();
+  const CLOUDRU_URL = 'https://foundation-models.api.cloud.ru/v1';
   const isTouch = matchMedia('(pointer: coarse)').matches;
   function viewport() { return {width: document.documentElement.clientWidth, height: window.visualViewport ? Math.min(innerHeight, visualViewport.height) : innerHeight}; }
   async function api(path, body) {
@@ -126,16 +127,49 @@
   for (const [id, property] of [['avatar-size', 'size'], ['avatar-opacity', 'opacity']]) $(id).addEventListener('input', () => { state.appearance[property] = Number($(id).value); applyAppearance(); scheduleSave(); });
   for (const [id, property] of [['avatar-visible', 'visible'], ['avatar-pinned', 'pinned'], ['avatar-motion', 'motion']]) $(id).addEventListener('change', () => { state.appearance[property] = $(id).checked; applyAppearance(); scheduleSave(); });
   $('reset-layout').addEventListener('click', () => { state.layout = {}; state.appearance.size = 340; state.appearance.opacity = 100; state.appearance.visible = true; state.appearance.pinned = false; applyAppearance(); fitWindows(); scheduleSave(); toast('Исходное расположение восстановлено'); });
-  function renderConnection() {
+  function currentProvider() { return $('api-provider').value; }
+  function fillModelOptions() {
+    const select = $('api-model-select'), saved = $('api-model').value.trim();
+    select.replaceChildren();
+    const placeholder = new Option((state.model_cache?.models || []).length ? 'Выберите модель для чата' : 'Сначала загрузите модели', '');
+    select.append(placeholder);
+    const details = state.model_cache?.details || (state.model_cache?.models || []).map(id => ({id, kind: 'unknown', hint: 'Тип не указан API'}));
+    const groups = {chat: document.createElement('optgroup'), unknown: document.createElement('optgroup'), other: document.createElement('optgroup')};
+    groups.chat.label = 'Диалоговые модели'; groups.unknown.label = 'Тип не указан — возможна поддержка чата'; groups.other.label = 'Другие задачи — не для обычного чата';
+    for (const item of details) {
+      const option = new Option(item.id, item.id); option.title = item.hint;
+      option.disabled = item.kind === 'other'; (groups[item.kind] || groups.unknown).append(option);
+    }
+    for (const group of Object.values(groups)) if (group.children.length) select.append(group);
+    select.append(new Option('Указать идентификатор вручную…', '__manual__'));
+    const match = details.find(item => item.id === saved && item.kind !== 'other');
+    select.value = saved ? (match ? saved : '__manual__') : '';
+    $('manual-model-field').hidden = select.value !== '__manual__'; updateModelDescription();
+  }
+  function updateModelDescription() {
+    const id = $('api-model').value.trim();
+    const item = (state.model_cache?.details || []).find(model => model.id === id);
+    $('model-description').textContent = item ? item.hint : (id ? 'Идентификатор указан вручную. Поддержка чата определяется провайдером.' : 'Загрузите список из вашего API-аккаунта и выберите текстовую модель.');
+  }
+  function renderConnection(updateForm = false) {
     const connection = state.connection, configured = Boolean(connection.model && connection.has_key);
-    $('api-url').value = connection.url; $('api-model').value = connection.model;
+    if (updateForm) {
+      $('api-provider').value = connection.url === CLOUDRU_URL ? 'cloudru' : 'custom';
+      $('api-url').value = connection.url; $('api-model').value = connection.model;
+      $('custom-url-field').hidden = currentProvider() === 'cloudru';
+      $('api-url').required = currentProvider() !== 'cloudru';
+      $('provider-name').textContent = currentProvider() === 'cloudru' ? 'Cloud.ru' : 'Ваш провайдер';
+      $('provider-subtitle').textContent = currentProvider() === 'cloudru' ? 'Foundation Models · подключение чата' : 'Совместимый API · подключение чата';
+      fillModelOptions();
+    }
     $('key-status').textContent = connection.has_key ? 'СОХРАНЁН' : '';
-    $('api-key').placeholder = connection.has_key ? 'Ключ сохранён' : 'Введите ключ';
+    $('api-key').placeholder = connection.has_key ? 'Ключ сохранён' : 'Введите API-ключ';
     $('delete-key').disabled = !connection.has_key;
     $('connection-hint').hidden = configured;
-    $('chat-model-status').textContent = configured ? connection.model : 'Модель ещё не подключена';
+    $('chat-model-status').textContent = configured ? (connection.url === CLOUDRU_URL ? 'Cloud.ru · ' : '') + connection.model : 'Модель ещё не подключена';
     $('send-message').disabled = !configured || pending;
     $('composer-hint').textContent = configured ? (isTouch ? 'Ваше сообщение для Tenmiyora' : 'Enter — отправить · Shift+Enter — новая строка') : 'Сначала подключите модель в настройках';
+    $('connection-summary').textContent = !connection.has_key ? 'Ключ ещё не сохранён' : !connection.model ? 'Ключ сохранён. Выберите модель для чата.' : connection.verified_at ? 'API проверен ' + new Date(connection.verified_at).toLocaleString('ru-RU') + '. Модель: ' + connection.model : 'Ключ и модель сохранены. Можно отправить сообщение или проверить доступ к API.';
   }
   function renderMessages(extra) {
     const log = $('chat-messages'); log.replaceChildren();
@@ -153,11 +187,14 @@
       const name = document.createElement('span'); name.className = 'message-name'; name.textContent = message.role === 'user' ? 'Вы' : 'Tenmiyora';
       const body = document.createElement('div'); body.className = 'message-body'; body.textContent = message.content;
       article.append(name, body);
+      if (message.finish_reason === 'length') { const warning = document.createElement('small'); warning.className = 'provider-limit-note'; warning.textContent = 'Ответ остановлен по лимиту провайдера. Можно попросить модель продолжить.'; article.append(warning); }
       if (message.time) { const time = document.createElement('time'); time.dateTime = message.time; time.textContent = new Date(message.time).toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'}); article.append(time); }
       log.append(article);
     }
     log.scrollTop = log.scrollHeight;
-    $('conversation-summary').textContent = state.messages.length ? state.messages.length + ' сообщений · история сохранена' : 'Ваш первый разговор ждёт вас';
+    const count = state.messages.length, ending = count % 10, teens = count % 100;
+    const noun = ending === 1 && teens !== 11 ? 'сообщение' : ending >= 2 && ending <= 4 && (teens < 12 || teens > 14) ? 'сообщения' : 'сообщений';
+    $('conversation-summary').textContent = count ? count + ' ' + noun + ' · история сохранена' : 'Ваш первый разговор ждёт вас';
   }
   async function sendMessage(event) {
     event.preventDefault(); const content = $('chat-input').value.trim();
@@ -171,24 +208,52 @@
   $('chat-form').addEventListener('submit', sendMessage);
   $('chat-input').addEventListener('keydown', (event) => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && !isTouch) { event.preventDefault(); $('chat-form').requestSubmit(); } });
   $('clear-chat').addEventListener('click', async () => { if (pending) { toast('Дождитесь ответа модели'); return; } if (!state.messages.length) return; if (!confirm('Удалить историю этого разговора?')) return; try { await api('clear-chat', {}); state.messages = []; renderMessages(); toast('История разговора очищена'); } catch (error) { toast(error.message); } });
-  async function saveConnection(removeKey = false) {
-    const payload = {url: $('api-url').value.trim(), model: $('api-model').value.trim(), ...(removeKey ? {remove_key: true} : $('api-key').value ? {key: $('api-key').value.trim()} : {})};
-    const result = await api('connection', payload); state.connection = result.connection; $('api-key').value = ''; renderConnection(); return result;
+  async function saveConnection() {
+    const payload = {provider: currentProvider(), url: currentProvider() === 'cloudru' ? CLOUDRU_URL : $('api-url').value.trim(), model: $('api-model').value.trim(), ...($('api-key').value ? {key: $('api-key').value.trim()} : {})};
+    connectionSaveQueue = connectionSaveQueue.catch(() => {}).then(() => api('connection', payload)).then(result => { state.connection = result.connection; state.model_cache = result.model_cache; $('api-key').value = ''; renderConnection(true); return result; });
+    return connectionSaveQueue;
   }
   function connectionResult(text, error = false) { $('connection-result').textContent = text; $('connection-result').classList.toggle('error', error); }
-  $('connection-form').addEventListener('submit', async (event) => { event.preventDefault(); try { await saveConnection(); connectionResult('Подключение сохранено.'); toast('Настройки подключения сохранены'); } catch (error) { connectionResult(error.message, true); } });
-  $('delete-key').addEventListener('click', async () => { try { await saveConnection(true); connectionResult('API-ключ удалён с этого компьютера.'); } catch (error) { connectionResult(error.message, true); } });
-  $('load-models').addEventListener('click', async () => {
-    const button = $('load-models'); button.disabled = true; connectionResult('Получение списка моделей…');
-    try { await saveConnection(); const result = await api('models', {}); $('model-options').replaceChildren(); for (const id of result.models) { const option = document.createElement('option'); option.value = id; $('model-options').append(option); } connectionResult('Получено моделей: ' + result.models.length + '. Выберите текстовую модель в поле выше.'); $('api-model').focus(); }
-    catch (error) { connectionResult(error.message, true); } finally { button.disabled = false; }
+  async function withConnectionBusy(action) {
+    const buttons = [...$('connection-form').querySelectorAll('button')];
+    buttons.forEach(item => { item.disabled = true; });
+    try { await action(); } catch (error) { connectionResult(error.message, true); }
+    finally { buttons.forEach(item => { item.disabled = false; }); $('delete-key').disabled = !state.connection.has_key; }
+  }
+  $('api-provider').addEventListener('change', () => {
+    const cloud = currentProvider() === 'cloudru'; $('custom-url-field').hidden = cloud; $('api-url').required = !cloud;
+    $('provider-name').textContent = cloud ? 'Cloud.ru' : 'Ваш провайдер'; $('provider-subtitle').textContent = cloud ? 'Foundation Models · подключение чата' : 'Совместимый API · подключение чата';
+    $('api-key').value = '';
+    if (cloud) $('api-url').value = CLOUDRU_URL;
+    else if (state.connection.url !== CLOUDRU_URL) $('api-url').value = state.connection.url;
+    else $('api-url').value = '';
+    $('api-model').value = ''; $('api-model-select').replaceChildren(new Option('Сначала загрузите модели', ''), new Option('Указать идентификатор вручную…', '__manual__')); $('manual-model-field').hidden = true;
+    connectionResult('Укажите ключ для выбранного провайдера и сохраните подключение.');
   });
+  $('api-model-select').addEventListener('change', async () => {
+    const value = $('api-model-select').value; $('manual-model-field').hidden = value !== '__manual__';
+    if (value === '__manual__') { $('api-model').focus(); return; }
+    $('api-model').value = value; updateModelDescription();
+    if (!value) return;
+    try { await saveConnection(); connectionResult('Модель выбрана и сохранена. Чат использует её.'); }
+    catch (error) { connectionResult(error.message, true); }
+  });
+  $('api-model').addEventListener('input', updateModelDescription);
+  $('connection-form').addEventListener('submit', async (event) => { event.preventDefault(); await withConnectionBusy(async () => { await saveConnection(); connectionResult(state.connection.has_key && state.connection.model ? 'Ключ и модель сохранены. Чат использует выбранный API.' : 'Настройки сохранены. Для ответов нужны API-ключ и выбранная модель.'); toast('Настройки подключения сохранены'); }); });
+  $('delete-key').addEventListener('click', () => withConnectionBusy(async () => { await connectionSaveQueue.catch(() => {}); const result = await api('delete-key', {}); state.connection = result.connection; state.model_cache = result.model_cache; $('api-key').value = ''; renderConnection(true); connectionResult('API-ключ удалён с этого компьютера.'); }));
+  $('load-models').addEventListener('click', () => withConnectionBusy(async () => {
+    connectionResult('Получение списка моделей…'); await saveConnection(); const result = await api('models', {}); state.model_cache = result; fillModelOptions();
+    connectionResult('Получено моделей: ' + result.models.length + '. Выберите модель в списке. Модели других задач отмечены отдельно.'); $('api-model-select').focus();
+  }));
+  $('check-connection').addEventListener('click', () => withConnectionBusy(async () => {
+    connectionResult('Проверка доступа к API…'); await saveConnection(); const result = await api('check-connection', {}); state.connection = result.connection; state.model_cache = result.model_cache; renderConnection(true); connectionResult(result.message);
+  }));
   window.addEventListener('resize', () => { applyAppearance(); fitWindows(); });
   if (window.visualViewport) visualViewport.addEventListener('resize', fitWindows);
   window.addEventListener('pagehide', () => { if (ready) fetch('/api/preferences', {method: 'POST', credentials: 'same-origin', keepalive: true, headers: {'Content-Type': 'application/json', 'X-Tenmiyora-Client': 'web'}, body: JSON.stringify({appearance: state.appearance, layout: state.layout})}).catch(() => {}); });
   async function startup() {
     $('fatal-error').hidden = true;
-    try { const result = await api('state'); state = result; ready = true; applyAppearance(); renderConnection(); renderMessages(); $('server-status').textContent = 'Сервер запущен'; }
+    try { const result = await api('state'); state = result; ready = true; applyAppearance(); renderConnection(true); renderMessages(); $('server-status').textContent = 'Сервер запущен'; }
     catch (error) { $('server-status').textContent = 'Нет соединения'; $('fatal-message').textContent = error.message; $('fatal-error').hidden = false; applyAppearance(); renderConnection(); renderMessages(); }
   }
   $('retry-startup').addEventListener('click', startup);
