@@ -395,8 +395,10 @@ class KnowledgeStore:
             return 0
         if categorize(text) == ["Общие знания"]:
             return 0
+        source_id = secrets.token_hex(12)
         with self.lock, self.db() as conn:
-            return self._learn(conn, text[:4000], "chat", secrets.token_hex(12), "Сообщение пользователя")
+            basic = self._learn(conn, text[:4000], "chat", source_id, "Сообщение пользователя")
+        return basic + self.engine.ingest("chat", source_id, "Сообщение пользователя", text[:4000])
 
     def branches(self):
         with self.lock, self.db() as conn:
@@ -434,7 +436,7 @@ class KnowledgeStore:
     def semantic_source(self, fid):
         """Только локальное извлечение. Содержимое уходит модели позже, если она включена."""
         with self.lock, self.db() as conn:
-            row = conn.execute("SELECT name,status FROM files WHERE id=?", (fid,)).fetchone()
+            row = conn.execute("SELECT name,status,sha256 FROM files WHERE id=?", (fid,)).fetchone()
             if not row or not row["status"].startswith("готово"):
                 return None
             name = row["name"]
@@ -442,23 +444,23 @@ class KnowledgeStore:
             labels = [item["name"] for item in conn.execute(
                 "SELECT name FROM branches ORDER BY id DESC LIMIT 80").fetchall()]
         parsed, status = extract_text(name, raw)
-        return (name, parsed, labels) if status == "готово" and parsed.strip() else None
+        return (name, parsed, labels, row["sha256"]) if status == "готово" and parsed.strip() else None
 
-    def mark_semantic(self, fid, status):
+    def mark_semantic(self, fid, status, expected_sha=None):
         with self.lock, self.db() as conn:
-            row = conn.execute("SELECT id FROM files WHERE id=?", (fid,)).fetchone()
-            if not row:
+            row = conn.execute("SELECT id,sha256 FROM files WHERE id=?", (fid,)).fetchone()
+            if not row or (expected_sha is not None and row["sha256"] != expected_sha):
                 return False
             conn.execute("UPDATE files SET status=? WHERE id=?", (status[:120], fid))
             return True
 
-    def integrate_semantic(self, fid, proposed, samples):
+    def integrate_semantic(self, fid, proposed, samples, expected_sha=None):
         """Добавляем только оригинальные фрагменты; данные модели — лишь маршрутизация."""
         from semantic import normalize_label
         evidence = {item["id"]: item["text"] for item in samples}
         with self.lock, self.db() as conn:
-            file = conn.execute("SELECT name FROM files WHERE id=?", (fid,)).fetchone()
-            if not file:
+            file = conn.execute("SELECT name,sha256 FROM files WHERE id=?", (fid,)).fetchone()
+            if not file or (expected_sha is not None and file["sha256"] != expected_sha):
                 return 0  # Файл удалён, пока выполнялся запрос к модели.
             created = 0
             for item in proposed:
@@ -466,14 +468,14 @@ class KnowledgeStore:
                 row = next((r for r in conn.execute(
                     "SELECT id,name FROM branches WHERE parent IS NULL")
                     if normalize_label(r["name"]) == normalize_label(root_name)), None)
-                root_id = row["id"] if row else self._branch(conn, root_name)
+                root_id = row["id"] if row else self.engine._branch(conn, root_name)
                 leaf_id = root_id
                 if item["branch"]:
                     child_name = item["branch"]
                     child = next((r for r in conn.execute(
                         "SELECT id,name FROM branches WHERE parent=?", (root_id,))
                         if normalize_label(r["name"]) == normalize_label(child_name)), None)
-                    leaf_id = child["id"] if child else self._branch(conn, child_name, root_id)
+                    leaf_id = child["id"] if child else self.engine._branch(conn, child_name, root_id)
                 for excerpt_id in item["evidence_ids"]:
                     excerpt = evidence.get(excerpt_id)
                     if not excerpt:
