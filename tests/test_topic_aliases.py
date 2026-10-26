@@ -58,7 +58,6 @@ class AliasTests(unittest.TestCase):
         self.assertTrue(any(r["source_id"]==a for r in joint))
         self.assertTrue(any(r["source_id"]==b for r in joint))
         self.assertTrue(any(r["source_id"]==b for r in self.store.facts(old)["facts"]))
-        self.assertEqual(self.store.engine._branch_test_name if False else True,True)
 
     def test_merger_is_reversible_when_evidence_disappears(self):
         self.store.upload("astronomy.txt",ASTRO.encode())
