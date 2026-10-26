@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from knowledge import KnowledgeStore, MAX_UPLOAD
 from semantic import make_messages, parse_topics, samples_from_text
 
-VERSION = "0.6.1"
+VERSION = "0.6.2"
 CLOUDRU_URL = "https://foundation-models.api.cloud.ru/v1"
 WEB_ROOT = Path(__file__).resolve().parents[1] / "web"
 STATIC = {

@@ -1,0 +1,17 @@
+{
+  "schema_version": 2,
+  "explanation": "Пороговые проверки безопасности и регрессии включены в CI. Качество сложных отрицательных запросов и концов длинных документов пока не проходит целевые критерии, но не скрывается: отдельный показатель quality_ready=false и --strict сигнализирует о слабостях. Это не заявление о готовности полноценного поиска.",
+  "minimum": {
+    "source_integrity": 1,
+    "duplicate_free_rate": 1,
+    "anchor_recall": 0.7,
+    "hit_at_k": 0.6,
+    "top1_accuracy": 0.6
+  },
+  "diagnostic_targets": {
+    "negative_query_accuracy": 0.75,
+    "conflict_recall": 0.5,
+    "long_tail_anchor_recall": 0.5,
+    "max_false_claim_storage_rate": 0.2
+  }
+}
