@@ -21,7 +21,7 @@ THRESHOLDS=Path(__file__).resolve().parents[1]/"tests"/"quality"/"thresholds.jso
 CORE_FILES=(
     # Включаем саму лабораторию: изменение логики экзамена/принятия
     # недопустимо скрывать от цифровой подписи алгоритма.
-    "brain_lab.py",
+    "brain_lab.py","brain_lab_audit.py",
     "knowledge.py","memory_engine.py","topic_router.py","topic_discovery.py",
     "topic_aliases.py","semantic.py","natural_relations.py","knowledge_relations.py",
     "knowledge_paths.py","document_understanding.py","document_deep_analysis.py",
@@ -112,6 +112,8 @@ def init_schema(db):
     CREATE INDEX IF NOT EXISTS idx_brain_lab_decision_generation
       ON brain_lab_decisions(generation_id,id);
     """)
+    from brain_lab_audit import init_schema as audit_schema
+    audit_schema(db)
     columns={row["name"] for row in db.execute("PRAGMA table_info(brain_lab_generations)")}
     for name in ("algorithm_signature","suite_signature"):
         if name not in columns:

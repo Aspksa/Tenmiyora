@@ -493,6 +493,17 @@ class KnowledgeStore:
         scored.sort(key=lambda x: x[0], reverse=True)
         return [item for _, item in scored[:limit]]
 
+    def brain_lab_internal_audit(self):
+        """Только внутренний аудит кода, без сети, интерфейса и записи в факты."""
+        from brain_lab_audit import save
+        with self.lock,self.db() as conn:
+            return save(conn)
+
+    def brain_lab_internal_history(self, limit=10):
+        from brain_lab_audit import history
+        with self.lock,self.db() as conn:
+            return history(conn,limit)
+
     def brain_lab_report(self):
         from brain_lab import report
         with self.lock,self.db() as conn:
