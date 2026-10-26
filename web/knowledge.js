@@ -132,7 +132,10 @@
     const ask = button('Найти ответ в документе',() => askDocument());
     ask.id='doc-question-submit';
     form.append(input,ask);
-    dialog.append(status,body,form);
+    const deep = button('Глубокий смысловой анализ моделью',() => deepDocument());
+    deep.id='doc-deep-trigger';
+    const caveat=element('p','module-muted','Дополнительные запросы к модели возможны только с вашего разрешения. Интерпретации не считаются доказанными фактами.');
+    dialog.append(status,body,form,caveat,deep);
     dialog.addEventListener('click',event => {
       if (event.target===dialog) dialog.close();
     });
@@ -150,6 +153,7 @@
     if (!dialog.open) dialog.showModal();
     try {
       const data=await request('document?id='+encodeURIComponent(file.id));
+      selectedDocument.estimated_model_calls=data.estimated_model_calls;
       $('doc-reading-status').textContent=(data.complete ? 'Извлечённый текст обработан' : 'Документ прочитан частично')+
         ' · '+data.segment_count+' блоков · '+data.characters+' символов';
       const panel=$('doc-reading-results');
@@ -178,6 +182,43 @@
       }
     } catch(error) { $('doc-reading-status').textContent=error.message; }
   }
+  async function deepDocument() {
+    if(!selectedDocument) return;
+    const estimated=selectedDocument.estimated_model_calls ?? 'до 80';
+    const count=Math.min(Number(estimated)||80,80);
+    if (!count) {message('Нет доступного текста для анализа.');return;}
+    if (!confirm('Глубокий анализ может выполнить до '+count+
+      ' последовательных запросов к выбранной модели. Внешние запросы могут быть платными и передают текст документа провайдеру. Продолжить?')) return;
+    const action=$('doc-deep-trigger');
+    action.disabled=true;
+    $('doc-reading-status').textContent='Идёт последовательный смысловой анализ. Окно не закрывайте.';
+    try {
+      const data=await request('document/deep',
+        {id:selectedDocument.id,question:$('doc-question-input').value.trim(),
+         max_batches:80,allow_external:true});
+      const panel=$('doc-reading-results');
+      const section=element('section','doc-answer');
+      section.append(element('h4','','Глубокий смысловой анализ — гипотезы модели'));
+      section.append(element('p','',data.message));
+      section.append(element('p','',data.processed_batches+' из '+data.total_batches+' частей документа.'));
+      if(!data.complete) section.append(element('p','doc-warning',
+        'Анализ неполный: '+data.limitations.join(' ')));
+      for(const finding of data.findings){
+        const card=element('div','doc-citation');
+        card.append(element('small','',finding.kind+' · '+finding.locator));
+        card.append(element('p','',finding.quote));
+        if(finding.interpretation) card.append(element('p','module-muted',
+          'Предположение модели: '+finding.interpretation));
+        section.append(card);
+      }
+      if(!data.findings.length) section.append(element('p','module-muted',
+        'Модель не вернула интерпретаций с проверяемыми дословными цитатами.'));
+      panel.prepend(section);
+      $('doc-reading-status').textContent='Смысловой анализ завершён';
+    } catch(error) {message(error.message);$('doc-reading-status').textContent='Анализ не завершён: '+error.message;}
+    finally{action.disabled=false;}
+  }
+
   async function askDocument(){
     if (!selectedDocument) return;
     const question=$('doc-question-input').value.trim();
