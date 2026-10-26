@@ -19,6 +19,9 @@ MINIMUM_SOURCE_FILES=0
 GOLD=Path(__file__).resolve().parents[1]/"tests"/"quality"/"gold.json"
 THRESHOLDS=Path(__file__).resolve().parents[1]/"tests"/"quality"/"thresholds.json"
 CORE_FILES=(
+    # Включаем саму лабораторию: изменение логики экзамена/принятия
+    # недопустимо скрывать от цифровой подписи алгоритма.
+    "brain_lab.py",
     "knowledge.py","memory_engine.py","topic_router.py","topic_discovery.py",
     "topic_aliases.py","semantic.py","natural_relations.py","knowledge_relations.py",
     "knowledge_paths.py","document_understanding.py","document_deep_analysis.py",
