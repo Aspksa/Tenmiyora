@@ -491,13 +491,37 @@ class KnowledgeStore:
         scored.sort(key=lambda x: x[0], reverse=True)
         return [item for _, item in scored[:limit]]
 
+    def ensure_document_index(self, fid):
+        """Явное «Изучить» создаёт только новый структурный индекс старого файла.
+
+        Ни факты, ни исходные объекты, ни версии и граф знаний не трогаются.
+        """
+        from document_understanding import extract_segments, store as save_document
+        fid=str(fid)
+        with self.lock,self.db() as conn:
+            row=conn.execute(
+                "SELECT id,name,size,sha256 FROM files WHERE id=?",(fid,)).fetchone()
+            if row is None:
+                raise ValueError("Документ не найден.")
+            covered=conn.execute("SELECT file_sha FROM document_coverage WHERE file_id=?",
+                                 (fid,)).fetchone()
+            if covered and covered["file_sha"]==row["sha256"]:
+                return
+            path=self.objects/fid
+            raw=path.read_bytes()
+            if (len(raw)!=row["size"] or hashlib.sha256(raw).hexdigest()!=row["sha256"]):
+                raise ValueError("Исходный файл повреждён: SHA-256 или размер не совпадают.")
+            save_document(conn,fid,row["sha256"],extract_segments(row["name"],raw))
+
     def document_overview(self, fid):
         from document_understanding import overview
+        self.ensure_document_index(fid)
         with self.lock,self.db() as conn:
             return overview(conn,str(fid))
 
     def document_answer(self,fid,question):
         from document_understanding import answer
+        self.ensure_document_index(fid)
         with self.lock,self.db() as conn:
             result=answer(conn,str(fid),question)
             result["file_id"]=str(fid)
