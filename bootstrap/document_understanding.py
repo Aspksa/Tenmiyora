@@ -371,12 +371,17 @@ def answer(db,file_id,question,limit=5):
         if trigger in question.casefold():
             tags.append(key)
     scored=[]
+    meaningful=set(_tokens(question))
+    # A single incidental word ("номер", "отчёт", "срок") is not enough
+    # evidence for a multi-concept question. A correct refusal is safer
+    # than inventing an answer from one token of overlap.
+    required=2 if len(meaningful)>=3 else 1
     for row in db.execute("""SELECT ordinal,kind,locator,section,excerpt FROM
         document_segments WHERE file_id=? ORDER BY ordinal""",(file_id,)):
         matched=_matched(question,row["excerpt"]+" "+row["section"])
         extra=sum(2 for tag in tags if tag in _category(row["excerpt"]) or
                   (tag=="date" and DATE.search(row["excerpt"])))
-        if matched or extra:
+        if meaningful and matched>=required:
             scored.append((matched+extra,row))
     # Таблицы Excel: ответ на вопрос о названии показателя должен
     # включать его значение с соседней ячейки той же строки и того же
