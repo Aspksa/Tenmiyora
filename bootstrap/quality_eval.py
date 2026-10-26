@@ -15,6 +15,7 @@ import sys
 import tempfile
 from uuid import uuid4
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from knowledge import KnowledgeStore
 from memory_engine import canon
 
