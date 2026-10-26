@@ -5,6 +5,7 @@ from copy import deepcopy
 import ctypes
 from datetime import datetime, timezone
 import hmac
+import importlib.util
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -25,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from knowledge import KnowledgeStore, MAX_UPLOAD
 from semantic import make_messages, parse_topics, samples_from_text
 
-VERSION = "0.6.6"
+VERSION = "0.6.7"
 CLOUDRU_URL = "https://foundation-models.api.cloud.ru/v1"
 WEB_ROOT = Path(__file__).resolve().parents[1] / "web"
 STATIC = {
@@ -33,11 +34,15 @@ STATIC = {
     "/styles.css": ("styles.css", "text/css; charset=utf-8"),
     "/layout.js": ("layout.js", "text/javascript; charset=utf-8"),
     "/app.js": ("app.js", "text/javascript; charset=utf-8"),
+    "/updates.js": ("updates.js", "text/javascript; charset=utf-8"),
     "/knowledge.js": ("knowledge.js", "text/javascript; charset=utf-8"),
     "/knowledge.css": ("knowledge.css", "text/css; charset=utf-8"),
     "/assets/mark.svg": ("assets/mark.svg", "image/svg+xml"),
     "/assets/tenmiyora-avatar.png": ("assets/tenmiyora-avatar.png", "image/png"),
 }
+_update_spec = importlib.util.spec_from_file_location('tenmiyora_updater', Path(__file__).with_name('updater.py'))
+updater_module = importlib.util.module_from_spec(_update_spec)
+_update_spec.loader.exec_module(updater_module)
 DEFAULT = {
     "appearance": {"size": 340, "opacity": 100, "visible": True, "pinned": False, "motion": True},
     "layout": {}, "messages": [],
@@ -414,12 +419,19 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 class LocalServer(ThreadingHTTPServer):
     daemon_threads = True
-    allow_reuse_address = False
+    allow_reuse_address = os.name != "nt"
 
-    def __init__(self, directory=None, address=("127.0.0.1", 0)):
+    def __init__(self, directory=None, address=("127.0.0.1", 0), project_root=None, update_source=None, managed=None):
         self.token = secrets.token_urlsafe(32)
         self.workspace = Workspace(directory)
-        super().__init__(address, Handler)
+        try:
+            super().__init__(address, Handler)
+        except OSError:
+            if not address[1]:
+                raise
+            super().__init__((address[0], 0), Handler)
+        self.updater = updater_module.UpdateManager(project_root or WEB_ROOT.parent, self.workspace, self.token, VERSION,
+                                                    source=update_source, managed=(os.environ.get('TENMIYORA_MANAGED') == '1') if managed is None else managed)
         self.url = f"http://127.0.0.1:{self.server_port}"
         self.cookie_name = "tenmiyora_" + str(self.server_port)
 
@@ -495,6 +507,9 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/health":
             if self.authorized():
                 self.json_reply(200, {"app": "Tenmiyora", "version": VERSION, "pid": os.getpid()})
+        elif self.path == "/api/update/status":
+            if self.authorized(browser=True):
+                self.json_reply(200, self.server.updater.status())
         elif self.path == "/api/state":
             if self.authorized(browser=True):
                 self.json_reply(200, self.server.workspace.public())
@@ -523,6 +538,20 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(404)
 
     def do_POST(self):
+        if self.path.startswith('/api/') and not self.path.startswith('/api/update/'):
+            if not self.authorized(browser=True):
+                return
+            if not self.server.updater.begin_operation():
+                self.json_reply(503, {'error': 'Проект обновляется. Дождитесь перезапуска.'})
+                return
+            try:
+                self._do_POST()
+            finally:
+                self.server.updater.end_operation()
+        else:
+            self._do_POST()
+
+    def _do_POST(self):
         if not self.local_request():
             return
         if self.path == "/shutdown":
@@ -562,7 +591,11 @@ class Handler(BaseHTTPRequestHandler):
                    "/api/chat": self.server.workspace.chat, "/api/models": lambda _: self.server.workspace.models(),
                    "/api/clear-chat": lambda _: self.server.workspace.clear_chat(),
                    "/api/delete-key": lambda _: self.server.workspace.delete_key(),
-                   "/api/check-connection": lambda _: self.server.workspace.check_connection()}
+                   "/api/check-connection": lambda _: self.server.workspace.check_connection(),
+                   "/api/update/check": lambda _: self.server.updater.queue(),
+                   "/api/update/install": lambda _: self.server.updater.queue(install=True),
+                   "/api/update/activity": self.server.updater.activity,
+                   "/api/update/settings": self.server.updater.settings}
         if self.path not in actions:
             self.reply(404)
             return
@@ -578,9 +611,11 @@ class Handler(BaseHTTPRequestHandler):
             payload = json.loads(self.rfile.read(length))
             if not isinstance(payload, dict):
                 raise AppError("Ожидается объект JSON.")
+            if self.server.updater.maintenance and not self.path.startswith('/api/update/'):
+                raise AppError('Проект обновляется. Дождитесь перезапуска.', 503)
             self.json_reply(200, actions[self.path](payload))
-        except AppError as error:
-            self.json_reply(error.status, {"error": str(error)})
+        except (AppError, updater_module.UpdateError) as error:
+            self.json_reply(getattr(error, "status", 400), {"error": str(error)})
         except (ValueError, UnicodeError) as error:
             self.json_reply(400, {"error": str(error) if str(error) else "Некорректный JSON."})
         except OSError:
@@ -624,7 +659,7 @@ def main():
                         format="%(asctime)s %(levelname)s %(message)s")
     if not all((WEB_ROOT / item[0]).is_file() for item in STATIC.values()):
         raise RuntimeError("Файлы веб-интерфейса отсутствуют. Распакуйте проект целиком.")
-    server = LocalServer(directory=state_path.parent)
+    server = LocalServer(directory=state_path.parent, address=("127.0.0.1", int(os.environ.get("TENMIYORA_PORT", "0"))))
     done = threading.Event()
     temp = state_path.with_suffix(".tmp")
     try:
@@ -634,10 +669,12 @@ def main():
         temp.replace(state_path)
         parent_pid = int(os.environ["TENMIYORA_PARENT_PID"])
         threading.Thread(target=watch_parent, args=(server, parent_pid, done), daemon=True).start()
+        server.updater.start()
         logging.info("Сервер готов: %s", server.url)
         server.serve_forever(poll_interval=0.2)
     finally:
         done.set()
+        server.updater.close()
         server.server_close()
         try:
             if json.loads(state_path.read_text(encoding="utf-8")).get("token") == server.token:
