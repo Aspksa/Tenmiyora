@@ -60,7 +60,7 @@ def validate_candidates(answer,samples):
                 or not isinstance(quote,str)
                 or not 20<=len(quote)<=350 or quote not in by_id[ident]
                 or not left or not right or key_for(left)==key_for(right)
-                or predicate not in ALLOWED):
+                or not isinstance(predicate,str) or predicate not in ALLOWED):
             continue
         if not _contains_exact_concept(quote,left) or not _contains_exact_concept(quote,right):
             continue
