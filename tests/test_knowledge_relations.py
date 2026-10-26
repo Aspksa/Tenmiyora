@@ -98,6 +98,17 @@ class RelationGraphTests(unittest.TestCase):
         self.assertEqual(self.store.engine.relations(),[])
         self.assertEqual(self.store.engine.conflicts(),[])
 
+    def test_capture_chat_of_short_clear_relations(self):
+        text = ("«Клапан» является частью «Насосная установка».\n\n"
+                "«Насосная установка» зависит от «Электропитание».")
+        self.assertGreater(len(text),70)
+        self.store.capture_chat(text)
+        rows=self.store.engine.relations()
+        self.assertEqual(len(rows),2)
+        self.assertTrue(all(row["source_type"]=="chat" for row in rows))
+        self.assertEqual(len(self.store.engine.contextual_relations("Клапан")),1)
+        self.assertEqual(self.store.engine.contextual_relations("неизвестное вещество"),[])
+
     def test_chat_origin_stored_without_any_external_request(self):
         # Plain local memory ingestion does not send chat contents to an API.
         self.store.engine.ingest("chat","local-1","Сообщение пользователя",LINKS)
