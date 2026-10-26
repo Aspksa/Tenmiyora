@@ -266,6 +266,9 @@ class KnowledgeStore:
             parsed, status = "", "не удалось прочитать содержимое"
         from document_understanding import extract_segments
         document = extract_segments(name,data)
+        if not parsed.strip() and Path(name).suffix.lower()==".pdf" and document["segments"]:
+            parsed="\n\n".join(x["text"] for x in document["segments"])[:MAX_EXTRACT]
+            status="готово; локальное распознавание" if parsed else status
         updated = False
         with self.lock, self.db() as conn:
             if folder is not None and not conn.execute(
@@ -590,6 +593,8 @@ class KnowledgeStore:
             else:
                 conn.execute("DELETE FROM facts WHERE source_type='file' AND source_id=?", (fid,))
                 self.engine.remove_source(conn, "file", fid)
+                from document_understanding import remove as remove_document
+                remove_document(conn,fid)
                 conn.execute("DELETE FROM file_versions WHERE file_id=?", (fid,))
             conn.execute(f"DELETE FROM {table} WHERE id=?", (fid,))
             self.log(conn, "удаление", row["name"])
