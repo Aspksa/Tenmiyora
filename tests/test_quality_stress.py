@@ -41,7 +41,7 @@ class StressDatasetTests(unittest.TestCase):
         self.assertEqual(len(positive), 80)
         self.assertEqual(len(negative), 20)
         self.assertEqual({q["relevant_document"] for q in positive}, ids)
-        self.assertEqual(len({q["id"] for q in data["queries"]}), 85)
+        self.assertEqual(len({q["id"] for q in data["queries"]}), 100)
 
     def test_failure_not_hidden_by_reporter(self):
         result = {"documents": 80, "search_queries": 85,
