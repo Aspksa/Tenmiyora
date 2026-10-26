@@ -375,7 +375,9 @@ class KnowledgeStore:
                 continue
             local_topics = classify(heading)
             if local_topics == ["Общие знания"]:
-                local_topics = classify(samples[0])
+                # Не создаём ветки по одному произвольному заголовку:
+                # открытые направления проходят отдельную проверку в ingest().
+                continue
             parent = self.engine._branch(conn, local_topics[0])
             child = self.engine._branch(conn, heading, parent)
             for offset, sample in enumerate(samples, 1):
@@ -396,7 +398,10 @@ class KnowledgeStore:
         if "?" in text[:150]:
             return 0
         from topic_router import classify
-        if classify(text[:4000]) == ["Общие знания"]:
+        from topic_discovery import discover
+        from memory_engine import sentences
+        if (classify(text[:4000]) == ["Общие знания"] and
+                not discover(text[:4000], list(sentences(text[:4000])))):
             return 0
         source_id = secrets.token_hex(12)
         with self.lock, self.db() as conn:
