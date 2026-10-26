@@ -88,7 +88,10 @@
       readableBytes(item.size) + ' · ' + item.status + ' · ' + date(item.created)));
     row.append(main);
     const actions = element('div', 'disk-row-actions');
-    if (kind === 'file') actions.append(button('Скачать', () => download(item)));
+    if (kind === 'file') {
+      actions.append(button('Изучить', () => openDocument(item)));
+      actions.append(button('Скачать', () => download(item)));
+    }
     actions.append(button('Имя', async () => {
       const next = prompt('Новое имя:', item.name);
       if (next === null || next.trim() === item.name) return;
@@ -108,6 +111,105 @@
     row.append(actions);
     return row;
   }
+  let documentDialog;
+  function ensureDocumentDialog() {
+    if (documentDialog) return documentDialog;
+    const dialog = element('dialog','doc-dialog');
+    const header = element('div','doc-dialog-head');
+    header.append(element('h3','','Изучение документа'));
+    header.append(button('Закрыть',() => dialog.close()));
+    dialog.append(header);
+    const status = element('p','module-muted');
+    status.id='doc-reading-status';
+    const body = element('div','doc-results');
+    body.id='doc-reading-results';
+    const form = element('form','doc-question-form');
+    form.addEventListener('submit',event => event.preventDefault());
+    const input = element('input','doc-question-input');
+    input.type='text';input.maxLength=600;input.placeholder='Спросите о сроках, обязанностях, условиях…';
+    input.setAttribute('aria-label','Вопрос по документу');
+    input.id='doc-question-input';
+    const ask = button('Найти ответ в документе',() => askDocument());
+    ask.id='doc-question-submit';
+    form.append(input,ask);
+    dialog.append(status,body,form);
+    dialog.addEventListener('click',event => {
+      if (event.target===dialog) dialog.close();
+    });
+    document.body.append(dialog);
+    documentDialog=dialog;
+    return dialog;
+  }
+  let selectedDocument;
+  async function openDocument(file) {
+    selectedDocument=file;
+    const dialog=ensureDocumentDialog();
+    $('doc-reading-status').textContent='Чтение структуры и источников…';
+    $('doc-reading-results').replaceChildren();
+    $('doc-question-input').value='';
+    if (!dialog.open) dialog.showModal();
+    try {
+      const data=await request('document?id='+encodeURIComponent(file.id));
+      $('doc-reading-status').textContent=(data.complete ? 'Извлечённый текст обработан' : 'Документ прочитан частично')+
+        ' · '+data.segment_count+' блоков · '+data.characters+' символов';
+      const panel=$('doc-reading-results');
+      if (data.limitations.length) {
+        const note=element('p','doc-warning',data.limitations.join(' '));panel.append(note);
+      }
+      panel.append(element('h4','','Смысловые элементы и цитаты'));
+      for(const finding of data.findings.slice(0,30)) {
+        const card=element('div','doc-citation');
+        const heading=finding.categories.join(', ') || 'Дата';
+        card.append(element('small','',heading+' · '+finding.locator));
+        card.append(element('p','',finding.quote));
+        panel.append(card);
+      }
+      if (!data.findings.length) panel.append(element('p','module-muted','Явные условия не найдены. Можно задать вопрос по исходному тексту.'));
+      if(data.possible_conflicts?.length){
+        panel.append(element('h4','','Возможные несовпадения — требуют проверки'));
+        for(const candidate of data.possible_conflicts.slice(0,10)){
+          for(const source of candidate.evidence){
+            const line=element('div','doc-citation');
+            line.append(element('small','',source.locator));
+            line.append(element('p','',source.quote));
+            panel.append(line);
+          }
+        }
+      }
+    } catch(error) { $('doc-reading-status').textContent=error.message; }
+  }
+  async function askDocument(){
+    if (!selectedDocument) return;
+    const question=$('doc-question-input').value.trim();
+    if(question.length<3) {message('Введите вопрос по документу.');return;}
+    const action=$('doc-question-submit');
+    action.disabled=true;
+    try{
+      const data=await request('document/ask',{id:selectedDocument.id,question});
+      const panel=$('doc-reading-results');
+      const answer=element('section','doc-answer');
+      answer.append(element('h4','','Ответ по источнику'));
+      answer.append(element('p','',data.answer));
+      if(!data.complete) answer.append(element('p','doc-warning','Внимание: документ обработан не полностью.'));
+      for(const cit of data.citations || []){
+        const source=element('div','doc-citation');
+        source.append(element('small','',cit.locator));
+        source.append(element('p','',cit.quote));
+        answer.append(source);
+      }
+      for(const conflict of data.possible_conflicts || []){
+        for(const cit of conflict.evidence){
+          const item=element('div','doc-citation');
+          item.append(element('small','',cit.locator));
+          item.append(element('p','',cit.quote));
+          answer.append(item);
+        }
+      }
+      panel.prepend(answer);
+    }catch(error){message(error.message);}
+    finally{action.disabled=false;}
+  }
+
   async function download(item) {
     try {
       const response = await fetch('/api/disk/download?id=' + encodeURIComponent(item.id),
