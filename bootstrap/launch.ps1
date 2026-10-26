@@ -135,7 +135,7 @@ try {
     }
     $stamp = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
     $script:logPath = Join-Path $runtime "launch-$stamp.log"
-    Write-Status '✦ Tenmiyora · v0.2.0 · Подготовка'
+    Write-Status '✦ Tenmiyora · v0.3.0 · Подготовка'
     # Recover an orphaned instance only after an authenticated health check.
     $previous = Get-Session
     if (Test-Session $previous) {

@@ -17,6 +17,7 @@ class WindowsLauncherTests(unittest.TestCase):
         folder = Path(temporary) / "Тест проекта ! & (Tenmiyora)"
         source = Path(__file__).resolve().parents[1]
         shutil.copytree(source / "bootstrap", folder / "bootstrap")
+        shutil.copytree(source / "web", folder / "web")
         shutil.copy2(source / "Tenmiyora.bat", folder / "Tenmiyora.bat")
         return folder
 

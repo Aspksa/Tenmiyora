@@ -5,6 +5,12 @@ if sys.version_info < (3, 10):
     raise SystemExit(1)
 
 # Match the server's runtime dependencies, including embedded distributions.
+import copy
+import datetime
+import math
+import ssl
+import urllib.request
+from http.cookies import SimpleCookie
 import ctypes
 import hmac
 import json

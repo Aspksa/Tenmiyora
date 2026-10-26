@@ -26,3 +26,8 @@ jobs:
           }
       - name: Проверить сервер и запуск BAT
         run: python -m unittest discover -s tests -v
+      - name: Проверить JavaScript и положение окон
+        run: |
+          node --check web/app.js
+          node --check web/layout.js
+          node --test tests/layout.test.cjs
