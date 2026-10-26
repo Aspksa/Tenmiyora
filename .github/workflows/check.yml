@@ -1,0 +1,26 @@
+name: Проверка запуска
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  check:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Проверить PowerShell 5.1
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $tokens = $null
+          $parseErrors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD 'bootstrap/launch.ps1'), [ref]$tokens, [ref]$parseErrors)
+          if ($parseErrors.Count) { $parseErrors | Format-List; exit 1 }
+      - name: Проверить сервер и запуск BAT
+        run: python -m unittest discover -s tests -v
