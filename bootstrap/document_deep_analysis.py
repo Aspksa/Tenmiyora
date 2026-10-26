@@ -119,7 +119,8 @@ def review(reader,provider,connection,file_id,question,max_batches=MAX_BATCHES):
         proposals=validate_answer(raw["choices"][0]["message"]["content"],batch)
         suggestions.extend(proposals)
     return {
-        "file_id":file_id,"processed_batches":count,"total_batches":len(work),
+        "file_id":file_id,"_source_sha":info["file_sha"],
+        "processed_batches":count,"total_batches":len(work),
         "complete":bool(info["is_complete"]) and count==len(work),
         "limitations":json.loads(info["notes"])+(
             ["Смысловой анализ охватил не все части документа."]
