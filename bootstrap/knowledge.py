@@ -16,6 +16,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import shutil
 import sqlite3
 import tempfile
 import threading
@@ -196,6 +197,9 @@ class KnowledgeStore:
             # Прерванные при выключении задачи не должны выглядеть выполняющимися.
             conn.execute("""UPDATE files SET status='готово; анализ прерван при остановке'
                 WHERE status='готово; смысловой анализ ожидает'""")
+        from memory_engine import MemoryEngine
+        self.engine = MemoryEngine(self)
+
     @contextmanager
     def db(self):
         conn = sqlite3.connect(self.db_path, timeout=15)
@@ -351,6 +355,9 @@ class KnowledgeStore:
             return {"facts": [dict(row) for row in rows]}
 
     def retrieve(self, question, limit=6):
+        return self.engine.search(question, limit)
+
+    def _legacy_retrieve(self, question, limit=6):
         terms = set(WORD_RE.findall(question.lower()))
         if not terms:
             return []
@@ -418,6 +425,7 @@ class KnowledgeStore:
                         (leaf_id, "file", fid, excerpt,
                          f"{file['name']}, смысловой фрагмент {excerpt_id}", now()))
                     created += cursor.rowcount
+            created += self.engine.add_semantic(conn, fid, file["name"], proposed, samples)
             self.log(conn, "смысловой анализ", f"{file['name']}: добавлено {created} записей")
             conn.execute("UPDATE files SET status=? WHERE id=?",
                          ("готово; смысловой анализ завершён", fid))
@@ -455,6 +463,7 @@ class KnowledgeStore:
                     raise ValueError("Папка не пустая. Удалите или переместите её содержимое.")
             else:
                 conn.execute("DELETE FROM facts WHERE source_type='file' AND source_id=?", (fid,))
+                self.engine.remove_source(conn, "file", fid)
             conn.execute(f"DELETE FROM {table} WHERE id=?", (fid,))
             self.log(conn, "удаление", row["name"])
         if kind == "file":
