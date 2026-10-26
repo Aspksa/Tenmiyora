@@ -13,6 +13,7 @@ import unicodedata
 
 from knowledge import CATEGORIES, CHILDREN, SECRET_RE, categorize, chunks, now
 from semantic import normalize_label
+from topic_router import classify, choose_child
 
 TOKEN = re.compile(r"[a-zа-яё0-9_]{3,}", re.IGNORECASE)
 SENTENCE = re.compile(r"(?<=[.!?])\s+(?=[А-ЯЁA-Z])|\n\s*\n")
@@ -229,19 +230,16 @@ class MemoryEngine:
         roots = set()
         with self.store.lock, self.store.db() as db:
             for offset, stmt in enumerate(entries, 1):
-                categories = categorize(stmt)
-                if categories == ["Общие знания"]:
-                    categories = categorize(text[:5000])[:1]
-                category = categories[0]
-                root = self._branch(db, category)
-                roots.add(root)
-                leaf = root
-                for title, patterns in CHILDREN.get(category, ()):
-                    if any(w in stmt.lower() for w in patterns):
-                        leaf = self._branch(db, title, root)
-                        break
-                count += self._insert(db, leaf, source_type, source_id, stmt,
-                                      f"{name}, утверждение {offset}")
+                # Классификация *только* текущего утверждения: обложка или
+                # первые страницы не меняют тему независимого раздела.
+                categories = classify(stmt)
+                for category in categories:
+                    root = self._branch(db, category)
+                    roots.add(root)
+                    child = choose_child(category, stmt)
+                    leaf = self._branch(db, child, root) if child else root
+                    count += self._insert(db, leaf, source_type, source_id, stmt,
+                                          f"{name}, утверждение {offset}")
             self._relate(db, roots, source_type, source_id)
             self.audit(db, "извлечение утверждений", source_type, source_id, f"добавлено {count}")
         return count

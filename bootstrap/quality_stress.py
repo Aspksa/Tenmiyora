@@ -24,6 +24,7 @@ from quality_eval import safe_ratio, save_report, console_print
 
 DEFAULT_OUTPUT = ROOT / ".runtime" / "quality-reports"
 DEFAULT_FLOORS = ROOT / "tests" / "quality" / "stress_floors.json"
+TOPIC_LABELS = ROOT / "tests" / "quality" / "topic_labels.json"
 
 
 def evaluate_stress(corpus=None, limit=5):
@@ -32,6 +33,9 @@ def evaluate_stress(corpus=None, limit=5):
     questions = corpus["queries"]
     if len(documents) != 80 or len(questions) != 100:
         raise ValueError("Неполный стресс-набор.")
+    labels = json.loads(TOPIC_LABELS.read_text(encoding="utf-8"))["expected_roots"]
+    if set(labels) != {d["family"] for d in documents}:
+        raise ValueError("Неполные эталоны десяти тематических направлений.")
     start = time.monotonic()
     with tempfile.TemporaryDirectory(prefix="tenmiyora-stress-") as folder:
         store = KnowledgeStore(folder)
@@ -50,6 +54,10 @@ def evaluate_stress(corpus=None, limit=5):
         anchored = 0
         correct_primary_branch = 0
         evaluated_primary_branches = 0
+        correct_all_domains = 0
+        evaluated_all_domains = 0
+        wrong_extra_domains = 0
+        all_domain_assignments = 0
         duplicate_count = 0
         case_details = []
         with store.db() as conn:
@@ -64,16 +72,26 @@ def evaluate_stress(corpus=None, limit=5):
                 seen = set()
                 anchor_present = False
                 branch_present = False
+                anchor_roots = set()
                 for row in rows:
                     source_count += 1
                     if canon(row["statement"]) in canon(doc["text"]) and doc["filename"] in row["locator"]:
                         valid_sources += 1
-                    key = canon(row["statement"])
+                    # Несколько тематических привязок одного исходного
+                    # утверждения допустимы. Дубликат = повтор в той же ветке.
+                    key = (canon(row["statement"]),row["branch_id"])
                     if key in seen:
                         duplicate_count += 1
                     seen.add(key)
-                    if canon(doc["anchor"]) in key:
+                    if canon(doc["anchor"]) in key[0]:
                         anchor_present = True
+                        if row["parent"] is None:
+                            anchor_roots.add(row["name"])
+                        else:
+                            parent = conn.execute("SELECT name FROM branches WHERE id=?",
+                                                  (row["parent"],)).fetchone()
+                            if parent:
+                                anchor_roots.add(parent["name"])
                         if doc["expected_branch"]:
                             if row["name"] == doc["expected_branch"]:
                                 branch_present = True
@@ -89,11 +107,19 @@ def evaluate_stress(corpus=None, limit=5):
                 if doc["expected_branch"] and anchor_present:
                     evaluated_primary_branches += 1
                     correct_primary_branch += bool(branch_present)
+                if anchor_present:
+                    evaluated_all_domains += 1
+                    expected_root = labels[doc["family"]]
+                    correct_all_domains += expected_root in anchor_roots
+                    wrong_extra_domains += len(anchor_roots - {expected_root})
+                    all_domain_assignments += len(anchor_roots)
                 case_details.append({
                     "id": doc["id"], "challenge": doc["challenge"],
                     "anchor_found": anchor_present,
                     "expected_branch": doc["expected_branch"],
                     "correct_primary_branch": branch_present if doc["expected_branch"] and anchor_present else None,
+                    "expected_root_all_domains": labels[doc["family"]],
+                    "anchor_roots": sorted(anchor_roots),
                     "truth_label": doc["truth_label"],
                     "size_chars": doc["length"],
                     "indexed_records": len(rows),
@@ -153,6 +179,11 @@ def evaluate_stress(corpus=None, limit=5):
             "source_integrity": safe_ratio(valid_sources, source_count),
             "primary_branch_accuracy_when_anchor_found": safe_ratio(
                 correct_primary_branch, evaluated_primary_branches),
+            # Отдельная метрика на всех десяти направлениях, которая не
+            # подменяет прежнее измерение по четырём известным темам.
+            "topic_accuracy_all_10": safe_ratio(correct_all_domains,evaluated_all_domains),
+            "topic_precision_all_10": safe_ratio(
+                all_domain_assignments - wrong_extra_domains,all_domain_assignments),
             "hit_at_k": safe_ratio(hits, positive_count),
             "top1_accuracy": safe_ratio(first, positive_count),
             "mrr": round(rank_sum / positive_count, 6) if positive_count else 1,
