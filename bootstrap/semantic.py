@@ -8,7 +8,11 @@ import json
 import re
 import unicodedata
 from knowledge import SECRET_RE
-from memory_engine import SENSITIVE
+SENSITIVE = re.compile(
+    r"(?i)(?:[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}|"
+    r"\b(?:\+7|8)[\s\-()]?\d{3}[\s\-()]?\d{3}[\s\-()]?\d{2}[\s\-()]?\d{2}\b|"
+    r"\b(?:\d[\s-]?){16}\b)"
+)
 
 MAX_SAMPLES = 14
 MAX_SAMPLE_CHARS = 550
