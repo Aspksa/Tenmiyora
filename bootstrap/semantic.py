@@ -47,8 +47,6 @@ def samples_from_text(text):
                 part = clean[pos:pos + MAX_SAMPLE_CHARS]
                 if len(part) >= 35 and not SECRET_RE.search(part):
                     eligible.append(part)
-        if len(eligible) >= 500:
-            break
     if not eligible:
         return []
     count = min(MAX_SAMPLES, len(eligible))
