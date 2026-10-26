@@ -11,7 +11,7 @@ from knowledge import SECRET_RE
 
 MAX_SAMPLES = 14
 MAX_SAMPLE_CHARS = 550
-MAX_INPUT_CHARS = 11_000
+MAX_INPUT_CHARS = 12_000
 MAX_TOPICS = 6
 MAX_EVIDENCES = 5
 LABEL_RE = re.compile(r"^[\wА-Яа-яЁё][\wА-Яа-яЁё .,:()+/#&\-]{2,63}$", re.UNICODE)
@@ -57,7 +57,7 @@ def samples_from_text(text):
 
 
 def make_messages(samples, branch_names):
-    existing = [name[:64] for name in branch_names if isinstance(name, str)][:60]
+    existing = [name[:64] for name in branch_names if isinstance(name, str)][:32]
     excerpts = [{"id": row["id"], "text": row["text"]} for row in samples]
     question = {"задача": "Определить темы и подтемы по смыслу текста.",
                 "существующие_ветки": existing,
@@ -77,8 +77,11 @@ def make_messages(samples, branch_names):
         "Если тема неясна, верни объект с пустым массивом topics."
     )
     payload = json.dumps(question, ensure_ascii=False)
+    if len(payload) > MAX_INPUT_CHARS:
+        question["существующие_ветки"] = existing[:10]
+        payload = json.dumps(question, ensure_ascii=False)
     return [{"role": "system", "content": system},
-            {"role": "user", "content": payload[:MAX_INPUT_CHARS + 3000]}]
+            {"role": "user", "content": payload}]
 
 
 def parse_topics(answer, samples):
