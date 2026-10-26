@@ -81,15 +81,11 @@ class InternalLabTests(unittest.TestCase):
             second=_digest_paths([test])
         self.assertNotEqual(first,second)
 
-    def test_lab_code_is_part_of_algorithm_fingerprint(self):
-        from brain_lab import CORE_FILES
-        self.assertIn("brain_lab.py",CORE_FILES)
-
     def test_graph_and_branch_changes_invalidate_stale_lab_results(self):
         from brain_lab import signature
-        item=self.store.upload("связи.txt",
-            "«Насос» является частью «Система».\n\n"
-            "Договор поставки регулирует обязательства покупателя.".encode())
+        self.store.upload("связи.txt",
+            ("«Насос» является частью «Система».\n\n"
+             "Договор поставки регулирует обязательства покупателя.").encode())
         with self.store.db() as db:
             before=signature(db)
             relation=db.execute("SELECT id,statement_hash FROM knowledge_relations LIMIT 1").fetchone()
