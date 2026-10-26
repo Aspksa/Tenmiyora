@@ -193,6 +193,9 @@ class KnowledgeStore:
                 CREATE INDEX IF NOT EXISTS idx_facts_source ON facts(source_type,source_id);
                 CREATE INDEX IF NOT EXISTS idx_files_folder ON files(folder);
             """)
+            # Прерванные при выключении задачи не должны выглядеть выполняющимися.
+            conn.execute("""UPDATE files SET status='готово; анализ прерван при остановке'
+                WHERE status='готово; смысловой анализ ожидает'""")
     @contextmanager
     def db(self):
         conn = sqlite3.connect(self.db_path, timeout=15)
