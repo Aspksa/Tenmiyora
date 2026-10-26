@@ -30,7 +30,7 @@ def evaluate_stress(corpus=None, limit=5):
     corpus = corpus or build_cases()
     documents = corpus["documents"]
     questions = corpus["queries"]
-    if len(documents) != 80 or len(questions) < 80:
+    if len(documents) != 80 or len(questions) != 100:
         raise ValueError("Неполный стресс-набор.")
     start = time.monotonic()
     with tempfile.TemporaryDirectory(prefix="tenmiyora-stress-") as folder:
@@ -227,6 +227,9 @@ def main(args=None):
     report["checks"] = {"passed": not problems, "failures": problems,
                         "minimum": config.get("minimum", {})}
     path = save_report(report, options.output)
+    stress_path = path.with_name("stress-" + path.name.removeprefix("quality-"))
+    path.rename(stress_path)
+    path = stress_path
     console_print(f"Стресс-корпус: {report['documents']} документов, "
                   f"{report['search_queries']} запросов; {report['long_documents']} длинных.")
     for key, score in report["metrics"].items():
