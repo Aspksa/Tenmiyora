@@ -157,9 +157,8 @@ def _gather(db,candidate,negative=False):
             FROM relation_denials d
             JOIN files f ON d.source_type='file' AND f.id=d.source_id
             WHERE d.subject_key=? AND d.predicate=? AND d.object_key=?
-              AND d.source_id<>?
             ORDER BY d.id DESC LIMIT 500""",(
-                subject,candidate["predicate"],obj,candidate["file_id"])).fetchall()
+                subject,candidate["predicate"],obj)).fetchall()
     else:
         rows=db.execute("""SELECT r.id,r.source_type,r.source_id,
                 r.evidence,r.locator,r.statement_hash,f.sha256
@@ -178,7 +177,7 @@ def _gather(db,candidate,negative=False):
     seen_documents=set()
     seen_quotes=set()
     for row in rows:
-        if row["sha256"]==candidate["file_sha"]:
+        if not negative and row["sha256"]==candidate["file_sha"]:
             continue
         text_key=key_for(row["evidence"])
         if (row["sha256"] in seen_documents or
