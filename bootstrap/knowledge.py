@@ -524,8 +524,10 @@ class KnowledgeStore:
             else:
                 conn.execute("DELETE FROM facts WHERE source_type='file' AND source_id=?", (fid,))
                 self.engine.remove_source(conn, "file", fid)
+                conn.execute("DELETE FROM file_versions WHERE file_id=?", (fid,))
             conn.execute(f"DELETE FROM {table} WHERE id=?", (fid,))
             self.log(conn, "удаление", row["name"])
         if kind == "file":
             (self.objects / fid).unlink(missing_ok=True)
+            shutil.rmtree(self.root / "versions" / fid, ignore_errors=True)
         return {"ok": True}
