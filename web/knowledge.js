@@ -318,6 +318,81 @@
     searchTimer = setTimeout(loadDisk, 220);
   });
 
+  let brainLabBusy=false;
+  function labRow(label,value) {
+    const row=element('div','brain-lab-row');
+    row.append(element('span','',label));
+    row.append(element('strong','',value));
+    return row;
+  }
+  function renderLab(data) {
+    const pane=$('brain-lab-content');
+    if(!pane) return;
+    pane.replaceChildren();
+    pane.append(labRow('Поколений с экзаменами',data.generation_count));
+    pane.append(labRow('Принятое контрольное поколение',
+      data.accepted_generation ? '#'+data.accepted_generation.id : 'Нет'));
+    const current=data.latest_generation;
+    if(current) pane.append(labRow('Последний результат',
+      '#'+current.id+' · '+(current.quality_score*100).toFixed(1)+'% (синтетический корпус)'));
+    const gaps=Object.entries(data.gap_counts||{});
+    pane.append(element('h3','','Обнаруженные пробелы'));
+    if(!gaps.length) pane.append(element('p','module-muted',
+      'Пробелы ещё не обнаружены. Запустите локальную проверку.'));
+    for(const [kind,total] of gaps) {
+      const names={
+        incomplete_document:'Неполное чтение документов',
+        weak_evidence:'Недостаточно подтверждений',
+        possible_conflict:'Возможные противоречия',
+        missing_origin:'Неизвестный первоисточник'};
+      pane.append(labRow(names[kind]||kind,total));
+    }
+    if(data.gaps?.length){
+      const examples=element('div','brain-lab-gaps');
+      for(const gap of data.gaps.slice(0,8)) {
+        const line=element('p','module-muted');
+        line.textContent=gap.detail || gap.kind;
+        examples.append(line);
+      }
+      pane.append(examples);
+    }
+    pane.append(element('h3','','Проверяемые навыки'));
+    if(!data.skills?.length) pane.append(element('p','module-muted',
+      'Навыки появятся как предложения после обнаружения подходящих проблем.'));
+    for(const skill of data.skills || []){
+      pane.append(labRow(skill.name,skill.status==='proposed'?'Предложен':
+          skill.status==='approved'?'Одобрен':'Отключён'));
+    }
+    pane.append(element('p','module-muted',
+      'Лаборатория не меняет программу или веса модели. Оценки относятся только к контрольным синтетическим заданиям.'));
+  }
+  async function loadLab() {
+    try { renderLab(await request('brain/lab')); }
+    catch(error) { $('brain-lab-status').textContent=error.message; }
+  }
+  async function runLab(action) {
+    if(brainLabBusy) return;
+    if(action==='experiment' && !confirm(
+      'Провести три последовательных локальных экзамена? Измеряется синтетический корпус без обращения к Cloud.ru.')) return;
+    brainLabBusy=true;
+    const scan=$('brain-lab-scan'),exam=$('brain-lab-exam');
+    scan.disabled=true;exam.disabled=true;
+    $('brain-lab-status').textContent=
+      action==='experiment'?'Локальные испытания выполняются…':'Проверяются источники и пробелы…';
+    try {
+      const result=await request(action==='experiment'?'brain/lab/experiment':'brain/lab/scan',
+        action==='experiment'?{trials:3}:{});
+      $('brain-lab-status').textContent=action==='experiment'
+        ? ('Поколение №'+result.generation+' · '+result.verdict+' · '
+          +result.trials+' испытания; без изменения весов и кода.')
+        : 'Локальная проверка пробелов завершена.';
+      await loadLab();
+    } catch(error) { $('brain-lab-status').textContent=error.message; }
+    finally {brainLabBusy=false;scan.disabled=false;exam.disabled=false;}
+  }
+  $('brain-lab-scan').addEventListener('click',()=>runLab('scan'));
+  $('brain-lab-exam').addEventListener('click',()=>runLab('experiment'));
+
   async function loadBrain() {
     try {
       const data = await request('brain');
@@ -345,6 +420,7 @@
         row.append(element('time', '', date(event.time)));
         events.append(row);
       }
+      await loadLab();
     } catch (error) { message(error.message); }
   }
   async function selectBranch(branch) {
