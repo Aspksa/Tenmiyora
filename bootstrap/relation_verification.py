@@ -13,6 +13,7 @@ import hashlib
 import re
 
 from knowledge_relations import (entity_name, key_for, raw_sentences, UNSAFE)
+from source_provenance import group_sources, details as provenance_details
 from natural_relations import natural_entity
 
 NEGATIONS = {
@@ -191,8 +192,10 @@ def _gather(db,candidate,negative=False):
 
 
 def evaluate(db,candidate):
-    """Evidence status for currently live files, never claims epistemic truth."""
-    supports=_gather(db,candidate,False)
+    """Count separate documentary origin groups, never claim verified authorship."""
+    documentary_supports=_gather(db,candidate,False)
+    groups,warnings=group_sources(db,documentary_supports)
+    supports=[group[0] for group in groups]
     counters=_gather(db,candidate,True)
     # Direct denial within originating text is also sufficient to dispute.
     own_denial=parse_denial(candidate["quote"])
@@ -214,8 +217,14 @@ def evaluate(db,candidate):
         return [{key:row[key] for key in ("source_type","source_id",
                                           "evidence","locator","statement_hash")}
                 for row in rows[:MAX_LISTED_EVIDENCE]]
+    source_info=[provenance_details(db,row["source_id"])
+                 for row in supports[:MAX_LISTED_EVIDENCE]]
     return {"status":status,"support_count":len(supports),
+            "document_support_count":len(documentary_supports),
             "counter_count":len(counters),"supports":compact(supports),
+            "all_documentary_supports":compact(documentary_supports),
+            "source_warnings":warnings,"source_provenance":source_info,
+            "author_independence_verified":False,
             "counterarguments":compact(counters)}
 
 

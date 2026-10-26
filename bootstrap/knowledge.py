@@ -299,6 +299,11 @@ class KnowledgeStore:
                 else:
                     conn.execute("INSERT INTO files VALUES(?,?,?,?,?,?,?,?)",
                                  (fid,folder,name,len(data),mime,checksum,status,now()))
+                # Паспорт и проверяемые отпечатки хранятся в той же SQLite-
+                # транзакции, что запись версии файла. Данные из заголовка
+                # остаются *заявлениями документа*, не подлинным авторством.
+                from source_provenance import register as register_source
+                register_source(conn,fid,checksum,parsed,now())
                 if parsed.strip():
                     self._learn(conn,parsed,"file",fid,name)
                 temporary.replace(target)
