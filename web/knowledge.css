@@ -70,3 +70,19 @@
 .doc-question-input{min-width:0;flex:1;border:1px solid #d6cab5;padding:11px;border-radius:8px;background:#fff;color:#302c24;font:inherit}
 .doc-question-form button:disabled{opacity:.5;cursor:wait}
 @media(max-width:550px){.doc-dialog{padding:13px}.doc-question-form{align-items:stretch;flex-direction:column}.doc-results{max-height:50vh}}
+
+/* Лаборатория Мозга: компактный контролируемый режим, без новых модальных окон. */
+.brain-lab-panel{margin-top:22px}
+.brain-lab-head{display:flex;gap:18px;align-items:flex-start;justify-content:space-between}
+.brain-lab-head h2{margin-top:0}
+.brain-lab-head p{max-width:640px;line-height:1.5}
+.brain-lab-actions{display:flex;gap:8px;flex-wrap:wrap}
+.brain-lab-actions button:disabled{opacity:.45;cursor:wait}
+.brain-lab-content{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 20px;margin-top:13px}
+.brain-lab-content h3{font-size:14px;margin:15px 0 0;grid-column:1/-1}
+.brain-lab-content>.module-muted,.brain-lab-gaps{grid-column:1/-1}
+.brain-lab-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 11px;border:1px solid #e5ddce;border-radius:8px;font-size:12px}
+.brain-lab-row strong{font-size:12px;text-align:right}
+.brain-lab-gaps{padding:10px 14px;background:#f8f5ef;border-radius:8px}
+.brain-lab-gaps p{margin:5px 0}
+@media(max-width:680px){.brain-lab-head{flex-direction:column}.brain-lab-content{grid-template-columns:1fr}}

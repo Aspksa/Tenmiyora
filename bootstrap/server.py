@@ -26,7 +26,7 @@ from knowledge import KnowledgeStore, MAX_UPLOAD
 from semantic import make_messages, parse_topics, samples_from_text
 from relation_suggestions import validate_candidates
 
-VERSION = "0.8.1"
+VERSION = "0.9.0"
 CLOUDRU_URL = "https://foundation-models.api.cloud.ru/v1"
 WEB_ROOT = Path(__file__).resolve().parents[1] / "web"
 STATIC = {
@@ -555,7 +555,7 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/state":
             if self.authorized(browser=True):
                 self.json_reply(200, self.server.workspace.public())
-        elif path in ("/api/brain", "/api/brain/facts", "/api/disk", "/api/disk/download", "/api/document"):
+        elif path in ("/api/brain", "/api/brain/facts", "/api/brain/lab", "/api/disk", "/api/disk/download", "/api/document"):
             if not self.authorized(browser=True):
                 return
             try:
@@ -567,6 +567,8 @@ class Handler(BaseHTTPRequestHandler):
                     self.json_reply(200, store.branches())
                 elif path == "/api/brain/facts":
                     self.json_reply(200, store.facts(int(value("branch"))))
+                elif path == "/api/brain/lab":
+                    self.json_reply(200, store.brain_lab_report())
                 elif path == "/api/disk":
                     self.json_reply(200, store.listing(value("folder") or None, value("q")))
                 elif path == "/api/document":
@@ -614,6 +616,10 @@ class Handler(BaseHTTPRequestHandler):
             return
         store = self.server.workspace.knowledge
         actions = {
+                   "/api/brain/lab/scan": lambda p: store.brain_lab_scan(),
+                   "/api/brain/lab/experiment": lambda p: store.brain_lab_experiment(p.get("trials",3)),
+                   "/api/brain/lab/accept": lambda p: store.brain_lab_accept(p.get("generation")),
+                   "/api/brain/lab/revert": lambda p: store.brain_lab_revert(p.get("generation")),
                    "/api/document/ask": lambda p: store.document_answer(p.get("id"),p.get("question")),
                    "/api/document/deep": self.server.workspace.analyze_document,
                    "/api/disk/folder": lambda p: store.create_folder(p.get("parent"), p.get("name")),

@@ -200,8 +200,10 @@ class KnowledgeStore:
         from memory_engine import MemoryEngine
         self.engine = MemoryEngine(self)
         from document_understanding import init_schema as document_schema
+        from brain_lab import init_schema as brain_lab_schema
         with self.lock, self.db() as conn:
             document_schema(conn)
+            brain_lab_schema(conn)
 
     @contextmanager
     def db(self):
@@ -490,6 +492,39 @@ class KnowledgeStore:
                 scored.append((score, dict(row)))
         scored.sort(key=lambda x: x[0], reverse=True)
         return [item for _, item in scored[:limit]]
+
+    def brain_lab_report(self):
+        from brain_lab import report
+        with self.lock,self.db() as conn:
+            return report(conn)
+
+    def brain_lab_scan(self):
+        from brain_lab import scan_gaps,propose_skills,report
+        with self.lock,self.db() as conn:
+            scan_gaps(conn)
+            created=propose_skills(conn)
+            data=report(conn)
+            data["proposed_skills"]=created
+            return data
+
+    def brain_lab_experiment(self,trials=3):
+        from brain_lab import run_experiment,scan_gaps,propose_skills
+        # The lab tests a separate synthetic SQLite. Its benchmark datasets
+        # never enter the user's memory. No external model is called.
+        with self.lock,self.db() as conn:
+            scan_gaps(conn)
+            propose_skills(conn)
+            return run_experiment(conn,trials)
+
+    def brain_lab_accept(self,generation):
+        from brain_lab import accept
+        with self.lock,self.db() as conn:
+            return accept(conn,generation)
+
+    def brain_lab_revert(self,generation):
+        from brain_lab import revert
+        with self.lock,self.db() as conn:
+            return revert(conn,generation)
 
     def ensure_document_index(self, fid):
         """Явное «Изучить» создаёт только новый структурный индекс старого файла.
