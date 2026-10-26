@@ -361,7 +361,11 @@ class Workspace:
                 self.data["messages"].append(user_message)
                 self.save()
                 context = [{"role": message["role"], "content": message["content"]} for message in self.data["messages"] if message["role"] in ("user", "assistant")]
-            found = self.knowledge.retrieve(content)
+            api_host = urllib.parse.urlsplit(connection["url"]).hostname
+            local_model = api_host in ("127.0.0.1", "localhost", "::1")
+            memory_allowed = local_model or os.environ.get(
+                "TENMIYORA_MEMORY_EXTERNAL_ENABLED", "0").strip().lower() in ("1", "true", "yes", "on")
+            found = self.knowledge.retrieve(content) if memory_allowed else []
             if found:
                 references = "\n".join(
                     f"[{i}] {item['branch']} | {item['locator']}: {item['excerpt']}"
