@@ -343,7 +343,9 @@ def run_experiment(db,trials=3):
                               verdict,stable_json(regressions),stable_json(differences)))
     return {"generation":new,"trials":trials,"baseline":baseline["id"] if baseline else None,
             "verdict":verdict,"minimum_metrics":worst,"score":score,
-            "regressions":regressions,"quality_gate_failures":sorted(set(all_failures)),
+            "regressions":regressions,"quality_gate_failures":sorted({
+                item.get("metric","unknown") if isinstance(item,dict) else str(item)
+                for item in all_failures}),
             "knowledge_signature":before,
             "algorithm_signature":algorithm,
             "suite_signature":suite,
