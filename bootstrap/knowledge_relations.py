@@ -169,3 +169,24 @@ def query(db,term=None,limit=100):
     sql+=" ORDER BY r.id DESC LIMIT ?"
     args.append(limit)
     return [dict(row) for row in db.execute(sql,args)]
+
+
+def for_question(db,question,limit=4):
+    """Evidence for a question that explicitly mentions a known concept.
+
+    No semantic guesses and no retrieval if the query is unrelated.
+    """
+    if not isinstance(question,str):
+        return []
+    normalized=key_for(question)
+    if not normalized or len(normalized)>512:
+        return []
+    output=[]
+    for item in query(db,limit=200):
+        subjects=[key_for(item["subject"]),key_for(item["object"])]
+        if any(re.search(r"(?<![a-zа-я0-9])"+re.escape(k)+
+                         r"(?![a-zа-я0-9])",normalized) for k in subjects):
+            output.append(item)
+            if len(output)>=limit:
+                break
+    return output
