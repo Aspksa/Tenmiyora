@@ -120,6 +120,7 @@ class Workspace:
         self.directory = Path(directory) if directory else None
         self._temporary_knowledge = tempfile.TemporaryDirectory() if directory is None else None
         self.knowledge = KnowledgeStore(self.directory if self.directory else self._temporary_knowledge.name)
+        self.document_lock = threading.Lock()
         self.semantic_queue = queue.Queue(maxsize=12)
         self.semantic_guard = threading.Lock()
         self.semantic_thread = None
@@ -417,6 +418,39 @@ class Workspace:
         finally:
             self.chat_lock.release()
 
+    def analyze_document(self,payload):
+        """Только по запросу пользователя; облако — при двух подтверждениях."""
+        fid=payload.get("id")
+        question=payload.get("question","")
+        batches=payload.get("max_batches",80)
+        if not isinstance(fid,str) or len(fid)!=32 or any(c not in "0123456789abcdef" for c in fid):
+            raise AppError("Неверный идентификатор документа.")
+        if not isinstance(question,str) or len(question)>600 or type(batches) is not int or not 1<=batches<=80:
+            raise AppError("Неверные параметры смыслового анализа.")
+        if not self.document_lock.acquire(blocking=False):
+            raise AppError("Предыдущий анализ документа ещё выполняется.",409)
+        try:
+            with self.lock:
+                connection=deepcopy(self.data["connection"])
+            if not connection.get("key") or not connection.get("model"):
+                raise AppError("Для глубокого анализа подключите текстовую модель в настройках.",409)
+            host=urllib.parse.urlsplit(connection["url"]).hostname
+            local=host in ("127.0.0.1","localhost","::1")
+            consent=os.environ.get("TENMIYORA_DOCUMENT_EXTERNAL_ENABLED","0").strip().lower() in ("1","true","on","yes")
+            if not local and (payload.get("allow_external") is not True or not consent):
+                raise AppError("Отправка текста внешней модели отключена. Для включения задайте "
+                               "TENMIYORA_DOCUMENT_EXTERNAL_ENABLED=1 перед запуском и подтвердите запрос.",403)
+            from document_deep_analysis import review
+            with self.knowledge.db() as conn:
+                result=review(conn,self.provider,connection,fid,question,batches)
+            with self.knowledge.db() as conn:
+                file=conn.execute("SELECT sha256 FROM files WHERE id=?",(fid,)).fetchone()
+                if not file or file["sha256"]!=result.pop("_source_sha"):
+                    raise AppError("Документ изменился во время анализа; результат не сохранён.",409)
+            return result
+        finally:
+            self.document_lock.release()
+
     def clear_chat(self):
         if not self.chat_lock.acquire(blocking=False):
             raise AppError("Дождитесь завершения ответа перед очисткой.", 409)
@@ -580,6 +614,7 @@ class Handler(BaseHTTPRequestHandler):
         store = self.server.workspace.knowledge
         actions = {
                    "/api/document/ask": lambda p: store.document_answer(p.get("id"),p.get("question")),
+                   "/api/document/deep": self.server.workspace.analyze_document,
                    "/api/disk/folder": lambda p: store.create_folder(p.get("parent"), p.get("name")),
                    "/api/disk/rename": lambda p: store.rename(p.get("kind"), p.get("id"), p.get("name")),
                    "/api/disk/delete": lambda p: store.delete(p.get("kind"), p.get("id")),
