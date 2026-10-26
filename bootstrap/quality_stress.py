@@ -212,20 +212,51 @@ def check_integrity(result, minimum):
     return errors
 
 
+
+def assess_quality(result, targets):
+    """Отдельные неудовлетворённые цели, не маскируемые зелёными CI-тестами."""
+    if not isinstance(targets, dict):
+        raise ValueError("Неверные критерии диагностики.")
+    missing = []
+    for name, target in targets.items():
+        if not isinstance(target, (int, float)) or not 0 <= target <= 1:
+            raise ValueError("Неверный целевой показатель: " + name)
+        if name == "long_tail_anchor_recall":
+            value = result["cohorts"]["long_tail"]["anchor_recall"]
+        elif name == "max_false_claim_storage_rate":
+            value = result["metrics"]["false_claim_storage_rate"]
+        else:
+            value = result["metrics"].get(name)
+            if value is None:
+                raise ValueError("Неизвестная метрика диагностики: " + name)
+        wrong = value > target if name.startswith("max_") else value + 1e-8 < target
+        if wrong:
+            op = "максимум" if name.startswith("max_") else "цель"
+            missing.append({"metric": name, "value": round(value, 6),
+                            "target": target, "kind": op})
+    return missing
+
+
 def main(args=None):
     parser = argparse.ArgumentParser(description="Стресс-тест растущего Мозга Tenmiyora")
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--thresholds", type=Path, default=DEFAULT_FLOORS)
     parser.add_argument("--top-k", type=int, default=5)
-    parser.add_argument("--check", action="store_true")
+    parser.add_argument("--check", action="store_true",
+                        help="Провалить проверку при нарушении обязательных инвариантов")
+    parser.add_argument("--strict", action="store_true",
+                        help="Провалить проверку также при недостижении целей диагностики")
     options = parser.parse_args(args)
     if not 1 <= options.top_k <= 20:
         parser.error("--top-k должен быть в пределах от 1 до 20")
     report = evaluate_stress(limit=options.top_k)
     config = json.loads(options.thresholds.read_text(encoding="utf-8"))
     problems = check_integrity(report, config.get("minimum", {}))
+    findings = assess_quality(report, config.get("diagnostic_targets", {}))
     report["checks"] = {"passed": not problems, "failures": problems,
                         "minimum": config.get("minimum", {})}
+    report["quality_ready"] = not findings
+    report["quality_findings"] = findings
     path = save_report(report, options.output)
     stress_path = path.with_name("stress-" + path.name.removeprefix("quality-"))
     path.rename(stress_path)
@@ -235,11 +266,16 @@ def main(args=None):
     for key, score in report["metrics"].items():
         console_print(f"  {key}: {score:.3f}")
     console_print("ДОЛГИЕ ДОКУМЕНТЫ: recall", f"{report['cohorts']['long_tail']['anchor_recall']:.3f}")
-    console_print("Результат проверок:", "ПРОЙДЕН" if not problems else "НЕ ПРОЙДЕН")
+    console_print("Технические проверки:", "ПРОЙДЕНЫ" if not problems else "НЕ ПРОЙДЕНЫ")
+    console_print("Готовность качества:", "ЦЕЛИ ДОСТИГНУТЫ" if not findings else
+                  f"ЦЕЛИ НЕ ДОСТИГНУТЫ ({len(findings)} проблем)")
+    for finding in findings:
+        console_print("Проблема качества:", json.dumps(finding, ensure_ascii=False))
     console_print("Отчёт:", path)
     for problem in problems:
         console_print("Нарушение:", problem, file=sys.stderr)
-    return int(bool(problems) and options.check)
+    return int((options.check and bool(problems)) or
+               (options.strict and bool(problems or findings)))
 
 
 if __name__ == "__main__":
