@@ -273,6 +273,17 @@ class MemoryEngine:
             for index in indices:
                 per_statement.setdefault(index, []).append(label)
         with self.store.lock, self.store.db() as db:
+            # Каждый документ часто содержит сотни утверждений об одних
+            # направлениях. Не перебираем всю таблицу branches для каждого.
+            # Кеш живёт строго внутри одной SQLite-транзакции, поэтому
+            # удаление/слияние веток в следующей операции не меняет результат.
+            branch_cache = {}
+            def cached_branch(name, parent=None):
+                key = (parent, normalize_label(name))
+                if key not in branch_cache:
+                    branch_cache[key] = self._branch(db, name, parent)
+                return branch_cache[key]
+
             for offset, stmt in enumerate(entries, 1):
                 # Новая категория принимается только после подтверждения
                 # минимум двумя разными исходными утверждениями.
@@ -281,7 +292,7 @@ class MemoryEngine:
                 if categories == ["Общие знания"] and proposed:
                     categories = proposed[:2]
                 for category in categories:
-                    root = self._branch(db, category)
+                    root = cached_branch(category)
                     roots.add(root)
                     if category in detected:
                         db.execute("INSERT OR IGNORE INTO discovered_topics VALUES(?,?,?)",
@@ -291,7 +302,7 @@ class MemoryEngine:
                             VALUES(?,?,?,?,?)""",
                             (root, source_type, source_id, digest(stmt), now()))
                     child = choose_child(category, stmt)
-                    leaf = self._branch(db, child, root) if child else root
+                    leaf = cached_branch(child, root) if child else root
                     count += self._insert(db, leaf, source_type, source_id, stmt,
                                           f"{name}, утверждение {offset}")
             aliases = learn_aliases(db,source_type,source_id,text,now(),digest)
