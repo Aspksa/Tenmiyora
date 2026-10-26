@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tests" / "quality"))
 from stress_cases import build_cases
 from knowledge import KnowledgeStore
-from memory_engine import canon
+from memory_engine import canon, EXPLICITLY_DISPUTED
 from quality_eval import safe_ratio, save_report, console_print
 
 DEFAULT_OUTPUT = ROOT / ".runtime" / "quality-reports"
@@ -132,6 +132,16 @@ def evaluate_stress(corpus=None, limit=5):
                 "hit": expected in returned if expected else not returned
             })
 
+        # Сохранять явные ошибки как цитаты полезно для аудита;
+        # опасно использовать их как доказательства при ответе.
+        false_cases = [d for d in documents if d["truth_label"] == "intentionally_false"]
+        false_exposures = 0
+        for case in false_cases:
+            question = next(q["text"] for q in questions
+                            if q["relevant_document"] == case["id"])
+            evidence = store.retrieve(question, limit)
+            if any(EXPLICITLY_DISPUTED.search(row["excerpt"]) for row in evidence):
+                false_exposures += 1
         conflicts = store.engine.conflicts()
         detected_conflict_ids = {reverse.get(c["source_id"]) for c in conflicts}
         expected_conflicts = {doc["id"] for doc in documents if doc["expect_conflict"]}
@@ -149,8 +159,8 @@ def evaluate_stress(corpus=None, limit=5):
             "negative_query_accuracy": safe_ratio(neg_correct, neg_count),
             "conflict_recall": safe_ratio(true_conflicts, len(expected_conflicts)),
             "conflict_precision": safe_ratio(true_conflicts, true_conflicts + false_conflicts),
-            "false_claim_storage_rate": safe_ratio(false_claims_stored, sum(
-                doc["truth_label"] == "intentionally_false" for doc in documents)),
+            "false_claim_storage_rate": safe_ratio(false_claims_stored, len(false_cases)),
+            "false_claim_retrieval_exposure_rate": safe_ratio(false_exposures, len(false_cases)),
             "duplicate_free_rate": safe_ratio(source_count - duplicate_count, source_count)
         }
         cohorts = {}
