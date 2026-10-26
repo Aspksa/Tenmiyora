@@ -30,6 +30,8 @@ jobs:
         run: python bootstrap/quality_eval.py --check --output .runtime/quality-reports
       - name: Проверить 80 сложных документов и качество поиска
         run: python bootstrap/quality_stress.py --check --output .runtime/quality-reports
+      - name: Проверить измеритель производительности на 60 документах
+        run: python bootstrap/performance_benchmark.py --documents 60 --paragraphs 3 --queries 20 --check --output .runtime/quality-reports
       - name: Сохранить диагностические отчёты
         if: always()
         uses: actions/upload-artifact@v4
