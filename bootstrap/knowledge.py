@@ -402,16 +402,26 @@ class KnowledgeStore:
 
     def branches(self):
         with self.lock, self.db() as conn:
+            # Не удваиваем старые и новые фрагменты: индекс утверждений
+            # становится источником счётчиков, legacy facts — запасной вариант.
             nodes = conn.execute("""SELECT b.id,b.parent,b.name,b.created,
-                       COUNT(f.id) AS facts FROM branches b LEFT JOIN facts f ON f.branch=b.id
-                       GROUP BY b.id ORDER BY b.parent,b.name""").fetchall()
+                CASE WHEN (SELECT COUNT(*) FROM knowledge_items k WHERE k.branch_id=b.id)>0
+                THEN (SELECT COUNT(*) FROM knowledge_items k WHERE k.branch_id=b.id)
+                ELSE (SELECT COUNT(*) FROM facts f WHERE f.branch=b.id) END AS facts
+                FROM branches b ORDER BY b.parent,b.name""").fetchall()
             recent = conn.execute("SELECT time,action,detail FROM journal ORDER BY id DESC LIMIT 15").fetchall()
             return {"branches": [dict(row) for row in nodes], "recent": [dict(row) for row in recent]}
 
     def facts(self, branch):
         with self.lock, self.db() as conn:
-            rows = conn.execute("""SELECT f.id,f.excerpt,f.locator,f.source_type,f.source_id,f.created
-                FROM facts f WHERE f.branch=? ORDER BY f.id DESC LIMIT 100""", (branch,)).fetchall()
+            # Последние 100 индексированных утверждений — без нового интерфейса.
+            # Более ранние записи доступны полнотекстовому поиску.
+            rows = conn.execute("""SELECT k.id,k.statement AS excerpt,k.locator,
+                k.source_type,k.source_id,k.created FROM knowledge_items k
+                WHERE k.branch_id=? ORDER BY k.id DESC LIMIT 100""", (branch,)).fetchall()
+            if not rows:
+                rows = conn.execute("""SELECT f.id,f.excerpt,f.locator,f.source_type,f.source_id,f.created
+                    FROM facts f WHERE f.branch=? ORDER BY f.id DESC LIMIT 100""", (branch,)).fetchall()
             return {"facts": [dict(row) for row in rows]}
 
     def retrieve(self, question, limit=6):

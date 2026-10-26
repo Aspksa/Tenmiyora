@@ -18,7 +18,30 @@ TOKEN = re.compile(r"[a-zа-яё0-9_]{3,}", re.IGNORECASE)
 SENTENCE = re.compile(r"(?<=[.!?])\s+(?=[А-ЯЁA-Z])|\n\s*\n")
 NUMBER = re.compile(r"\b\d+(?:[.,]\d+)?\b")
 NEGATIVE = re.compile(r"\b(?:не|нет|запрещено|не допускается|not|never)\b", re.I)
-MAX_ITEMS_PER_SOURCE = 160
+# Текст извлекается в knowledge.py с ограничением MAX_EXTRACT=350_000 знаков.
+# Индексируем всю доступную выборку, а не только первые 160 предложений.
+MAX_ITEMS_PER_SOURCE = 10_000
+CONFLICT_SUBJECT = re.compile(
+    r"\b(?:срок|период|составля\w*|дней|дня|суток|размер|сумма|суммы|цена|цену|"
+    r"стоимость|количество|норма|процент|ставка|неустойка|оплата)\b", re.I
+)
+SECTION_NOISE = re.compile(
+    r"\b(?:служебный фрагмент|заметка|запись|страница)\s+\d+", re.I
+)
+# Для явной пометки ложности в документе сохраняем факт как цитату,
+# но не разрешаем использовать его как подтверждённый ответ в чате.
+EXPLICITLY_DISPUTED = re.compile(
+    r"^\s*(?:ошибочн(?:ое|ый|ая) утверждени\w*|заведомо ложн\w* утверждени\w*|"
+    r"недостоверн\w* утверждени\w*|false claim)\b", re.I
+)
+SEARCH_STOPWORDS = frozenset({
+    "как","что","это","для","при","на","под","над","все","всех","или",
+    "его","её","ее","они","она","оно","уже","ли","если","чтобы","где",
+    "какой","какая","какие","мне","вам","нам","свои","свой","тогда",
+    "есть","нет","про","по","из","от","до","через","также","будет",
+    "расскажи","объясни","поясни","известно","информация","информации",
+    "пожалуйста","сообщи","узнай","найди","узнать","каково","почему"
+})
 SENSITIVE = re.compile(
     r"(?i)(?:[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}|"
     r"\b(?:\+7|8)[\s\-()]?\d{3}[\s\-()]?\d{3}[\s\-()]?\d{2}[\s\-()]?\d{2}\b|"
@@ -76,9 +99,15 @@ def sentences(text):
 
 def claim_signature(sentence):
     """Очень консервативная эвристика: одинаковый текст без чисел/отрицания."""
-    numbers = NUMBER.findall(sentence)
-    negated = bool(NEGATIVE.search(sentence))
+    normalized = canon(sentence)
+    numbers = NUMBER.findall(normalized)
+    negated = bool(NEGATIVE.search(normalized))
     if not numbers and not negated:
+        return None, None
+    # Номер служебного фрагмента не является условиями договора.
+    if SECTION_NOISE.search(normalized):
+        return None, None
+    if numbers and not CONFLICT_SUBJECT.search(normalized):
         return None, None
     removed = NUMBER.sub("<N>", canon(sentence))
     removed = NEGATIVE.sub("", removed)
@@ -267,51 +296,138 @@ class MemoryEngine:
                                 (day,daily))
             return bool(update.rowcount)
 
+    @staticmethod
+    def _term_match(query_term, source_term):
+        if query_term == source_term:
+            return True
+        short = min(len(query_term), len(source_term))
+        # База/базе, сумма/сумме: только близкие четырёхбуквенные формы.
+        if (short == 4 and len(query_term) <= 5 and len(source_term) <= 5
+                and query_term[:3] == source_term[:3]
+                and query_term[-1] in "аеёиоуыэюя"
+                and source_term[-1] in "аеёиоуыэюя"):
+            return True
+        # Ограниченное совпадение основ русского слова, без внешней морфологии.
+        return short >= 5 and query_term[:max(4, (short * 3) // 4)] == source_term[:max(4, (short * 3) // 4)]
+
     def search(self, question, limit=6):
-        terms = list(dict.fromkeys(TOKEN.findall(canon(question))))[:12]
+        """Консервативный поиск: отсутствие достаточных свидетельств -> [].
+
+        Это НЕ проверка истинности и не гарантия отсутствия галлюцинаций модели.
+        """
+        terms = [term for term in dict.fromkeys(TOKEN.findall(canon(question)))
+                 if term not in SEARCH_STOPWORDS][:16]
         if not terms:
             return []
-        matches = []
+        require = max(1, (len(terms) * 3 + 3) // 4)   # >=75% значимых слов запроса
+        if len(terms) > 1:
+            require = max(2, require)
+        limit = max(1, min(30, int(limit)))
         with self.store.lock, self.store.db() as db:
+            matches = []
             if self.fts:
                 try:
-                    # Each term is escaped and quoted. FTS5 does not receive raw syntax.
+                    # OR собирает кандидатов, но не является порогом достоверности.
+                    # Итоговый фильтр ниже требует достаточной поддержки фрагмента.
                     query = " OR ".join('"' + term.replace('"', '""') + '"*' for term in terms)
-                    matches = db.execute("""SELECT k.statement AS excerpt,k.locator,k.source_type,
-                        k.source_id,b.name AS branch,bm25(knowledge_fts) AS rank
+                    matches = db.execute("""SELECT k.statement AS excerpt,k.locator,
+                        k.source_type,k.source_id,b.name AS branch,bm25(knowledge_fts) AS rank
                         FROM knowledge_fts JOIN knowledge_items k ON k.id=knowledge_fts.rowid
                         JOIN branches b ON b.id=k.branch_id
                         WHERE knowledge_fts MATCH ? ORDER BY rank LIMIT ?""",
-                        (query,max(limit*6,24))).fetchall()
+                        (query,max(limit*120,600))).fetchall()
                 except sqlite3.OperationalError:
                     matches = []
-            if not matches:
-                # Переход на простой индекс без FTS5 не отрезает старые записи по времени.
+            if not self.fts:
                 matches = db.execute("""SELECT k.statement AS excerpt,k.locator,
                     k.source_type,k.source_id,b.name AS branch
                     FROM knowledge_items k JOIN branches b ON b.id=k.branch_id
-                    ORDER BY k.id DESC LIMIT 20000""").fetchall()
-            scored = []
-            seen = set()
-            for row in matches:
-                d = dict(row)
-                text = canon(d["excerpt"]+" "+d["branch"])
-                score = sum(1 for term in terms if term in text)
-                unique = digest(d["excerpt"])
-                if not score or unique in seen:
-                    continue
-                seen.add(unique)
-                scored.append((score,d))
-            scored.sort(key=lambda pair:pair[0],reverse=True)
-            result = [d for _,d in scored[:limit]]
+                    ORDER BY k.id DESC LIMIT 200000""").fetchall()
+
+            def select(rows, already=None):
+                ranked = []
+                seen = set() if already is None else set(already)
+                for row in rows:
+                    d = dict(row)
+                    snippet = d["excerpt"]
+                    if EXPLICITLY_DISPUTED.search(snippet):
+                        continue
+                    words = set(TOKEN.findall(canon(snippet)))
+                    hits = sum(any(self._term_match(term, word) for word in words)
+                               for term in terms)
+                    if hits < require:
+                        continue
+                    signature = (d["source_type"], d["source_id"], digest(snippet))
+                    if signature in seen:
+                        continue
+                    seen.add(signature)
+                    # Чем больше покрытие запроса, тем выше подтверждение,
+                    # без искусственного повышения от названия ветки.
+                    ranked.append((hits / len(terms), hits,
+                                   float(d.get("rank", 0)), d))
+                ranked.sort(key=lambda x: (-x[0],-x[1],x[2]))
+                chosen = []
+                by_source = {}
+                for _,_,_,d in ranked:
+                    source = (d["source_type"],d["source_id"])
+                    if by_source.get(source,0) >= 2:
+                        continue
+                    by_source[source] = by_source.get(source,0)+1
+                    d.pop("rank",None)
+                    chosen.append(d)
+                    if len(chosen)>=limit:
+                        break
+                return chosen
+
+            result = select(matches)
             if result:
                 return result
-            # Compatibility fallback for unchanged legacy citations.
+            # Запрос из 2–3 понятий иногда относится к двум отдельным
+            # предложениям одного документа. Сверяем покрытие источника,
+            # возвращая реальные фрагменты, а не выдуманную сводку.
+            if 2 <= len(terms) <= 3:
+                grouped = {}
+                for row in matches:
+                    d = dict(row)
+                    if EXPLICITLY_DISPUTED.search(d["excerpt"]):
+                        continue
+                    words = set(TOKEN.findall(canon(d["excerpt"])))
+                    indices = {i for i, term in enumerate(terms)
+                               if any(self._term_match(term, word) for word in words)}
+                    if not indices:
+                        continue
+                    source = (d["source_type"], d["source_id"])
+                    entry = grouped.setdefault(source, {"indices": set(), "rows": []})
+                    entry["indices"].update(indices)
+                    if len(entry["rows"]) < 6:
+                        entry["rows"].append((len(indices), d))
+                sufficient = [
+                    value for value in grouped.values()
+                    if len(value["indices"]) >= require
+                ]
+                sufficient.sort(key=lambda value: -len(value["indices"]))
+                if sufficient:
+                    supported = sorted(sufficient[0]["rows"], key=lambda x: -x[0])
+                    evidence = []
+                    covered = set()
+                    for _, data in supported:
+                        words = set(TOKEN.findall(canon(data["excerpt"])))
+                        found = {i for i, term in enumerate(terms)
+                                 if any(self._term_match(term, word) for word in words)}
+                        if not found - covered:
+                            continue
+                        covered.update(found)
+                        data.pop("rank", None)
+                        evidence.append(data)
+                        if len(covered) >= require or len(evidence) >= limit:
+                            break
+                    if len(covered) >= require:
+                        return evidence[:limit]
+            # Старые факты проходят РОВНО такую же проверку достаточности.
             rows = db.execute("""SELECT f.excerpt,f.locator,f.source_type,f.source_id,
                 b.name AS branch FROM facts f JOIN branches b ON b.id=f.branch
-                ORDER BY f.id DESC LIMIT 20000""").fetchall()
-            legacy = [(sum(term in canon(r["excerpt"]+" "+r["branch"]) for term in terms),dict(r)) for r in rows]
-            return [r for n,r in sorted(legacy,key=lambda x:x[0],reverse=True) if n][:limit]
+                ORDER BY f.id DESC LIMIT 200000""").fetchall()
+            return select(rows)
 
     def conflicts(self, source_id=None):
         with self.store.lock,self.store.db() as db:
