@@ -49,7 +49,7 @@ class ServerTests(unittest.TestCase):
         return {"Cookie": f"{self.server.cookie_name}={self.server.token}", "X-Tenmiyora-Client": "web", "Content-Type": "application/json"}
 
     def test_assets_are_whitelisted_and_api_requires_browser_session(self):
-        for path in ("/styles.css", "/app.js", "/layout.js", "/assets/tenmiyora-avatar.png", "/assets/mark.svg"):
+        for path in ("/styles.css", "/app.js", "/layout.js", "/updates.js", "/assets/tenmiyora-avatar.png", "/assets/mark.svg"):
             with self.subTest(path=path):
                 self.assertEqual(self.request(path)[0], 200)
         self.assertEqual(self.request("/api/state")[0], 403)
@@ -59,6 +59,14 @@ class ServerTests(unittest.TestCase):
         self.assertNotIn("key", json.loads(body)["connection"])
         headers = self.browser_headers() | {"Origin": "https://evil.example"}
         self.assertEqual(self.request("/api/preferences", "POST", headers, {})[0], 403)
+
+    def test_update_api_authentication(self):
+        self.assertEqual(self.request('/api/update/status')[0], 403)
+        self.assertEqual(self.request('/api/update/install', 'POST', {}, {})[0], 403)
+        self.assertEqual(self.request('/api/update/status', headers=self.browser_headers())[0], 200)
+        self.assertEqual(self.request('/api/update/activity', 'POST', self.browser_headers(), {'client': 'test', 'busy': True})[0], 200)
+        self.assertTrue(self.server.updater.editing())
+        self.assertEqual(self.request('/api/update/activity', 'POST', self.browser_headers(), {'busy': 'wrong'})[0], 400)
 
     def test_preferences_validation_does_not_overwrite_valid_settings(self):
         payload = {"appearance": dict(server_module.DEFAULT["appearance"], size=220), "layout": {"avatar": {"x": .3, "y": .7}}}

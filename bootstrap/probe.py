@@ -5,6 +5,13 @@ if sys.version_info < (3, 10):
     raise SystemExit(1)
 
 # Match the server's runtime dependencies, including embedded distributions.
+import ast
+import hashlib
+import shutil
+import stat
+import subprocess
+import uuid
+import zipfile
 import copy
 import datetime
 import math

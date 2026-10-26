@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="/knowledge.css">
   <script src="/layout.js" defer></script>
   <script src="/app.js" defer></script>
+  <script src="/updates.js" defer></script>
   <script src="/knowledge.js" defer></script>
 </head>
 <body>
@@ -28,6 +29,7 @@
   <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
   <symbol id="i-send" viewBox="0 0 24 24"><path d="m12 4 7 8M12 4l-7 8M12 4v16"/></symbol>
   <symbol id="i-move" viewBox="0 0 24 24"><path d="m9 5 3-3 3 3m-3-3v20m-3-3 3 3 3-3M5 9l-3 3 3 3m-3-3h20m-3-3 3 3-3 3"/></symbol>
+  <symbol id="i-update" viewBox="0 0 24 24"><path d="M4 10a8 8 0 0 1 14-5l2 2M20 3v4h-4M20 14A8 8 0 0 1 6 19l-2-2M4 21v-4h4"/></symbol>
   <symbol id="i-reset" viewBox="0 0 24 24"><path d="M3 10a9 9 0 1 1 2 8M3 4v6h6"/></symbol>
   <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 2.4 6.6L21 12l-6.6 2.4L12 21l-2.4-6.6L3 12l6.6-2.4Z"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
@@ -45,10 +47,10 @@
       <a href="#settings" class="nav-item" data-nav="settings" aria-label="Настройки"><svg><use href="#i-settings"/></svg><span>Настройки</span></a>
     </nav>
     <div class="sidebar-note"><div class="note-star">✧</div><p>Большие идеи<br>начинаются с&nbsp;разговора.</p><span>TENMIYORA</span></div>
-    <div class="sidebar-bottom"><span class="live-dot"></span><span id="server-status">Подключение…</span><small>v0.6.5</small></div>
+    <div class="sidebar-bottom"><span class="live-dot"></span><span id="server-status">Подключение…</span><small>v0.6.6</small></div>
   </aside>
   <div class="workspace">
-    <header class="topbar"><div class="breadcrumb"><span>Пространство</span><span class="slash">/</span><strong id="page-title">Главная</strong></div><div class="topbar-actions"><span class="local-badge"><svg><use href="#i-lock"/></svg>На вашем компьютере</span><button class="icon-button" data-action="settings" aria-label="Настройки Tenmiyora"><svg><use href="#i-settings"/></svg></button></div></header>
+    <header class="topbar"><div class="breadcrumb"><span>Пространство</span><span class="slash">/</span><strong id="page-title">Главная</strong></div><div class="topbar-actions"><span class="local-badge"><svg><use href="#i-lock"/></svg>На вашем компьютере</span><button class="icon-button" data-action="settings" aria-label="Настройки Tenmiyora"><svg><use href="#i-settings"/></svg></button><button id="update-open" class="update-button" aria-label="Обновление проекта" aria-haspopup="dialog"><svg><use href="#i-update"/></svg><span>Обновление</span><i id="update-badge" hidden></i></button></div></header>
     <main id="main-content">
       <section id="home-view" class="view">
         <div class="page-overline"><span class="tiny-star">✦</span> ВАШ РИТМ. ВАШЕ ПРОСТРАНСТВО.</div>
@@ -133,6 +135,17 @@
     </div>
   </div>
   <footer class="settings-footer"><svg><use href="#i-check"/></svg><span id="save-status" role="status">Сохранено на этом компьютере</span></footer>
+</section>
+<section id="update-panel" class="update-panel floating-window" role="dialog" aria-label="Обновление проекта" hidden>
+  <header class="update-header"><div><span class="settings-kicker">GITHUB · ASPKSA / TENMIYORA</span><h2>Обновление проекта</h2></div><button id="update-close" class="icon-button" aria-label="Закрыть обновление"><svg><use href="#i-close"/></svg></button></header>
+  <div class="update-scroll"><div class="update-versions"><div><small>Установлена</small><strong id="update-current">—</strong><code id="update-current-sha"></code></div><svg><use href="#i-arrow"/></svg><div><small>На GitHub</small><strong id="update-available">Ещё не проверено</strong><code id="update-available-sha"></code></div></div>
+    <p id="update-message" class="update-message" role="status">Получение состояния…</p><progress id="update-progress" max="100" value="0" aria-label="Ход обновления"></progress>
+    <ol class="update-steps"><li data-update-step="0">Проверка новой версии и GitHub Actions</li><li data-update-step="1">Загрузка в отдельную папку</li><li data-update-step="2">Проверка файлов и совместимости</li><li data-update-step="3">Ожидание завершения работы с чатом</li><li data-update-step="4">Резервная копия и установка</li><li data-update-step="5">Перезапуск и проверка новой версии</li></ol>
+    <label class="toggle-row"><span><strong>Автоматическое обновление</strong><small>Проверять каждый час и устанавливать после проверок</small></span><input type="checkbox" id="update-automatic" checked><span class="toggle-ui"></span></label>
+    <p class="settings-help">Установка ждёт завершения ответа и неотправленного текста. Ключи, история и настройки остаются на компьютере. При неудачном запуске восстанавливается предыдущая версия.</p>
+    <div class="update-actions"><button id="update-check" class="secondary-button">Проверить сейчас</button><button id="update-install" class="primary-button">Скачать и установить</button></div>
+    <p id="update-checked-at" class="field-help"></p><h3 class="update-history-title">История обновлений</h3><ul id="update-history" class="update-history"></ul>
+  </div>
 </section>
 <div id="toast" class="toast" role="status" hidden></div>
 <div id="fatal-error" class="fatal-error" hidden><strong>Не удалось подключиться к Tenmiyora</strong><p id="fatal-message"></p><button id="retry-startup" class="secondary-button">Повторить</button></div>
