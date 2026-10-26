@@ -233,8 +233,10 @@ def assess_quality(result, targets):
             raise ValueError("Неверный целевой показатель: " + name)
         if name == "long_tail_anchor_recall":
             value = result["cohorts"]["long_tail"]["anchor_recall"]
-        elif name == "max_false_claim_storage_rate":
-            value = result["metrics"]["false_claim_storage_rate"]
+        elif name.startswith("max_"):
+            value = result["metrics"].get(name[4:])
+            if value is None:
+                raise ValueError("Неизвестная метрика диагностики: " + name)
         else:
             value = result["metrics"].get(name)
             if value is None:
