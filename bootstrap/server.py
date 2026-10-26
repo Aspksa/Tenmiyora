@@ -11,7 +11,7 @@ import secrets
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 PAGE = """<!doctype html>
 <html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Tenmiyora</title><style>
@@ -21,7 +21,7 @@ main{width:min(600px,100%);background:white;padding:clamp(24px,6vw,52px);border-
 border:1px solid #e6dfe9;box-shadow:0 20px 70px #34203e0c}
 small{color:#7b628b}h1{font-size:42px;letter-spacing:-1.8px;margin:10px 0}p{color:#665c6c}
 .status{display:inline-block;border-radius:20px;padding:5px 13px;background:#edf5ee;color:#356440}
-</style><main><small>ЛОКАЛЬНОЕ ПРОСТРАНСТВО · 0.1.0</small><h1>Tenmiyora</h1>
+</style><main><small>ЛОКАЛЬНОЕ ПРОСТРАНСТВО · 0.2.0</small><h1>Tenmiyora</h1>
 <span class="status">Сервер запущен</span><p>Основа проекта готова. Здесь появятся будущие модули.</p>
 <p>Управление запуском — через значок Tenmiyora рядом с часами.
 В его меню можно открыть эту страницу, показать журнал или завершить работу.</p></main></html>""".encode("utf-8")

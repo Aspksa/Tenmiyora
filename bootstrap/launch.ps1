@@ -64,84 +64,69 @@ function Hide-Console {
     }
 }
 
-function Find-Python {
+function Find-Python([bool]$PortableOnly) {
     $candidates = New-Object System.Collections.ArrayList
-    foreach ($relative in @('.runtime\python\python.exe', '.venv\Scripts\python.exe')) {
+    $localPaths = @('.runtime\python\python.exe')
+    if (-not $PortableOnly) { $localPaths += '.venv\Scripts\python.exe' }
+    foreach ($relative in $localPaths) {
         $path = Join-Path $root $relative
         if (Test-Path -LiteralPath $path) { [void]$candidates.Add(@{Path=$path; Prefix=''}) }
     }
-    foreach ($name in @('py.exe', 'python.exe', 'python3.exe')) {
-        $commands = @(Get-Command $name -CommandType Application -All -ErrorAction SilentlyContinue)
-        foreach ($command in $commands) {
-            if ($command.Source -like '*\Microsoft\WindowsApps\*') { continue }
-            $prefix = ''
-            if ($name -eq 'py.exe') { $prefix = '-3 ' }
-            [void]$candidates.Add(@{Path=$command.Source; Prefix=$prefix})
+    if (-not $PortableOnly) {
+        foreach ($name in @('py.exe', 'python.exe', 'python3.exe')) {
+            $commands = @(Get-Command $name -CommandType Application -All -ErrorAction SilentlyContinue)
+            foreach ($command in $commands) {
+                if ($command.Source -like '*\Microsoft\WindowsApps\*') { continue }
+                $prefix = ''
+                if ($name -eq 'py.exe') { $prefix = '-3 ' }
+                [void]$candidates.Add(@{Path=$command.Source; Prefix=$prefix})
+            }
         }
-    }
-    # Python may be installed without being added to PATH.
-    foreach ($key in @('HKCU:\Software\Python\PythonCore', 'HKLM:\Software\Python\PythonCore', 'HKLM:\Software\WOW6432Node\Python\PythonCore')) {
-        if (-not (Test-Path -LiteralPath $key)) { continue }
-        foreach ($versionKey in @(Get-ChildItem -LiteralPath $key -ErrorAction SilentlyContinue)) {
-            $installKey = Join-Path $versionKey.PSPath 'InstallPath'
-            if (-not (Test-Path -LiteralPath $installKey)) { continue }
-            $properties = Get-ItemProperty -LiteralPath $installKey -ErrorAction SilentlyContinue
-            $path = $properties.ExecutablePath
-            if (-not $path -and $properties.'(default)') { $path = Join-Path $properties.'(default)' 'python.exe' }
-            if ($path -and (Test-Path -LiteralPath $path)) { [void]$candidates.Add(@{Path=$path; Prefix=''}) }
+        # Python may be installed without being added to PATH.
+        foreach ($key in @('HKCU:\Software\Python\PythonCore', 'HKLM:\Software\Python\PythonCore', 'HKLM:\Software\WOW6432Node\Python\PythonCore')) {
+            if (-not (Test-Path -LiteralPath $key)) { continue }
+            foreach ($versionKey in @(Get-ChildItem -LiteralPath $key -ErrorAction SilentlyContinue)) {
+                $installKey = Join-Path $versionKey.PSPath 'InstallPath'
+                if (-not (Test-Path -LiteralPath $installKey)) { continue }
+                $properties = Get-ItemProperty -LiteralPath $installKey -ErrorAction SilentlyContinue
+                $path = $properties.ExecutablePath
+                if (-not $path -and $properties.'(default)') { $path = Join-Path $properties.'(default)' 'python.exe' }
+                if ($path -and (Test-Path -LiteralPath $path)) { [void]$candidates.Add(@{Path=$path; Prefix=''}) }
+            }
         }
     }
     $probe = Join-Path $PSScriptRoot 'probe.py'
     foreach ($candidate in $candidates) {
-        $process = $null
-        try {
-            $info = New-Object System.Diagnostics.ProcessStartInfo
-            $info.FileName = $candidate.Path
-            $info.Arguments = $candidate.Prefix + '-I -X utf8 "' + $probe + '"'
-            $info.WorkingDirectory = $root
-            $info.UseShellExecute = $false
-            $info.CreateNoWindow = $true
-            $info.RedirectStandardOutput = $true
-            $info.RedirectStandardError = $true
-            $process = New-Object System.Diagnostics.Process
-            $process.StartInfo = $info
-            [void]$process.Start()
-            $outTask = $process.StandardOutput.ReadToEndAsync()
-            $errTask = $process.StandardError.ReadToEndAsync()
-            if (-not $process.WaitForExit(6000)) {
-                $process.Kill()
-                Write-Status "⚠ Python не ответил: $($candidate.Path)"
-                continue
-            }
-            if ($process.ExitCode -eq 0) {
-                $detected = $outTask.Result.Trim() | ConvertFrom-Json
-                if (Test-Path -LiteralPath $detected.executable) {
-                    Write-Status "✓ Python $($detected.version): $($detected.executable)"
-                    return [string]$detected.executable
-                }
-            }
-            Write-Status "⚠ Не подходит Python: $($candidate.Path)"
-        } catch { Write-Status "⚠ Не удалось проверить Python: $($candidate.Path)" }
-        finally { if ($process) { $process.Dispose() } }
+        $detected = Test-PythonCandidate -Path $candidate.Path -Prefix $candidate.Prefix -ProbePath $probe
+        if ($detected) {
+            Write-Status "✓ Python $($detected.version): $($detected.executable)"
+            return [string]$detected.executable
+        }
+        Write-Status "⚠ Не подходит Python: $($candidate.Path)"
     }
-    throw 'Не найден рабочий Python 3.10 или новее. Установите Python с https://www.python.org/downloads/windows/ либо распакуйте официальный embedded Python в .runtime\python. Затем снова запустите Tenmiyora.bat.'
+    return $null
 }
 
 try {
-    if ($env:TENMIYORA_MODE -and $env:TENMIYORA_MODE -notin @('--console', '--no-browser')) {
-        throw 'Доступные параметры: --console (оставить консоль), --no-browser (не открывать браузер).'
+    $options = @($env:TENMIYORA_MODE, $env:TENMIYORA_OPTION, $env:TENMIYORA_EXTRA) | Where-Object { $_ }
+    foreach ($option in $options) {
+        if ($option -notin @('--console', '--no-browser', '--portable')) {
+            throw 'Доступные параметры: --console (оставить консоль), --no-browser (не открывать браузер), --portable (использовать только переносной Python).'
+        }
     }
+    . (Join-Path $PSScriptRoot 'python-runtime.ps1')
     [void][IO.Directory]::CreateDirectory($runtime)
     try {
         $lock = [IO.File]::Open((Join-Path $runtime 'launcher.lock'), [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
     } catch [IO.IOException] {
         # Another launcher can still be starting. Never trust a stale URL alone.
-        $deadline = [DateTime]::UtcNow.AddSeconds(20)
+        $deadline = [DateTime]::UtcNow.AddSeconds(240)
+        Write-Status '◈ Другая копия подготавливает Tenmiyora. Ожидание запуска…'
         while ([DateTime]::UtcNow -lt $deadline) {
             $script:session = Get-Session
             if (Test-Session $script:session) {
                 Write-Status '✓ Tenmiyora уже работает.'
-                if ($env:TENMIYORA_MODE -ne '--no-browser') { Open-Site }
+                if ($options -notcontains '--no-browser') { Open-Site }
                 exit 0
             }
             Start-Sleep -Milliseconds 250
@@ -150,7 +135,7 @@ try {
     }
     $stamp = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
     $script:logPath = Join-Path $runtime "launch-$stamp.log"
-    Write-Status '✦ Tenmiyora · v0.1.0 · Подготовка'
+    Write-Status '✦ Tenmiyora · v0.2.0 · Подготовка'
     # Recover an orphaned instance only after an authenticated health check.
     $previous = Get-Session
     if (Test-Session $previous) {
@@ -160,7 +145,11 @@ try {
     }
     Remove-Item -LiteralPath $statePath -Force -ErrorAction SilentlyContinue
     Write-Status '◈ Проверка Python и стандартных модулей'
-    $python = Find-Python
+    $python = Find-Python -PortableOnly ($options -contains '--portable')
+    if (-not $python) {
+        Write-Status '⚙ Рабочий Python не найден. Подготовка локальной среды без установки в Windows'
+        $python = Install-PortablePython -RuntimeDirectory $runtime -ProbePath (Join-Path $PSScriptRoot 'probe.py') -ManifestPath (Join-Path $PSScriptRoot 'python-runtime.json')
+    }
     $info = New-Object System.Diagnostics.ProcessStartInfo
     $info.FileName = $python
     $info.Arguments = '-I -X utf8 "' + (Join-Path $PSScriptRoot 'server.py') + '"'
@@ -228,8 +217,8 @@ namespace Tenmiyora {
         if ($script:tray) { $script:tray.Dispose(); $script:tray=$null }
         Write-Status '⚠ Трей недоступен. Оставьте консоль открытой; Ctrl+C завершает работу.'
     }
-    if ($env:TENMIYORA_MODE -ne '--no-browser') { Open-Site }
-    if ($env:TENMIYORA_MODE -ne '--console') { Hide-Console }
+    if ($options -notcontains '--no-browser') { Open-Site }
+    if ($options -notcontains '--console') { Hide-Console }
     while (-not $script:stop) {
         if ($script:child.HasExited) { throw "Сервер неожиданно завершился (код $($script:child.ExitCode)): $($stderr.Result)" }
         if ($script:tray) { [System.Windows.Forms.Application]::DoEvents() }
