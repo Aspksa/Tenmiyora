@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from html import unescape
 from html.parser import HTMLParser
@@ -192,11 +193,16 @@ class KnowledgeStore:
                 CREATE INDEX IF NOT EXISTS idx_facts_source ON facts(source_type,source_id);
                 CREATE INDEX IF NOT EXISTS idx_files_folder ON files(folder);
             """)
+    @contextmanager
     def db(self):
         conn = sqlite3.connect(self.db_path, timeout=15)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON")
-        return conn
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
 
     def log(self, conn, action, detail):
         conn.execute("INSERT INTO journal(time,action,detail) VALUES(?,?,?)", (now(), action, detail[:350]))
