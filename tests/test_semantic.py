@@ -54,7 +54,8 @@ class SemanticExtractionTests(unittest.TestCase):
                 {"category": "Экология", "branch": "Охрана биоразнообразия", "evidence_ids": [1]}
             ]}, ensure_ascii=False)}, "finish_reason": "stop"}]}
             with patch.object(workspace, "provider", return_value=fake) as provider:
-                self.assertTrue(workspace.schedule_semantic(item["id"]))
+                with patch.dict("os.environ", {"TENMIYORA_SEMANTIC_ENABLED": "1"}):
+                    self.assertTrue(workspace.schedule_semantic(item["id"]))
                 self.assertTrue(workspace.semantic_queue.join() is None)
                 self.assertEqual(provider.call_count, 1)
                 args, kwargs = provider.call_args
@@ -83,7 +84,8 @@ class SemanticExtractionTests(unittest.TestCase):
             before = workspace.knowledge.branches()
             workspace.connection({"provider": "cloudru", "model": "demo", "key": "secret"})
             with patch.object(workspace, "provider", return_value={"choices": [{"message": {"content": "not-json"}}]}):
-                workspace.schedule_semantic(item["id"])
+                with patch.dict("os.environ", {"TENMIYORA_SEMANTIC_ENABLED": "1"}):
+                    workspace.schedule_semantic(item["id"])
                 workspace.semantic_queue.join()
             after = workspace.knowledge.branches()
             self.assertEqual(sum(b["facts"] for b in before["branches"]),

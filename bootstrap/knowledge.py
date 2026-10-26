@@ -16,6 +16,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import shutil
 import sqlite3
 import tempfile
 import threading
@@ -196,6 +197,9 @@ class KnowledgeStore:
             # Прерванные при выключении задачи не должны выглядеть выполняющимися.
             conn.execute("""UPDATE files SET status='готово; анализ прерван при остановке'
                 WHERE status='готово; смысловой анализ ожидает'""")
+        from memory_engine import MemoryEngine
+        self.engine = MemoryEngine(self)
+
     @contextmanager
     def db(self):
         conn = sqlite3.connect(self.db_path, timeout=15)
@@ -247,33 +251,91 @@ class KnowledgeStore:
                     "breadcrumbs": crumb}
 
     def upload(self, name, data, folder=None, mime="application/octet-stream"):
+        """Повторная загрузка того же имени обновляет файл с архивированием версии."""
         name = clean_name(name)
         if not isinstance(data, bytes) or len(data) > MAX_UPLOAD:
             raise ValueError("Максимальный размер файла — 25 МБ.")
         mime = mime[:120] if isinstance(mime, str) else "application/octet-stream"
+        checksum = hashlib.sha256(data).hexdigest()
+        try:
+            parsed, status = extract_text(name, data)
+        except (ValueError, zipfile.BadZipFile, ET.ParseError, OSError):
+            parsed, status = "", "не удалось прочитать содержимое"
+        updated = False
         with self.lock, self.db() as conn:
-            if folder is not None and not conn.execute("SELECT 1 FROM folders WHERE id=?", (folder,)).fetchone():
+            if folder is not None and not conn.execute(
+                    "SELECT 1 FROM folders WHERE id=?", (folder,)).fetchone():
                 raise ValueError("Папка не найдена.")
-            fid = secrets.token_hex(16)
+            previous = conn.execute("""SELECT id,name,sha256,size,status FROM files
+                WHERE folder IS ? AND name=? ORDER BY created DESC LIMIT 1""",
+                (folder, name)).fetchone()
+            if previous and previous["sha256"] == checksum:
+                return {"id": previous["id"], "name": name,
+                        "status": "без изменений", "size": len(data)}
+            fid = previous["id"] if previous else secrets.token_hex(16)
+            updated = previous is not None
             target = self.objects / fid
-            with target.open("xb") as stream:
-                stream.write(data)
-                stream.flush()
-                os.fsync(stream.fileno())
+            temporary = self.objects / (fid + "-stage-" + secrets.token_hex(5))
+            archived = None
             try:
-                try:
-                    parsed, status = extract_text(name, data)
-                except (ValueError, zipfile.BadZipFile, ET.ParseError, OSError):
-                    parsed, status = "", "не удалось прочитать содержимое"
-                conn.execute("INSERT INTO files VALUES(?,?,?,?,?,?,?,?)",
-                             (fid, folder, name, len(data), mime, hashlib.sha256(data).hexdigest(), status, now()))
+                with temporary.open("xb") as stream:
+                    stream.write(data)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                if updated:
+                    directory = self.root / "versions" / fid
+                    directory.mkdir(parents=True, exist_ok=True)
+                    archived = directory / (previous["sha256"] + ".bin")
+                    if not archived.exists():
+                        shutil.copy2(target, archived)
+                    conn.execute("""INSERT OR IGNORE INTO file_versions
+                        (file_id,sha256,size,relative_path,saved_at) VALUES(?,?,?,?,?)""",
+                        (fid,previous["sha256"],previous["size"],
+                         str(archived.relative_to(self.root)),now()))
+                    conn.execute("DELETE FROM facts WHERE source_type='file' AND source_id=?",(fid,))
+                    self.engine.remove_source(conn,"file",fid)
+                    conn.execute("""UPDATE files SET size=?,mime=?,sha256=?,status=?,created=? WHERE id=?""",
+                                 (len(data),mime,checksum,status,now(),fid))
+                else:
+                    conn.execute("INSERT INTO files VALUES(?,?,?,?,?,?,?,?)",
+                                 (fid,folder,name,len(data),mime,checksum,status,now()))
                 if parsed.strip():
-                    self._learn(conn, parsed, "file", fid, name)
-                self.log(conn, "загрузка", name)
+                    self._learn(conn,parsed,"file",fid,name)
+                temporary.replace(target)
+                self.log(conn,"обновление файла" if updated else "загрузка",name)
+                self.engine.audit(conn,"новая версия" if updated else "новый файл",
+                                  "file",fid,checksum)
             except Exception:
-                target.unlink(missing_ok=True)
+                temporary.unlink(missing_ok=True)
+                if updated and archived is not None and archived.exists():
+                    shutil.copy2(archived,target)
+                if not updated:
+                    target.unlink(missing_ok=True)
                 raise
-            return {"id": fid, "name": name, "status": status, "size": len(data)}
+        if parsed.strip():
+            try:
+                self.engine.ingest("file",fid,name,parsed)
+            except Exception:
+                with self.lock, self.db() as conn:
+                    conn.execute("UPDATE files SET status=? WHERE id=?",
+                                 ("готово; индекс утверждений требует проверки",fid))
+                raise
+        return {"id":fid,"name":name,"status":status,"size":len(data)}
+
+    def restore_file_version(self, fid, sha256):
+        """Локальный откат файла через ту же транзакционную загрузку."""
+        with self.lock,self.db() as conn:
+            current = conn.execute("SELECT name,folder,mime FROM files WHERE id=?",(fid,)).fetchone()
+            version = conn.execute("""SELECT relative_path FROM file_versions
+                WHERE file_id=? AND sha256=?""",(fid,sha256)).fetchone()
+            if not current or not version:
+                raise ValueError("Версия файла не найдена.")
+            # Путь генерируется сервером, не берётся напрямую от пользователя.
+            raw = (self.root / version["relative_path"]).read_bytes()
+            if hashlib.sha256(raw).hexdigest() != sha256:
+                raise ValueError("Архивная версия повреждена.")
+            name,folder,mime = current["name"],current["folder"],current["mime"]
+        return self.upload(name,raw,folder,mime)
 
     def _branch(self, conn, name, parent=None):
         row = conn.execute("SELECT id FROM branches WHERE parent IS ? AND name=?", (parent, name)).fetchone()
@@ -333,8 +395,10 @@ class KnowledgeStore:
             return 0
         if categorize(text) == ["Общие знания"]:
             return 0
+        source_id = secrets.token_hex(12)
         with self.lock, self.db() as conn:
-            return self._learn(conn, text[:4000], "chat", secrets.token_hex(12), "Сообщение пользователя")
+            basic = self._learn(conn, text[:4000], "chat", source_id, "Сообщение пользователя")
+        return basic + self.engine.ingest("chat", source_id, "Сообщение пользователя", text[:4000])
 
     def branches(self):
         with self.lock, self.db() as conn:
@@ -351,6 +415,9 @@ class KnowledgeStore:
             return {"facts": [dict(row) for row in rows]}
 
     def retrieve(self, question, limit=6):
+        return self.engine.search(question, limit)
+
+    def _legacy_retrieve(self, question, limit=6):
         terms = set(WORD_RE.findall(question.lower()))
         if not terms:
             return []
@@ -369,7 +436,7 @@ class KnowledgeStore:
     def semantic_source(self, fid):
         """Только локальное извлечение. Содержимое уходит модели позже, если она включена."""
         with self.lock, self.db() as conn:
-            row = conn.execute("SELECT name,status FROM files WHERE id=?", (fid,)).fetchone()
+            row = conn.execute("SELECT name,status,sha256 FROM files WHERE id=?", (fid,)).fetchone()
             if not row or not row["status"].startswith("готово"):
                 return None
             name = row["name"]
@@ -377,23 +444,23 @@ class KnowledgeStore:
             labels = [item["name"] for item in conn.execute(
                 "SELECT name FROM branches ORDER BY id DESC LIMIT 80").fetchall()]
         parsed, status = extract_text(name, raw)
-        return (name, parsed, labels) if status == "готово" and parsed.strip() else None
+        return (name, parsed, labels, row["sha256"]) if status == "готово" and parsed.strip() else None
 
-    def mark_semantic(self, fid, status):
+    def mark_semantic(self, fid, status, expected_sha=None):
         with self.lock, self.db() as conn:
-            row = conn.execute("SELECT id FROM files WHERE id=?", (fid,)).fetchone()
-            if not row:
+            row = conn.execute("SELECT id,sha256 FROM files WHERE id=?", (fid,)).fetchone()
+            if not row or (expected_sha is not None and row["sha256"] != expected_sha):
                 return False
             conn.execute("UPDATE files SET status=? WHERE id=?", (status[:120], fid))
             return True
 
-    def integrate_semantic(self, fid, proposed, samples):
+    def integrate_semantic(self, fid, proposed, samples, expected_sha=None):
         """Добавляем только оригинальные фрагменты; данные модели — лишь маршрутизация."""
         from semantic import normalize_label
         evidence = {item["id"]: item["text"] for item in samples}
         with self.lock, self.db() as conn:
-            file = conn.execute("SELECT name FROM files WHERE id=?", (fid,)).fetchone()
-            if not file:
+            file = conn.execute("SELECT name,sha256 FROM files WHERE id=?", (fid,)).fetchone()
+            if not file or (expected_sha is not None and file["sha256"] != expected_sha):
                 return 0  # Файл удалён, пока выполнялся запрос к модели.
             created = 0
             for item in proposed:
@@ -401,14 +468,14 @@ class KnowledgeStore:
                 row = next((r for r in conn.execute(
                     "SELECT id,name FROM branches WHERE parent IS NULL")
                     if normalize_label(r["name"]) == normalize_label(root_name)), None)
-                root_id = row["id"] if row else self._branch(conn, root_name)
+                root_id = row["id"] if row else self.engine._branch(conn, root_name)
                 leaf_id = root_id
                 if item["branch"]:
                     child_name = item["branch"]
                     child = next((r for r in conn.execute(
                         "SELECT id,name FROM branches WHERE parent=?", (root_id,))
                         if normalize_label(r["name"]) == normalize_label(child_name)), None)
-                    leaf_id = child["id"] if child else self._branch(conn, child_name, root_id)
+                    leaf_id = child["id"] if child else self.engine._branch(conn, child_name, root_id)
                 for excerpt_id in item["evidence_ids"]:
                     excerpt = evidence.get(excerpt_id)
                     if not excerpt:
@@ -418,6 +485,7 @@ class KnowledgeStore:
                         (leaf_id, "file", fid, excerpt,
                          f"{file['name']}, смысловой фрагмент {excerpt_id}", now()))
                     created += cursor.rowcount
+            created += self.engine.add_semantic(conn, fid, file["name"], proposed, samples)
             self.log(conn, "смысловой анализ", f"{file['name']}: добавлено {created} записей")
             conn.execute("UPDATE files SET status=? WHERE id=?",
                          ("готово; смысловой анализ завершён", fid))
@@ -455,8 +523,11 @@ class KnowledgeStore:
                     raise ValueError("Папка не пустая. Удалите или переместите её содержимое.")
             else:
                 conn.execute("DELETE FROM facts WHERE source_type='file' AND source_id=?", (fid,))
+                self.engine.remove_source(conn, "file", fid)
+                conn.execute("DELETE FROM file_versions WHERE file_id=?", (fid,))
             conn.execute(f"DELETE FROM {table} WHERE id=?", (fid,))
             self.log(conn, "удаление", row["name"])
         if kind == "file":
             (self.objects / fid).unlink(missing_ok=True)
+            shutil.rmtree(self.root / "versions" / fid, ignore_errors=True)
         return {"ok": True}

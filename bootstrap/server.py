@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from knowledge import KnowledgeStore, MAX_UPLOAD
 from semantic import make_messages, parse_topics, samples_from_text
 
-VERSION = "0.5.1"
+VERSION = "0.6.0"
 CLOUDRU_URL = "https://foundation-models.api.cloud.ru/v1"
 WEB_ROOT = Path(__file__).resolve().parents[1] / "web"
 STATIC = {
@@ -274,13 +274,24 @@ class Workspace:
 
     def schedule_semantic(self, fid):
         """Один анализ на новый поддерживаемый файл; никаких скрытых повторов."""
-        if os.environ.get("TENMIYORA_SEMANTIC_ENABLED", "1").strip().lower() in ("0", "false", "off"):
+        # Внешний API никогда не получает текст диска без явного opt-in.
+        if os.environ.get("TENMIYORA_SEMANTIC_ENABLED", "0").strip().lower() not in ("1", "true", "yes", "on"):
             return False
         with self.lock:
             connection = deepcopy(self.data["connection"])
         if not connection["key"] or not connection["model"]:
             return False
         if not self.knowledge.mark_semantic(fid, "готово; смысловой анализ ожидает"):
+            return False
+        try:
+            limit = max(1, min(50, int(os.environ.get("TENMIYORA_SEMANTIC_DAILY_LIMIT", "10"))))
+        except ValueError:
+            limit = 10
+        if self.semantic_queue.full():
+            self.knowledge.mark_semantic(fid, "готово; очередь смыслового анализа занята")
+            return False
+        if not self.knowledge.engine.reserve_semantic(limit):
+            self.knowledge.mark_semantic(fid, "готово; дневной лимит смыслового анализа исчерпан")
             return False
         try:
             self.semantic_queue.put_nowait((fid, connection))
@@ -305,11 +316,12 @@ class Workspace:
                         return
                 continue
             try:
+                checksum = None
                 source = self.knowledge.semantic_source(fid)
                 if source is None:
                     self.knowledge.mark_semantic(fid, "готово; нет подходящего текста для анализа")
                     continue
-                name, text, existing = source
+                name, text, existing, checksum = source
                 samples = samples_from_text(text)
                 if not samples:
                     self.knowledge.mark_semantic(fid, "готово; недостаточно текста для смыслового анализа")
@@ -321,13 +333,15 @@ class Workspace:
                     connection=connection, timeout=40, max_bytes=65_536)
                 answer = result["choices"][0]["message"]["content"]
                 proposals = parse_topics(answer, samples)
-                self.knowledge.integrate_semantic(fid, proposals, samples)
+                self.knowledge.integrate_semantic(fid, proposals, samples, expected_sha=checksum)
             except (AppError, ValueError, IndexError, KeyError, TypeError, OSError):
-                logging.exception("Смысловая классификация не удалась (файл ID %s)", fid)
-                self.knowledge.mark_semantic(fid, "готово; смысловой анализ не выполнен")
+                logging.error("Смысловая классификация не удалась для файла %s", fid)
+                self.knowledge.mark_semantic(fid, "готово; смысловой анализ не выполнен",
+                                             expected_sha=checksum if 'checksum' in locals() else None)
             except Exception:
-                logging.exception("Неожиданная ошибка смыслового анализа (файл ID %s)", fid)
-                self.knowledge.mark_semantic(fid, "готово; смысловой анализ не выполнен")
+                logging.error("Неожиданная ошибка смысловой классификации файла %s", fid)
+                self.knowledge.mark_semantic(fid, "готово; смысловой анализ не выполнен",
+                                             expected_sha=checksum if 'checksum' in locals() else None)
             finally:
                 self.semantic_queue.task_done()
 
@@ -347,7 +361,11 @@ class Workspace:
                 self.data["messages"].append(user_message)
                 self.save()
                 context = [{"role": message["role"], "content": message["content"]} for message in self.data["messages"] if message["role"] in ("user", "assistant")]
-            found = self.knowledge.retrieve(content)
+            api_host = urllib.parse.urlsplit(connection["url"]).hostname
+            local_model = api_host in ("127.0.0.1", "localhost", "::1")
+            memory_allowed = local_model or os.environ.get(
+                "TENMIYORA_MEMORY_EXTERNAL_ENABLED", "0").strip().lower() in ("1", "true", "yes", "on")
+            found = self.knowledge.retrieve(content) if memory_allowed else []
             if found:
                 references = "\n".join(
                     f"[{i}] {item['branch']} | {item['locator']}: {item['excerpt']}"

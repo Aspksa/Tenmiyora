@@ -130,12 +130,24 @@ class KnowledgeApiTests(unittest.TestCase):
         store.connection({"provider": "cloudru", "model": "test", "key": "fake"})
         with patch.object(store, "provider", return_value={
             "choices": [{"message": {"content": "Ответ"}, "finish_reason": "stop"}]
-        }) as provider:
+        }) as provider, patch.dict("os.environ", {"TENMIYORA_MEMORY_EXTERNAL_ENABLED": "1"}):
             output = store.chat({"message": "Расскажи про Python и SQLite"})
         self.assertEqual(output["messages"][-1]["content"], "Ответ")
         request = provider.call_args.args[1]
         self.assertEqual(request["messages"][0]["role"], "system")
         self.assertIn("python.txt", request["messages"][0]["content"])
+
+    def test_external_chat_does_not_receive_disk_contents_without_consent(self):
+        store = self.host.workspace
+        store.knowledge.upload("private.txt",
+            "Python помогает управлять локальными базами данных и организовывать тестирование.".encode())
+        store.connection({"provider": "cloudru", "model": "test", "key": "fake"})
+        with patch.object(store, "provider", return_value={
+            "choices": [{"message": {"content": "Общий ответ"}, "finish_reason": "stop"}]
+        }) as provider, patch.dict("os.environ", {"TENMIYORA_MEMORY_EXTERNAL_ENABLED": "0"}):
+            store.chat({"message": "Что известно про Python?"})
+        request = provider.call_args.args[1]["messages"]
+        self.assertFalse(any("private.txt" in m["content"] for m in request))
 
 
 if __name__ == "__main__":

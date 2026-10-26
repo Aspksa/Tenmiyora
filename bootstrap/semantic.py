@@ -8,6 +8,11 @@ import json
 import re
 import unicodedata
 from knowledge import SECRET_RE
+SENSITIVE = re.compile(
+    r"(?i)(?:[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}|"
+    r"\b(?:\+7|8)[\s\-()]?\d{3}[\s\-()]?\d{3}[\s\-()]?\d{2}[\s\-()]?\d{2}\b|"
+    r"\b(?:\d[\s-]?){16}\b)"
+)
 
 MAX_SAMPLES = 14
 MAX_SAMPLE_CHARS = 550
@@ -42,10 +47,10 @@ def samples_from_text(text):
     eligible = []
     for item in paragraphs:
         clean = " ".join(item.split())
-        if len(clean) >= 35 and not SECRET_RE.search(clean):
+        if len(clean) >= 35 and not SECRET_RE.search(clean) and not SENSITIVE.search(clean):
             for pos in range(0, min(len(clean), 2000), MAX_SAMPLE_CHARS):
                 part = clean[pos:pos + MAX_SAMPLE_CHARS]
-                if len(part) >= 35 and not SECRET_RE.search(part):
+                if len(part) >= 35 and not SECRET_RE.search(part) and not SENSITIVE.search(part):
                     eligible.append(part)
     if not eligible:
         return []
@@ -55,7 +60,8 @@ def samples_from_text(text):
 
 
 def make_messages(samples, branch_names):
-    existing = [name[:64] for name in branch_names if isinstance(name, str)][:32]
+    existing = [name[:64] for name in branch_names if isinstance(name, str)
+                and not SECRET_RE.search(name) and not SENSITIVE.search(name)][:32]
     excerpts = [{"id": row["id"], "text": row["text"]} for row in samples]
     question = {"задача": "Определить темы и подтемы по смыслу текста.",
                 "существующие_ветки": existing,
