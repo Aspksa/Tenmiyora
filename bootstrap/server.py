@@ -25,6 +25,7 @@ import urllib.request
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from knowledge import KnowledgeStore, MAX_UPLOAD
 from semantic import make_messages, parse_topics, samples_from_text
+from soul_engine import DEFAULT_SOUL, validate_soul, evolve, persona_guidance
 from relation_suggestions import validate_candidates
 
 VERSION = "0.9.6"
@@ -43,7 +44,7 @@ STATIC = {
 PASSIVE = {"/api/brain/pulses", "/api/brain/idle", "/api/brain/activity"}
 DEFAULT = {
     "appearance": {"size": 340, "opacity": 100, "visible": True, "pinned": False, "motion": True},
-    "layout": {}, "messages": [],
+    "layout": {}, "messages": [], "soul": DEFAULT_SOUL,
     "connection": {"url": CLOUDRU_URL, "model": "", "key": "", "verified_at": None},
     "model_cache": {"url": "", "models": [], "details": [], "loaded_at": None},
     "growth": {"enabled": True, "cloud": False, "idle_minutes": 15, "cloud_daily": 10},
@@ -161,7 +162,8 @@ class Workspace:
                     self.data = {"appearance": appearance, "layout": layout, "messages": stored["messages"],
                                  "connection": dict(DEFAULT["connection"], **connection),
                                  "model_cache": stored.get("model_cache", deepcopy(DEFAULT["model_cache"])),
-                                 "growth": validate_growth(stored.get("growth"))}
+                                 "growth": validate_growth(stored.get("growth")),
+                                 "soul": validate_soul(stored.get("soul", DEFAULT_SOUL))}
                 except (ValueError, KeyError, TypeError, AppError):
                     raise AppError("Файл .runtime/workspace.json повреждён. Сохраните его копию и уберите из рабочей папки для нового запуска.", 500) from None
 
@@ -455,6 +457,7 @@ class Workspace:
                     raise AppError("Подключите модель в настройках Tenmiyora.", 409)
                 user_message = {"role": "user", "content": content.strip(), "time": datetime.now(timezone.utc).isoformat()}
                 self.data["messages"].append(user_message)
+                self.data["soul"] = evolve(self.data["soul"], content)
                 self.save()
                 context = [{"role": message["role"], "content": message["content"]} for message in self.data["messages"] if message["role"] in ("user", "assistant")]
             api_host = urllib.parse.urlsplit(connection["url"]).hostname
@@ -501,6 +504,7 @@ class Workspace:
                 "или события реального мира. Преданность не отменяет безопасность, "
                 "согласие, конфиденциальность и проверку источников. Не навязывай "
                 "романтические реплики, не используй чувство вины и не требуй исключительности."})
+            context[0]["content"] += " " + persona_guidance(self.data["soul"])
             result = self.provider("/chat/completions", {"model": model, "messages": context, "stream": False}, connection=connection)
             try:
                 answer = result["choices"][0]["message"]["content"]
