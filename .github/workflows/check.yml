@@ -1,9 +1,52 @@
 name: Проверка запуска
-on: [push, pull_request, workflow_dispatch]
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  release:
+    types: [published]
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'release' }}
 permissions:
   contents: read
 jobs:
+  quick-check:
+    name: quick-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Проверить синтаксис исходников Python
+        shell: bash
+        run: |
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          roots = [Path('bootstrap'), Path('tests')]
+          paths = [p for root in roots if root.is_dir() for p in root.rglob('*.py')]
+          if not paths:
+              raise SystemExit('Не найдены Python-файлы для проверки')
+          for path in paths:
+              ast.parse(path.read_bytes(), filename=str(path))
+          print(f'Проверено Python-файлов: {len(paths)}')
+          PY
+      - name: Проверить синтаксис JavaScript
+        run: |
+          node --check web/app.js
+          node --check web/layout.js
+          node --check web/knowledge.js
+      - name: Проверить базовые регрессии тестового разделения
+        run: python -m unittest discover -s tests -p 'test_test_shard.py' -v
+      - name: Проверить веб-макет
+        run: node --test tests/layout.test.cjs
+
   check:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'release'
     strategy:
       fail-fast: false
       matrix:
@@ -44,6 +87,7 @@ jobs:
           node --test tests/layout.test.cjs
 
   quality:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'release'
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
