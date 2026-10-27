@@ -652,7 +652,8 @@ class Handler(BaseHTTPRequestHandler):
             if self.headers.get_content_type() != "application/json":
                 raise AppError("Ожидается JSON.", 415)
             length = int(self.headers.get("Content-Length", "0"))
-            if length <= 0 or (self.path != "/api/chat" and length > 128 * 1024):
+            limit = 1024 * 1024 if self.path == "/api/disk/file" else 128 * 1024
+            if length <= 0 or (self.path != "/api/chat" and length > limit):
                 raise AppError("Неверный размер запроса.", 413)
             self.connection.settimeout(10)
             payload = json.loads(self.rfile.read(length))

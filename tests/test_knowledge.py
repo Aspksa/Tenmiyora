@@ -69,6 +69,16 @@ class KnowledgeTests(unittest.TestCase):
         self.assertTrue(self.store.retrieve("Что известно о Python и SQLite?"))
         with self.assertRaisesRegex(ValueError, "уже есть"):
             self.store.create_text_file(more["id"], "заметка.md", "")
+        results = []
+        def create(text):
+            try:
+                results.append(self.store.create_text_file(None, "гонка.txt", text)["id"])
+            except ValueError:
+                results.append(None)
+        workers = [threading.Thread(target=create, args=("Первый текст " + str(i),)) for i in range(4)]
+        for worker in workers: worker.start()
+        for worker in workers: worker.join()
+        self.assertEqual(sum(x is not None for x in results), 1)
         empty = self.store.create_text_file(None, "пусто.txt")
         self.assertEqual(self.store.download(empty["id"])[1], b"")
         tree = self.store.tree()
@@ -140,10 +150,14 @@ class KnowledgeApiTests(unittest.TestCase):
             json.dumps({"folder": nested, "name": "памятка.txt", "text": "Сроки оплаты договора поставки составляют тридцать дней."}).encode(),
             {"Content-Type": "application/json"})
         self.assertEqual(status, 200, body)
+        status, body, _ = self.call("POST", "/api/disk/file",
+            json.dumps({"folder": nested, "name": "длинный.txt", "text": "Ж" * 100000}, ensure_ascii=False).encode(),
+            {"Content-Type": "application/json"})
+        self.assertEqual(status, 200, body)
         status, body, _ = self.call("GET", "/api/disk/tree")
         tree = json.loads(body)
         self.assertEqual(len(tree["folders"]), 3)
-        self.assertEqual(tree["files"][0]["folder"], nested)
+        self.assertEqual({x["folder"] for x in tree["files"]}, {nested})
     def test_routes_upload_list_download_and_brain(self):
         for path in ("/knowledge.js", "/knowledge.css"):
             status, _, _ = self.call("GET", path)

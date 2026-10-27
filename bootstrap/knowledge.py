@@ -263,11 +263,14 @@ class KnowledgeStore:
             name += ".md"
         if not isinstance(text, str):
             raise ValueError("Неверное содержимое файла.")
-        with self.lock, self.db() as conn:
-            if conn.execute("SELECT 1 FROM files WHERE folder IS ? AND name=?", (folder, name)).fetchone():
-                raise ValueError("Файл с таким именем уже есть в этой папке.")
         mime = "text/markdown" if name.lower().endswith(".md") else "text/plain"
-        return self.upload(name, text.encode("utf-8"), folder, mime)
+        # RLock держится до конца upload(): параллельное создание того же имени
+        # не должно превратиться в тихую замену чужого файла.
+        with self.lock:
+            with self.db() as conn:
+                if conn.execute("SELECT 1 FROM files WHERE folder IS ? AND name=?", (folder, name)).fetchone():
+                    raise ValueError("Файл с таким именем уже есть в этой папке.")
+            return self.upload(name, text.encode("utf-8"), folder, mime)
 
     def tree(self):
         """Вся структура Диска одним запросом для дерева папок и файлов."""
