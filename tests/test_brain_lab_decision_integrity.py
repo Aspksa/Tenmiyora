@@ -80,7 +80,7 @@ class CheckpointIntegrityTests(unittest.TestCase):
         with self.store.db() as db:
             db.execute("""DELETE FROM brain_lab_trials
               WHERE generation_id=? AND trial_no=2""",(result["generation"],))
-        with self.assertRaisesRegex(ValueError,"Сводные результаты|Испытания неполные"):
+        with self.assertRaisesRegex(ValueError,"полного комплекта"):
             self.store.brain_lab_accept(result["generation"])
         self.assertIsNone(self.accepted_id())
 
