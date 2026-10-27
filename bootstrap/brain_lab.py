@@ -292,9 +292,26 @@ def run_experiment(db,trials=3):
         raise ValueError("Число испытаний должно быть от 1 до 12.")
     before=signature(db)
     from brain_lab_holdout import evaluate as holdout_evaluate
-    from brain_lab_eight import evaluate as lab_eight_evaluate
+    from brain_lab_eight import evaluate as lab_eight_evaluate, NAMES as lab_eight_names
     eight=lab_eight_evaluate()
     eight_metrics=eight["metrics"]
+    # Fail closed if an exam was skipped, malformed or disagrees with its
+    # own verdict; a partial suite cannot silently promote a generation.
+    expected={"lab8_"+name for name,_ in lab_eight_names}
+    observations=eight.get("checks")
+    if (set(eight_metrics)!=expected or not isinstance(observations,list)
+            or len(observations)!=len(expected)
+            or {row.get("id") for row in observations
+                if isinstance(row,dict)}!={name for name,_ in lab_eight_names}):
+        raise RuntimeError("Неполный или повреждённый набор восьми экзаменов Мозга.")
+    if (eight.get("passed") is not all(row.get("passed") is True
+            for row in observations)):
+        raise RuntimeError("Противоречивый итог экзаменов Мозга: поколение не оценивается.")
+    if any(type(value) is not float or value not in (0.0,1.0)
+           or value!=float(next(row["passed"] for row in observations
+                      if "lab8_"+row["id"]==name))
+           for name,value in eight_metrics.items()):
+        raise RuntimeError("Метрика Мозга не соответствует фактическому экзамену.")
     eight_failures=[{"metric":name,"actual":value,"minimum":1.0}
                     for name,value in eight_metrics.items() if value<1.0]
     samples=[]
