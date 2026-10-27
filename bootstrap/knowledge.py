@@ -485,18 +485,17 @@ class KnowledgeStore:
                 params = ",".join("?" for _ in files)
                 names = {row["id"]: row["name"] for row in conn.execute(
                     f"SELECT id,name FROM files WHERE id IN ({params})", tuple(files))}
-            # Поиск отдаёт исходное имя ветки; дерево показывает каноническую
-            # ветку после слияния синонимов, поэтому переходим по её id.
+            # Поиск отдаёт исходную ветку; дерево показывает каноническую
+            # после слияния синонимов, поэтому переходим по её id.
             mapping = projection(conn)
-            for name in {item.get("branch", "") for item in results}:
-                row = conn.execute("SELECT id FROM branches WHERE name=? ORDER BY id LIMIT 1", (name,)).fetchone()
+            for origin in {item.get("branch_id") for item in results} - {None}:
+                target = mapping.get(origin, origin)
+                row = conn.execute("SELECT name FROM branches WHERE id=?", (target,)).fetchone()
                 if row:
-                    target = mapping.get(row["id"], row["id"])
-                    canonical = conn.execute("SELECT name FROM branches WHERE id=?", (target,)).fetchone()
-                    branches[name] = (target, canonical["name"] if canonical else name)
+                    branches[origin] = (target, row["name"])
         found = []
         for item in results:
-            branch_id, branch_name = branches.get(item.get("branch", ""), (None, item.get("branch", "")))
+            branch_id, branch_name = branches.get(item.get("branch_id"), (None, item.get("branch", "")))
             found.append({"excerpt": item["excerpt"], "locator": item["locator"],
                           "branch": branch_name, "branch_id": branch_id,
                           "source_type": item.get("source_type", ""),
