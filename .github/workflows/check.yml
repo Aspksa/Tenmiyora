@@ -173,6 +173,9 @@ jobs:
       - name: Проверить русский поиск воспоминаний
         run: python bootstrap/ci_timed.py --label 'Recall morphology' -- python -m unittest discover -s tests -p 'test_chat_recall_morphology.py' -v
 
+      - name: Независимый экзамен качества поиска воспоминаний
+        run: python bootstrap/ci_timed.py --label 'Recall quality' -- python -m unittest discover -s tests -p 'test_chat_recall_quality.py' -v
+
       - name: Проверить шесть инвариантов Лаборатории
         run: python bootstrap/ci_timed.py --label 'Метаморфные проверки' -- python bootstrap/brain_lab_metamorphic.py --check --output .runtime/quality-reports/brain-lab-metamorphic.json
       - name: Проверить блокировки принятия и SHA-пломбу инвариантов
