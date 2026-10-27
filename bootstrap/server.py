@@ -33,6 +33,7 @@ from soul_recovery import DEFAULT_RECOVERY, validate_recovery, record as recover
 from soul_operation_audit import DEFAULT_AUDIT, validate_audit, observe_operation
 from evolution_ledger import DEFAULT_LEDGER, validate_ledger, begin as ledger_begin, finish as ledger_finish
 from unified_evolution_exam import run_exam, coaching
+from lab_personality_bridge import assess as assess_lab_personality
 from relationship_memory import DEFAULT_RELATIONSHIP, validate_relationship, remember, guidance
 from soul_experience import DEFAULT_EXPERIENCE, validate_experience, observe, guidance as experience_guidance, verified_outcome
 from relation_suggestions import validate_candidates
@@ -769,7 +770,9 @@ class Handler(BaseHTTPRequestHandler):
                 elif path == "/api/brain/search":
                     self.json_reply(200, store.search_brain(value("q")))
                 elif path == "/api/brain/lab":
-                    self.json_reply(200, store.brain_lab_report())
+                    lab = store.brain_lab_report()
+                    lab["personality_development"] = assess_lab_personality(self.server.workspace.data, lab)
+                    self.json_reply(200, lab)
                 elif path == "/api/disk":
                     self.json_reply(200, store.listing(value("folder") or None, value("q")))
                 elif path == "/api/disk/tree":

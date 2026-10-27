@@ -107,6 +107,9 @@ jobs:
       - name: Проверить единый экзамен развития личности и навыков
         run: python bootstrap/ci_timed.py --label 'Unified evolution' -- python -m unittest discover -s tests -p 'test_unified_evolution_exam.py' -v
 
+      - name: Проверить согласованность Души с Лабораторией
+        run: python bootstrap/ci_timed.py --label 'Lab personality bridge' -- python -m unittest discover -s tests -p 'test_lab_personality_bridge.py' -v
+
       - name: Проверить шесть инвариантов Лаборатории
         run: python bootstrap/ci_timed.py --label 'Метаморфные проверки' -- python bootstrap/brain_lab_metamorphic.py --check --output .runtime/quality-reports/brain-lab-metamorphic.json
       - name: Проверить блокировки принятия и SHA-пломбу инвариантов
