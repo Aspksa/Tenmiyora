@@ -19,6 +19,8 @@ def private(text):
 def candidates(text):
     if not isinstance(text,str) or len(text)>2_000_000:
         return []
+    if private(text):
+        return []
     output=[]
     cursor=0
     for match in SPLIT.finditer(text):
@@ -33,6 +35,10 @@ def candidates(text):
 def _segment(text,lo,hi):
     fragment=text[lo:hi]
     trimmed=fragment.strip()
+    if trimmed.casefold().startswith("но "):
+        lo+=fragment.find(trimmed)+3
+        fragment=text[lo:hi]
+        trimmed=fragment.strip()
     if not trimmed or private(trimmed):
         return []
     start=lo+len(fragment)-len(fragment.lstrip())
