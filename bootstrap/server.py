@@ -488,6 +488,11 @@ class Workspace:
                 trace = self.knowledge.engine.contextual_paths(content,max_depth=3,max_paths=2)
                 if trace:
                     context.insert(0, {"role":"system","content":format_context(trace)})
+            context.insert(0, {"role": "system", "content":
+                "Ты Tenmiyora. Обращайся к пользователю уважительно: «Хозяин». "
+                "Используй это обращение естественно, не повторяй в каждом предложении. "
+                "Это правило относится только к форме обращения: не ослабляй проверки "
+                "фактов, требования безопасности и ограничения на выполнение действий."})
             result = self.provider("/chat/completions", {"model": model, "messages": context, "stream": False}, connection=connection)
             try:
                 answer = result["choices"][0]["message"]["content"]
