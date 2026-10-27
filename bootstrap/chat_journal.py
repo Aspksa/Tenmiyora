@@ -128,6 +128,10 @@ class ChatJournal:
                 "conflicts":compare(verified),"automatic_facts":0,
                 "invalid_evidence":len(rows)-len(verified)}
 
+    def temporal_memory(self):
+        from chat_temporal_reader import reconstruct
+        return reconstruct(self)
+
     def evidence(self,turn_id):
         """Read exact evidence locally, only when explicitly requested."""
         with self.lock,self._db() as db:
