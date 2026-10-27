@@ -739,7 +739,33 @@
     const bend = polar(to.angle, ([0, 70, 165, 235, 285][Math.min(to.depth, 4)]));
     return `M${cx.toFixed(1)},${cy.toFixed(1)} Q${bend[0].toFixed(1)},${bend[1].toFixed(1)} ${to.x.toFixed(1)},${to.y.toFixed(1)}`;
   }
-  function renderMap() {
+  // Подпись не должна вылезать за край карты: ветку у края подписываем внутрь
+// и укорачиваем имя под оставшееся место (ширина символа — грубая оценка).
+function placeLabel(label, item) {
+  const root = item.depth === 1, font = MAP.narrow ? (root ? 21 : 17) : (root ? 15 : 12);
+  const char = font * .58, pad = 6, name = item.node.name;
+  const fit = space => {
+    const max = Math.max(4, Math.min(26, Math.floor(space / char)));
+    return name.length > max ? name.slice(0, max - 1) + '…' : name;
+  };
+  if (root) {
+    const text = fit(MAP.width - pad * 2), half = text.length * char / 2;
+    const shift = Math.max(pad + half - item.x, Math.min(0, MAP.width - pad - half - item.x));
+    label.setAttribute('x', shift.toFixed(1));
+    label.setAttribute('text-anchor', 'middle');
+    label.textContent = text;
+    return;
+  }
+  const gap = item.size + 9, right = MAP.width - item.x - gap - pad, left = item.x - gap - pad;
+  let outward = Math.cos(item.angle) >= 0;
+  const wanted = Math.min(name.length, 26) * char;
+  if ((outward ? right : left) < wanted && (outward ? left : right) > (outward ? right : left)) outward = !outward;
+  label.setAttribute('x', (outward ? gap : -gap).toFixed(1));
+  label.setAttribute('text-anchor', outward ? 'start' : 'end');
+  label.textContent = fit(outward ? right : left);
+}
+
+function renderMap() {
     const box = $('brain-map');
     closeMapCard();
     const narrow = box.clientWidth > 0 && box.clientWidth < 640;
@@ -811,11 +837,8 @@
         count.textContent = item.total;
         inner.append(count);
       }
-      const outward = Math.cos(item.angle) >= 0;
-      const label = svg('text', {x: (outward ? 1 : -1) * (item.size + 9), y: item.depth === 1 ? -item.size - 6 : 4,
-        'text-anchor': item.depth === 1 ? 'middle' : (outward ? 'start' : 'end')}, 'map-label' + (item.depth === 1 ? ' root' : ''));
-      if (item.depth === 1) label.setAttribute('x', 0);
-      label.textContent = item.node.name.length > 26 ? item.node.name.slice(0, 25) + '…' : item.node.name;
+      const label = svg('text', {y: item.depth === 1 ? -item.size - 6 : 4}, 'map-label' + (item.depth === 1 ? ' root' : ''));
+      placeLabel(label, item);
       inner.append(label);
       if (fresh) {
         const badge = svg('text', {x: 0, y: item.size + (item.depth === 1 ? 16 : 13), 'text-anchor': 'middle'}, 'map-fresh');
