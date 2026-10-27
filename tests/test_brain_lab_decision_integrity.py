@@ -105,6 +105,14 @@ class CheckpointIntegrityTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"Сводные результаты"):
             self.store.brain_lab_accept(result["generation"])
 
+    def test_corrupt_quality_score_cannot_be_accepted(self):
+        result=self.experiment()
+        with self.store.db() as db:
+            db.execute("UPDATE brain_lab_generations SET quality_score=1 WHERE id=?",
+                       (result["generation"],))
+        with self.assertRaisesRegex(ValueError,"Итоговая оценка"):
+            self.store.brain_lab_accept(result["generation"])
+
     def test_incomplete_eight_gate_metric_cannot_pass_accept(self):
         result=self.experiment()
         with self.store.db() as db:
