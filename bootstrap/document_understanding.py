@@ -192,6 +192,10 @@ def _pdf(raw,items):
                 text=pytesseract.image_to_string(image,lang="rus+eng",timeout=15)
             except Exception as error:
                 notes.append("OCR страницы "+str(index+1)+" не выполнен: "+type(error).__name__)
+        # OCR output can be nonempty yet unusable (noise, punctuation only).
+        if text.strip() and not re.search(r"[A-Za-zА-Яа-яЁё0-9]{3,}",text):
+            notes.append(f"Страница {index+1}: извлечённый текст не содержит читаемых слов.")
+            text=""
         if not text.strip():
             notes.append(f"Страница {index+1} не содержит доступного текста.")
             continue
