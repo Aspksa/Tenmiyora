@@ -113,6 +113,9 @@ jobs:
       - name: Проверить безопасную лабораторию улучшений
         run: python bootstrap/ci_timed.py --label 'Improvement pipeline' -- python -m unittest discover -s tests -p 'test_improvement_pipeline.py' -v
 
+      - name: Проверить допуск улучшений по независимым метрикам
+        run: python bootstrap/ci_timed.py --label 'Improvement benchmarks' -- python -m unittest discover -s tests -p 'test_improvement_benchmark.py' -v
+
       - name: Проверить шесть инвариантов Лаборатории
         run: python bootstrap/ci_timed.py --label 'Метаморфные проверки' -- python bootstrap/brain_lab_metamorphic.py --check --output .runtime/quality-reports/brain-lab-metamorphic.json
       - name: Проверить блокировки принятия и SHA-пломбу инвариантов
