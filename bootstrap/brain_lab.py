@@ -23,6 +23,7 @@ CORE_FILES=(
     # недопустимо скрывать от цифровой подписи алгоритма.
     "brain_lab.py","brain_lab_audit.py","brain_lab_eight.py",
     "brain_lab_integrity.py","brain_lab_adversarial.py",
+    "brain_lab_preflight.py",
     "knowledge.py","memory_engine.py","topic_router.py","topic_discovery.py",
     "topic_aliases.py","semantic.py","natural_relations.py","knowledge_relations.py",
     "knowledge_paths.py","document_understanding.py","document_deep_analysis.py",
@@ -301,6 +302,8 @@ def run_experiment(db,trials=3):
     """Experiment against a previous accepted generation; never install code."""
     if type(trials) is not int or not 1<=trials<=MAX_TRIALS:
         raise ValueError("Число испытаний должно быть от 1 до 12.")
+    from brain_lab_preflight import verify as verify_sources
+    preflight_before=verify_sources(db)
     before=signature(db)
     from brain_lab_holdout import evaluate as holdout_evaluate
     from brain_lab_eight import evaluate as lab_eight_evaluate, NAMES as lab_eight_names
@@ -362,7 +365,11 @@ def run_experiment(db,trials=3):
         all_failures.extend(current)
     if algorithm_signature()!=algorithm or suite_signature()!=suite:
         raise RuntimeError("Код или контрольный набор изменился во время экзамена.")
-    # Repository test corpus must not mutate the user's live knowledge.
+    # Do not trust database metadata alone: real document files can be
+    # damaged or swapped without any SQLite change while tests run.
+    preflight_after=verify_sources(db)
+    if preflight_after!=preflight_before:
+        raise RuntimeError("Исходные файлы изменились в ходе экзамена; результат отклонён.")
     if signature(db)!=before:
         raise RuntimeError("Память изменилась в ходе испытания; результаты отклонены.")
     worst={key:min(sample[key] for sample in samples) for key in samples[0]}
@@ -438,6 +445,8 @@ def accept(db,generation):
         raise ValueError("Поколение отсутствует или уже обработано.")
     from brain_lab_integrity import integrity_report
     integrity_report(db,generation)
+    from brain_lab_preflight import verify as verify_sources
+    verify_sources(db)
     if item["verdict"] not in ("first_baseline","candidate_for_manual_review",
                                "baseline_requalification"):
         raise ValueError("Нельзя принять результат с регрессией либо без нового эксперимента.")
