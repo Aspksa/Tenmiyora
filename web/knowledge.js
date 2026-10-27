@@ -314,6 +314,9 @@
     $('disk-file-title').textContent = editing ? editing.name : 'Новый файл';
     $('disk-file-submit').textContent = editing ? 'Сохранить' : 'Создать';
     $('disk-file-name').value = ''; $('disk-file-text').value = text;
+    // Лимит в 100 000 символов — только для нового файла; правку ограничивает сервер (400 КБ).
+    if (editing) $('disk-file-text').removeAttribute('maxlength');
+    else $('disk-file-text').maxLength = 100000;
     if (editing) {
       $('disk-file-place').textContent = 'Изменения сохранятся новой версией файла, Мозг переучится на новом тексте.';
     } else {
@@ -420,7 +423,20 @@
       catch { message('Не удалось переместить.'); }
     });
   }
+  // Из выделения убираются объекты, чья папка-предок тоже выделена:
+  // папка переносится и удаляется вместе с содержимым.
+  function topLevel(items) {
+    const chosen = new Set(items.filter(x => x.kind === 'folder').map(x => x.id));
+    const parents = new Map(treeData.folders.map(x => [x.id, x.parent]));
+    const files = new Map(treeData.files.map(x => [x.id, x.folder]));
+    return items.filter(item => {
+      let node = item.kind === 'folder' ? parents.get(item.id) : files.get(item.id);
+      for (let guard = 0; node && guard < 200; node = parents.get(node), guard++) if (chosen.has(node)) return false;
+      return true;
+    });
+  }
   async function moveItems(items, target) {
+    items = topLevel(items);
     let moved = 0;
     for (const item of items) {
       if (item.kind === 'folder' && item.id === target) continue;
@@ -437,6 +453,7 @@
     await refreshDisk();
   }
   async function removeItems(items) {
+    items = topLevel(items);
     const folders = items.filter(x => x.kind === 'folder');
     const text = items.length === 1 ? '«' + items[0].name + '»' : items.length + ' объектов';
     if (!confirm('Удалить ' + text + '?' + (folders.length ? ' Папки удаляются вместе со всем содержимым.' : '') +
