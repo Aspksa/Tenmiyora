@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from knowledge import KnowledgeStore, MAX_UPLOAD
 from semantic import make_messages, parse_topics, samples_from_text
 from soul_engine import DEFAULT_SOUL, validate_soul, evolve, persona_guidance
+from soul_maturation import maturation_guidance
 from relationship_memory import DEFAULT_RELATIONSHIP, validate_relationship, remember, guidance
 from soul_experience import DEFAULT_EXPERIENCE, validate_experience, observe, guidance as experience_guidance, verified_outcome
 from relation_suggestions import validate_candidates
@@ -518,6 +519,7 @@ class Workspace:
             # no raw relationship history or private conversation excerpts.
             context[0]["content"] += " " + guidance(self.data["relationship"])
             context[0]["content"] += " " + experience_guidance(self.data["experience"])
+            context[0]["content"] += " " + maturation_guidance(self.data["soul"], self.data["experience"])
             result = self.provider("/chat/completions", {"model": model, "messages": context, "stream": False}, connection=connection)
             try:
                 answer = result["choices"][0]["message"]["content"]
