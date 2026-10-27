@@ -50,6 +50,25 @@
     use.setAttribute('href', name === 'folder' ? '#i-folder' : '#i-file');
     svg.append(use); wrapper.append(svg); return wrapper;
   }
+  // Вид списка: сортировка и плитка/список запоминаются в браузере.
+  const prefs = (() => {
+    try { return {sort: 'new', view: 'list', ...JSON.parse(localStorage.getItem('tenmiyora-disk-view') || '{}')}; }
+    catch { return {sort: 'new', view: 'list'}; }
+  })();
+  function savePrefs() {
+    try { localStorage.setItem('tenmiyora-disk-view', JSON.stringify(prefs)); } catch {}
+  }
+  const sorters = {
+    'new': (a, b) => String(b.created).localeCompare(String(a.created)),
+    'old': (a, b) => String(a.created).localeCompare(String(b.created)),
+    'az': (a, b) => a.name.localeCompare(b.name, 'ru', {numeric: true}),
+    'za': (a, b) => b.name.localeCompare(a.name, 'ru', {numeric: true}),
+    'big': (a, b) => (b.size || 0) - (a.size || 0),
+    'small': (a, b) => (a.size || 0) - (b.size || 0)
+  };
+  let listData = {folders: [], files: []};
+  const selected = new Map();
+  const key = (kind, id) => kind + ':' + id;
   async function loadDisk() {
     if (loading) return;
     loading = true;
@@ -57,20 +76,46 @@
       const q = $('disk-search').value.trim();
       const data = await request('disk?' + new URLSearchParams({folder: folder || '', q}));
       const breadcrumbs = $('disk-breadcrumbs');
-      breadcrumbs.replaceChildren(button('Мой диск', () => navigate(null)));
+      const home = button('Мой диск', () => navigate(null));
+      dropTarget(home, null);
+      breadcrumbs.replaceChildren(home);
       for (const crumb of data.breadcrumbs) {
         breadcrumbs.append(element('span', '', '/'));
-        breadcrumbs.append(button(crumb.name, () => navigate(crumb.id)));
+        const link = button(crumb.name, () => navigate(crumb.id));
+        dropTarget(link, crumb.id);
+        breadcrumbs.append(link);
       }
-      const list = $('disk-list');
-      list.replaceChildren();
-      const total = data.folders.length + data.files.length;
-      $('disk-count').textContent = total + ' элементов';
-      for (const item of data.folders) list.append(makeRow('folder', item));
-      for (const item of data.files) list.append(makeRow('file', item));
-      if (!total) list.append(element('p', 'disk-empty', q ? 'По вашему запросу ничего не найдено.' : 'Папка пуста. Перетащите сюда файлы или создайте папку.'));
+      listData = data;
+      const present = new Set([...data.folders.map(x => key('folder', x.id)), ...data.files.map(x => key('file', x.id))]);
+      for (const k of [...selected.keys()]) if (!present.has(k)) selected.delete(k);
+      renderList();
     } catch (error) { message(error.message); }
     finally { loading = false; }
+  }
+  function renderList() {
+    const list = $('disk-list');
+    list.className = 'disk-list' + (prefs.view === 'grid' ? ' grid' : '');
+    list.replaceChildren();
+    const sorter = sorters[prefs.sort] || sorters.new;
+    // Папки по размеру не сравниваются: для них «большие/маленькие» — по имени.
+    const folderSorter = prefs.sort === 'big' || prefs.sort === 'small' ? sorters.az : sorter;
+    const folders = [...listData.folders].sort(folderSorter), files = [...listData.files].sort(sorter);
+    const total = folders.length + files.length;
+    $('disk-count').textContent = total + ' элементов';
+    for (const item of folders) list.append(makeRow('folder', item));
+    for (const item of files) list.append(makeRow('file', item));
+    if (!total) list.append(element('p', 'disk-empty', $('disk-search').value.trim() ? 'По вашему запросу ничего не найдено.' : 'Папка пуста. Перетащите сюда файлы или папки, или создайте новую.'));
+    renderSelection();
+  }
+  function renderSelection() {
+    const bar = $('disk-bulk');
+    const all = $('disk-select-all');
+    const total = listData.folders.length + listData.files.length;
+    all.checked = total > 0 && selected.size === total;
+    all.indeterminate = selected.size > 0 && selected.size < total;
+    bar.hidden = !selected.size;
+    $('disk-bulk-count').textContent = 'Выбрано: ' + selected.size;
+    $('disk-bulk-download').hidden = ![...selected.values()].some(x => x.kind === 'file');
   }
   function navigate(id) {
     folder = id;
@@ -150,6 +195,8 @@
         add.title = 'Новая папка внутри';
         add.append(treeIcon('plus'));
         line.append(toggle, name, add);
+        dropTarget(line, item.id);
+        draggableLine(line, 'folder', item);
         node.append(line);
         if (open && hasChildren) node.append(branch(item.id, depth + 1));
         group.append(node);
@@ -159,10 +206,11 @@
         node.setAttribute('role', 'treeitem');
         const line = element('div', 'disk-tree-line file');
         line.style.setProperty('--depth', depth);
-        const name = button('', () => openDocument(item), 'disk-tree-name');
+        const name = button('', () => TEXT_EXT.test(item.name) ? openFileDialog(item) : openDocument(item), 'disk-tree-name');
         name.append(treeIcon('file'), element('span', '', item.name));
         name.title = item.name + ' · ' + readableBytes(item.size) + ' · ' + item.status;
         line.append(element('span', 'disk-tree-toggle'), name);
+        draggableLine(line, 'file', item);
         node.append(line);
         group.append(node);
       }
@@ -176,10 +224,18 @@
     add.title = 'Новая папка в корне';
     add.append(treeIcon('plus'));
     root.append(home, add);
+    dropTarget(root, null);
     const body = branch(null, 0);
     $('disk-tree').replaceChildren(root, body);
     if (!treeData.folders.length && !treeData.files.length)
       $('disk-tree').append(element('p', 'disk-tree-empty', 'Пока пусто. Создайте папку или файл.'));
+  }
+  function draggableLine(line, kind, item) {
+    line.draggable = true;
+    line.addEventListener('dragstart', event => {
+      event.dataTransfer.setData('application/x-tenmiyora-items', JSON.stringify([{kind, id: item.id, name: item.name}]));
+      event.dataTransfer.effectAllowed = 'move';
+    });
   }
   async function createFolder(parent) {
     const name = prompt('Название новой папки.\nМожно сразу цепочку через «/», например: Проекты/2026/Отчёты');
@@ -192,41 +248,47 @@
       await refreshDisk();
     } catch (error) { message(error.message); }
   }
-  let fileDialog;
+  // Окно файла: создание нового или просмотр и правка текстового.
+  let fileDialog, editing = null;
   function ensureFileDialog() {
     if (fileDialog) return fileDialog;
     const dialog = element('dialog', 'doc-dialog disk-file-dialog');
     const form = element('form', 'disk-file-form');
     form.method = 'dialog';
     const head = element('div', 'doc-dialog-head');
-    head.append(element('h3', '', 'Новый файл'));
+    const title = element('h3', '', 'Новый файл'); title.id = 'disk-file-title';
+    head.append(title);
     head.append(button('Закрыть', () => dialog.close()));
     const place = element('p', 'module-muted');
     place.id = 'disk-file-place';
     const nameLabel = element('label', '', 'Имя файла');
+    nameLabel.id = 'disk-file-name-label';
     const nameInput = element('input');
-    nameInput.id = 'disk-file-name'; nameInput.required = true; nameInput.maxLength = 180;
+    nameInput.id = 'disk-file-name'; nameInput.maxLength = 180;
     nameInput.placeholder = 'заметка.md';
     nameLabel.append(nameInput);
     const textLabel = element('label', '', 'Текст');
     const textInput = element('textarea');
-    textInput.id = 'disk-file-text'; textInput.rows = 12; textInput.maxLength = 100000;
+    textInput.id = 'disk-file-text'; textInput.rows = 14; textInput.maxLength = 100000;
     textInput.placeholder = 'Текст файла. Его содержимое пополнит Мозг так же, как загруженный документ.';
     textLabel.append(textInput);
     const actions = element('div', 'disk-file-actions');
     const cancel = button('Отмена', () => dialog.close(), 'secondary-button');
     const submit = element('button', 'primary-button', 'Создать');
-    submit.type = 'submit';
+    submit.type = 'submit'; submit.id = 'disk-file-submit';
     actions.append(cancel, submit);
     form.append(head, place, nameLabel, textLabel, actions);
     form.addEventListener('submit', async event => {
       event.preventDefault();
+      if (!editing && !nameInput.value.trim()) { nameInput.focus(); return; }
       submit.disabled = true;
       try {
-        const result = await request('disk/file', {folder, name: nameInput.value.trim(), text: textInput.value});
+        const result = editing ?
+          await request('disk/text', {id: editing.id, text: textInput.value}) :
+          await request('disk/file', {folder, name: nameInput.value.trim(), text: textInput.value});
         dialog.close();
-        message('Создан «' + result.name + '». ' + result.status + '.');
-        if (folder) expandTo(folder);
+        message((editing ? 'Сохранён «' : 'Создан «') + result.name + '». ' + result.status + '.');
+        if (!editing && folder) expandTo(folder);
         await refreshDisk();
       } catch (error) { message(error.message); }
       finally { submit.disabled = false; }
@@ -235,46 +297,205 @@
     document.body.append(dialog);
     return fileDialog = dialog;
   }
-  function openFileDialog() {
+  async function openFileDialog(item) {
     const dialog = ensureFileDialog();
-    const crumbs = [...$('disk-breadcrumbs').querySelectorAll('button')].map(x => x.textContent);
-    $('disk-file-place').textContent = 'Папка: ' + (crumbs.join(' / ') || 'Мой диск');
+    editing = item && item.id ? item : null;
+    $('disk-file-name-label').hidden = !!editing;
+    $('disk-file-title').textContent = editing ? editing.name : 'Новый файл';
+    $('disk-file-submit').textContent = editing ? 'Сохранить' : 'Создать';
     $('disk-file-name').value = ''; $('disk-file-text').value = '';
+    if (editing) {
+      try {
+        const data = await request('disk/text?' + new URLSearchParams({id: editing.id}));
+        $('disk-file-text').value = data.text;
+        $('disk-file-place').textContent = 'Изменения сохранятся новой версией файла, Мозг переучится на новом тексте.';
+      } catch (error) { message(error.message); return; }
+    } else {
+      const crumbs = [...$('disk-breadcrumbs').querySelectorAll('button')].map(x => x.textContent);
+      $('disk-file-place').textContent = 'Папка: ' + (crumbs.join(' / ') || 'Мой диск');
+    }
     dialog.showModal();
-    $('disk-file-name').focus();
+    (editing ? $('disk-file-text') : $('disk-file-name')).focus();
   }
+  // Метка: что Мозг знает о файле.
+  function brainBadge(item) {
+    const status = String(item.status || '');
+    if (/не удалось|требует проверки|ошибк|не выполнен/i.test(status)) return ['error', 'Ошибка изучения'];
+    if (/выполняется|ожидает/i.test(status)) return ['busy', 'Мозг изучает…'];
+    if (status.startsWith('готово') && item.facts > 0) return ['ok', 'В Мозге · ' + item.facts];
+    if (/не поддерживается/i.test(status)) return ['none', 'Формат не изучается'];
+    return ['none', 'Не изучен'];
+  }
+  const TEXT_EXT = /\.(txt|md|markdown|rst|csv|json|ya?ml|log|ini|toml|py|jsx?|tsx?|css|html?|sql|ps1|bat|sh|xml)$/i;
+  function closeMenus(except) {
+    for (const menu of document.querySelectorAll('.disk-menu[open]')) if (menu !== except) menu.open = false;
+  }
+  document.addEventListener('click', event => {
+    if (!event.target.closest('.disk-menu')) closeMenus();
+  });
   function makeRow(kind, item) {
-    const row = element('div', 'disk-row');
-    row.append(icon(kind));
+    const row = element('div', 'disk-row' + (selected.has(key(kind, item.id)) ? ' selected' : ''));
+    row.draggable = true;
+    row.addEventListener('dragstart', event => {
+      const items = selected.has(key(kind, item.id)) ? [...selected.values()] : [{kind, id: item.id, name: item.name}];
+      event.dataTransfer.setData('application/x-tenmiyora-items', JSON.stringify(items));
+      event.dataTransfer.effectAllowed = 'move';
+    });
+    const check = element('input', 'disk-check');
+    check.type = 'checkbox';
+    check.checked = selected.has(key(kind, item.id));
+    check.setAttribute('aria-label', 'Выбрать «' + item.name + '»');
+    check.addEventListener('change', () => {
+      check.checked ? selected.set(key(kind, item.id), {kind, id: item.id, name: item.name}) : selected.delete(key(kind, item.id));
+      row.classList.toggle('selected', check.checked);
+      renderSelection();
+    });
+    row.append(check, icon(kind));
+    if (kind === 'folder') dropTarget(row, item.id);
     const main = element('div', 'disk-item-content');
-    main.append(button(item.name, () => kind === 'folder' ? navigate(item.id) : download(item), 'disk-item-name'));
-    main.append(element('small', 'disk-item-meta', kind === 'folder' ?
-      'Папка · ' + date(item.created) :
-      readableBytes(item.size) + ' · ' + item.status + ' · ' + date(item.created)));
+    main.append(button(item.name, () => kind === 'folder' ? navigate(item.id) : TEXT_EXT.test(item.name) ? openFileDialog(item) : openDocument(item), 'disk-item-name'));
+    const meta = element('small', 'disk-item-meta', kind === 'folder' ?
+      'Папка · ' + date(item.created) : readableBytes(item.size) + ' · ' + date(item.created));
+    main.append(meta);
+    if (kind === 'file') {
+      const [tone, label] = brainBadge(item);
+      const badge = element('span', 'disk-badge ' + tone, label);
+      badge.title = item.status;
+      main.append(badge);
+    }
     row.append(main);
     const actions = element('div', 'disk-row-actions');
     if (kind === 'file') {
-      actions.append(button('Изучить', () => openDocument(item)));
-      actions.append(button('Скачать', () => download(item)));
+      if (brainBadge(item)[0] === 'error') actions.append(button('Переобучить', () => relearn([item])));
+      if (TEXT_EXT.test(item.name)) actions.append(button('Открыть', () => openFileDialog(item)));
+      actions.append(button('Изучить', () => openDocument(item), 'disk-inline-study'));
     }
-    actions.append(button('Имя', async () => {
+    const menu = element('details', 'disk-menu');
+    const summary = element('summary', '', '⋯');
+    summary.setAttribute('aria-label', 'Действия с «' + item.name + '»');
+    summary.title = 'Ещё';
+    menu.addEventListener('toggle', () => { if (menu.open) closeMenus(menu); });
+    const items = element('div', 'disk-menu-items');
+    const entry = (label, callback) => items.append(button(label, () => { menu.open = false; callback(); }));
+    if (kind === 'file') {
+      entry('Изучить документ', () => openDocument(item));
+      entry('Скачать', () => download(item));
+      if (!/не поддерживается/i.test(item.status)) entry('Переобучить Мозг', () => relearn([item]));
+    } else entry('Новая папка внутри', () => createFolder(item.id));
+    entry('Переместить…', () => openMoveDialog([{kind, id: item.id, name: item.name}]));
+    entry('Переименовать', async () => {
       const next = prompt('Новое имя:', item.name);
       if (next === null || next.trim() === item.name) return;
       try {
         await request('disk/rename', {kind, id: item.id, name: next.trim()});
         await refreshDisk();
       } catch (error) { message(error.message); }
-    }));
-    actions.append(button('Удалить', async () => {
-      if (!confirm('Удалить «' + item.name + '»? Связанные знания из файла тоже будут удалены.')) return;
-      try {
-        await request('disk/delete', {kind, id: item.id});
-        await refreshDisk();
-        if (location.hash === '#brain') await loadBrain();
-      } catch (error) { message(error.message); }
-    }));
+    });
+    entry('Удалить', () => removeItems([{kind, id: item.id, name: item.name}]));
+    menu.append(summary, items);
+    actions.append(menu);
     row.append(actions);
     return row;
+  }
+  // Перетаскивание строк и веток дерева на папку = перемещение.
+  function dropTarget(node, target) {
+    node.addEventListener('dragover', event => {
+      if (!event.dataTransfer?.types.includes('application/x-tenmiyora-items')) return;
+      event.preventDefault(); event.stopPropagation();
+      event.dataTransfer.dropEffect = 'move';
+      node.classList.add('drop-over');
+    });
+    node.addEventListener('dragleave', () => node.classList.remove('drop-over'));
+    node.addEventListener('drop', event => {
+      if (!event.dataTransfer?.types.includes('application/x-tenmiyora-items')) return;
+      event.preventDefault(); event.stopPropagation();
+      node.classList.remove('drop-over');
+      try { moveItems(JSON.parse(event.dataTransfer.getData('application/x-tenmiyora-items')), target); }
+      catch { message('Не удалось переместить.'); }
+    });
+  }
+  async function moveItems(items, target) {
+    let moved = 0;
+    for (const item of items) {
+      if (item.kind === 'folder' && item.id === target) continue;
+      try {
+        const result = await request('disk/move', {kind: item.kind, id: item.id, target});
+        if (result.moved) moved++;
+      } catch (error) { message(item.name + ': ' + error.message); }
+    }
+    if (moved) {
+      if (target) expandTo(target);
+      message('Перемещено: ' + moved + '.');
+    }
+    selected.clear();
+    await refreshDisk();
+  }
+  async function removeItems(items) {
+    const folders = items.filter(x => x.kind === 'folder');
+    const text = items.length === 1 ? '«' + items[0].name + '»' : items.length + ' объектов';
+    if (!confirm('Удалить ' + text + '?' + (folders.length ? ' Папки удаляются вместе со всем содержимым.' : '') +
+        ' Знания Мозга из удалённых файлов тоже будут удалены.')) return;
+    let files = 0;
+    for (const item of items) {
+      try {
+        const result = await request('disk/delete', {kind: item.kind, id: item.id, recursive: true});
+        files += result.files || 0;
+      } catch (error) { message(item.name + ': ' + error.message); }
+    }
+    if (folders.length && files) message('Удалено файлов вместе с папками: ' + files + '.');
+    selected.clear();
+    await refreshDisk();
+    if (location.hash === '#brain') await loadBrain();
+  }
+  async function relearn(items) {
+    for (const item of items) {
+      try {
+        const result = await request('disk/relearn', {id: item.id});
+        message('«' + item.name + '»: ' + result.status + '.');
+      } catch (error) { message(item.name + ': ' + error.message); }
+    }
+    await loadDisk();
+  }
+  let moveDialog;
+  function openMoveDialog(items) {
+    if (!moveDialog) {
+      moveDialog = element('dialog', 'doc-dialog disk-move-dialog');
+      const head = element('div', 'doc-dialog-head');
+      head.append(element('h3', '', 'Переместить'), button('Закрыть', () => moveDialog.close()));
+      const what = element('p', 'module-muted'); what.id = 'disk-move-what';
+      const list = element('div', 'disk-move-list'); list.id = 'disk-move-list';
+      moveDialog.append(head, what, list);
+      document.body.append(moveDialog);
+    }
+    $('disk-move-what').textContent = (items.length === 1 ? '«' + items[0].name + '»' : 'Объектов: ' + items.length) + ' → выберите папку';
+    // Папку нельзя положить в неё саму и во вложенные.
+    const blocked = new Set(items.filter(x => x.kind === 'folder').map(x => x.id));
+    const children = new Map();
+    for (const item of treeData.folders) {
+      if (!children.has(item.parent)) children.set(item.parent, []);
+      children.get(item.parent).push(item);
+    }
+    const list = $('disk-move-list');
+    list.replaceChildren();
+    const option = (id, name, depth, disabled) => {
+      const choice = button('', async () => { moveDialog.close(); await moveItems(items, id); }, 'disk-move-option');
+      choice.style.setProperty('--depth', depth);
+      choice.append(treeIcon(id === null ? 'disk' : 'folder'), element('span', '', name));
+      choice.disabled = disabled;
+      list.append(choice);
+    };
+    option(null, 'Мой диск', 0, false);
+    const walk = (parent, depth, disabled, seen) => {
+      for (const item of children.get(parent) || []) {
+        if (seen.has(item.id)) continue;
+        seen.add(item.id);
+        const off = disabled || blocked.has(item.id);
+        option(item.id, item.name, depth, off);
+        walk(item.id, depth + 1, off, seen);
+      }
+    };
+    walk(null, 1, false, new Set());
+    moveDialog.showModal();
   }
   let documentDialog;
   function ensureDocumentDialog() {
@@ -427,17 +648,24 @@
       setTimeout(() => URL.revokeObjectURL(url), 2000);
     } catch (error) { message(error.message); }
   }
-  async function upload(files) {
-    for (const file of files) {
+  // entries: [{file, dir}], dir — относительный путь папки внутри текущей ('' — сама текущая).
+  async function upload(entries) {
+    const base = folder, folderIds = new Map([['', base]]);
+    let done = 0;
+    for (const {file, dir} of entries) {
       if (file.size > 25 * 1024 * 1024) {
         message(file.name + ': файл больше 25 МБ'); continue;
       }
-      $('disk-count').textContent = 'Загрузка: ' + file.name;
+      $('disk-count').textContent = 'Загрузка ' + (++done) + ' из ' + entries.length + ': ' + file.name;
       try {
+        if (!folderIds.has(dir)) {
+          const made = await request('disk/folder', {parent: base, name: dir, ensure: true});
+          folderIds.set(dir, made.id);
+        }
         const response = await fetch('/api/disk/upload', {
           method: 'POST', credentials: 'same-origin',
           headers: {...headers, 'X-Tenmiyora-Filename': encodeURIComponent(file.name),
-                    'X-Tenmiyora-Folder': folder || '',
+                    'X-Tenmiyora-Folder': folderIds.get(dir) || '',
                     'X-Tenmiyora-Mime': file.type || 'application/octet-stream'},
           body: file
         });
@@ -446,18 +674,64 @@
         message('Сохранён «' + file.name + '». ' + result.status + '.');
       } catch (error) { message(file.name + ': ' + error.message); }
     }
+    if (entries.length > 1) message('Загружено файлов: ' + done + '.');
     await refreshDisk();
   }
+  const plain = files => files.map(file => ({file, dir: ''}));
+  // Перетащенные папки обходятся целиком, структура сохраняется.
+  async function droppedEntries(transfer) {
+    const roots = [...transfer.items || []].map(x => x.webkitGetAsEntry && x.webkitGetAsEntry()).filter(Boolean);
+    if (!roots.some(x => x.isDirectory)) return plain([...transfer.files]);
+    const result = [];
+    async function walk(entry, dir) {
+      if (entry.isFile) {
+        const file = await new Promise((resolve, reject) => entry.file(resolve, reject));
+        result.push({file, dir});
+      } else if (entry.isDirectory) {
+        const path = dir ? dir + '/' + entry.name : entry.name;
+        const reader = entry.createReader();
+        for (;;) {
+          const batch = await new Promise((resolve, reject) => reader.readEntries(resolve, reject));
+          if (!batch.length) break;
+          for (const child of batch) await walk(child, path);
+        }
+        if (!result.some(x => x.dir === path || x.dir.startsWith(path + '/'))) result.push({file: null, dir: path});
+      }
+    }
+    for (const entry of roots) await walk(entry, '');
+    return result;
+  }
+  async function uploadWithFolders(entries) {
+    // Пустые папки тоже переносятся.
+    for (const {dir} of entries.filter(x => !x.file)) {
+      try { await request('disk/folder', {parent: folder, name: dir, ensure: true}); }
+      catch (error) { message(dir + ': ' + error.message); }
+    }
+    await upload(entries.filter(x => x.file));
+  }
   $('disk-file-input').addEventListener('change', event => {
-    upload([...event.target.files]); event.target.value = '';
+    upload(plain([...event.target.files])); event.target.value = '';
+  });
+  $('disk-folder-input').addEventListener('change', event => {
+    const entries = [...event.target.files].map(file => {
+      const parts = (file.webkitRelativePath || file.name).split('/');
+      return {file, dir: parts.slice(0, -1).join('/')};
+    });
+    event.target.value = '';
+    if (entries.length) upload(entries);
   });
   $('disk-upload-button').addEventListener('click', () => $('disk-file-input').click());
+  $('disk-folder-pick').addEventListener('click', event => {
+    event.stopPropagation();
+    $('disk-folder-input').click();
+  });
   $('disk-new-folder').addEventListener('click', () => createFolder(folder));
-  $('disk-new-file').addEventListener('click', openFileDialog);
+  $('disk-new-file').addEventListener('click', () => openFileDialog());
   if (matchMedia('(max-width: 960px)').matches) $('disk-tree-details').open = false;
   const dropzone = $('disk-dropzone');
   dropzone.addEventListener('click', () => $('disk-file-input').click());
   dropzone.addEventListener('keydown', event => {
+    if (event.target !== dropzone) return;
     if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); $('disk-file-input').click(); }
   });
   for (const target of [dropzone, $('disk-view')]) {
@@ -468,11 +742,37 @@
     target.addEventListener('dragleave', event => {
       if (!event.relatedTarget || !target.contains(event.relatedTarget)) dropzone.classList.remove('drag-over');
     });
-    target.addEventListener('drop', event => {
-      event.preventDefault(); dropzone.classList.remove('drag-over');
-      if (event.dataTransfer?.files.length) upload([...event.dataTransfer.files]);
+    target.addEventListener('drop', async event => {
+      if (!event.dataTransfer?.types.includes('Files')) return;
+      event.preventDefault(); event.stopPropagation(); dropzone.classList.remove('drag-over');
+      try { await uploadWithFolders(await droppedEntries(event.dataTransfer)); }
+      catch { message('Не удалось прочитать перетащенные файлы.'); }
     });
   }
+  // Сортировка, вид и массовые действия.
+  $('disk-sort').value = sorters[prefs.sort] ? prefs.sort : 'new';
+  $('disk-sort').addEventListener('change', event => { prefs.sort = event.target.value; savePrefs(); renderList(); });
+  function syncView() {
+    for (const node of document.querySelectorAll('[data-disk-view]')) node.setAttribute('aria-pressed', String(node.dataset.diskView === prefs.view));
+  }
+  for (const node of document.querySelectorAll('[data-disk-view]')) node.addEventListener('click', () => {
+    prefs.view = node.dataset.diskView; savePrefs(); syncView(); renderList();
+  });
+  syncView();
+  $('disk-select-all').addEventListener('change', event => {
+    selected.clear();
+    if (event.target.checked) {
+      for (const item of listData.folders) selected.set(key('folder', item.id), {kind: 'folder', id: item.id, name: item.name});
+      for (const item of listData.files) selected.set(key('file', item.id), {kind: 'file', id: item.id, name: item.name});
+    }
+    renderList();
+  });
+  $('disk-bulk-move').addEventListener('click', () => openMoveDialog([...selected.values()]));
+  $('disk-bulk-delete').addEventListener('click', () => removeItems([...selected.values()]));
+  $('disk-bulk-download').addEventListener('click', async () => {
+    for (const item of [...selected.values()].filter(x => x.kind === 'file')) await download(item);
+  });
+  $('disk-bulk-clear').addEventListener('click', () => { selected.clear(); renderList(); });
   $('disk-search').addEventListener('input', () => {
     clearTimeout(searchTimer);
     searchTimer = setTimeout(loadDisk, 220);

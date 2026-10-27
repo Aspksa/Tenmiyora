@@ -85,6 +85,45 @@ class KnowledgeTests(unittest.TestCase):
         self.assertEqual(len(tree["folders"]), 5)
         self.assertEqual({x["folder"] for x in tree["files"]}, {more["id"], None})
 
+    def test_move_recursive_delete_edit_and_relearn(self):
+        a = self.store.create_folder_path(None, "А/Б/В")
+        b = self.store.create_folder(None, "Цель")
+        top = self.store.listing()["folders"][0]
+        self.assertEqual(self.store.create_folder_path(None, "А/Б/В", ensure=True)["id"], a["id"])
+        note = self.store.create_text_file(a["id"], "заметка.md", "Python и SQLite хранят локальные данные приложения надёжно и просто.")
+        self.assertGreater(self.store.listing(a["id"])["files"][0]["facts"], 0)
+        with self.assertRaisesRegex(ValueError, "внутрь"):
+            self.store.move("folder", top["id"], a["id"])
+        self.store.move("file", note["id"], b["id"])
+        self.assertEqual(len(self.store.listing(b["id"])["files"]), 1)
+        self.assertTrue(self.store.retrieve("Что известно о Python и SQLite?"))
+        self.store.create_text_file(a["id"], "заметка.md", "")
+        with self.assertRaisesRegex(ValueError, "уже есть"):
+            self.store.move("file", note["id"], a["id"])
+        self.store.move("folder", b["id"], a["id"])
+        self.assertEqual(self.store.read_text(note["id"])["text"], "Python и SQLite хранят локальные данные приложения надёжно и просто.")
+        saved = self.store.save_text(note["id"], "Договор поставки устанавливает сроки оплаты и ответственность сторон.")
+        self.assertEqual(saved["id"], note["id"])
+        self.assertEqual(self.store.retrieve("Что известно о Python и SQLite?"), [])
+        self.assertTrue(self.store.retrieve("Договор поставки"))
+        with self.db_conn() as conn:
+            conn.execute("DELETE FROM facts WHERE source_id=?", (note["id"],))
+        self.assertEqual(self.store.relearn(note["id"])["id"], note["id"])
+        self.assertTrue(self.store.retrieve("Договор поставки"))
+        binary = self.store.upload("картинка.png", b"\x89PNG", a["id"])
+        with self.assertRaisesRegex(ValueError, "нельзя открыть"):
+            self.store.read_text(binary["id"])
+        with self.assertRaisesRegex(ValueError, "не пустая"):
+            self.store.delete("folder", top["id"])
+        result = self.store.delete("folder", top["id"], recursive=True)
+        self.assertEqual((result["files"], result["folders"]), (3, 4))
+        self.assertEqual(self.store.tree(), {"folders": [], "files": []})
+        self.assertEqual(self.store.retrieve("Договор поставки"), [])
+        self.assertEqual(list(self.store.objects.iterdir()), [])
+
+    def db_conn(self):
+        return self.store.db()
+
     def test_docx_extraction_and_source_removal(self):
         xml = ('<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
                '<w:body><w:p><w:r><w:t>Договор поставки товара и ответственность сторон.</w:t></w:r></w:p></w:body></w:document>')

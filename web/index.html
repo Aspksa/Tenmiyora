@@ -34,6 +34,8 @@
   <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol>
   <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol>
   <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h1M3 12h1M3 18h1"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></symbol>
   <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
 </svg>
 <div class="app-shell">
@@ -90,12 +92,19 @@
       <section id="disk-view" class="view knowledge-view" hidden>
         <div class="module-head"><div><h1>Диск</h1><p>Файлы хранятся на компьютере. Текстовые документы автоматически пополняют Мозг.</p></div><div class="module-actions"><button class="secondary-button" id="disk-new-folder"><svg><use href="#i-folder"/></svg> Новая папка</button><button class="secondary-button" id="disk-new-file"><svg><use href="#i-file"/></svg> Новый файл</button><button class="primary-button" id="disk-upload-button"><svg><use href="#i-upload"/></svg> Загрузить</button></div></div>
         <input id="disk-file-input" type="file" multiple hidden>
+        <input id="disk-folder-input" type="file" webkitdirectory multiple hidden>
         <div class="disk-layout">
           <aside class="module-panel disk-tree-panel"><details id="disk-tree-details" open><summary><h2>Дерево</h2><span class="module-muted">папки и файлы</span></summary><div id="disk-tree" class="disk-tree" role="tree" aria-label="Дерево папок и файлов"></div></details></aside>
           <div class="disk-main">
             <div class="disk-toolbar"><nav id="disk-breadcrumbs" aria-label="Путь к папке"></nav><input id="disk-search" type="search" placeholder="Найти файл или папку по имени" aria-label="Поиск по именам файлов"></div>
-            <div id="disk-dropzone" class="disk-dropzone" tabindex="0" role="button"><svg><use href="#i-upload"/></svg><strong>Перетащите файлы сюда</strong><span>или нажмите, чтобы выбрать · до 25 МБ на файл</span></div>
-            <div class="module-panel"><div class="disk-list-header"><h2>Файлы и папки</h2><span id="disk-count" class="module-muted"></span></div><div id="disk-list" class="disk-list"></div></div>
+            <div id="disk-dropzone" class="disk-dropzone" tabindex="0" role="button"><svg><use href="#i-upload"/></svg><strong>Перетащите файлы или папки сюда</strong><span>или нажмите, чтобы выбрать файлы · <button type="button" id="disk-folder-pick" class="disk-link">загрузить папку целиком</button> · до 25 МБ на файл</span></div>
+            <div class="module-panel">
+              <div class="disk-list-header"><label class="disk-select-all"><input id="disk-select-all" type="checkbox" aria-label="Выбрать всё"></label><h2>Файлы и папки</h2><span id="disk-count" class="module-muted"></span>
+                <div class="disk-view-controls"><select id="disk-sort" aria-label="Сортировка"><option value="new">Сначала новые</option><option value="old">Сначала старые</option><option value="az">По имени, А–Я</option><option value="za">По имени, Я–А</option><option value="big">Сначала большие</option><option value="small">Сначала маленькие</option></select><div class="disk-view-toggle" role="group" aria-label="Вид"><button type="button" data-disk-view="list" aria-label="Список" title="Список"><svg><use href="#i-list"/></svg></button><button type="button" data-disk-view="grid" aria-label="Плитка" title="Плитка"><svg><use href="#i-grid"/></svg></button></div></div>
+              </div>
+              <div id="disk-bulk" class="disk-bulk" hidden><strong id="disk-bulk-count"></strong><button type="button" id="disk-bulk-move">Переместить…</button><button type="button" id="disk-bulk-download">Скачать</button><button type="button" id="disk-bulk-delete">Удалить</button><button type="button" id="disk-bulk-clear">Снять выделение</button></div>
+              <div id="disk-list" class="disk-list"></div>
+            </div>
           </div>
         </div>
         <p class="module-muted disk-note">DOCX, XLSX, TXT, Markdown, исходный код и другие текстовые файлы индексируются автоматически. Для PDF требуется установленный pypdf; изображения, архивы и неподдерживаемые форматы сохраняются без извлечения знаний. Файлы не загружаются в Cloud.ru сами по себе; релевантные фрагменты могут передаваться модели при обращении к чату.</p>
