@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f6f3ec">
-  <meta name="description" content="Личное пространство Tenmiyora. Разговор, который всегда рядом.">
-  <title>Tenmiyora — личное пространство</title>
+  <meta name="theme-color" content="#0d0c0a">
+  <meta name="description" content="Tenmiyora: разговор, память и файлы на вашем компьютере.">
+  <title>Tenmiyora</title>
   <link rel="icon" href="/assets/mark.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/knowledge.css">
@@ -35,42 +35,26 @@
 </svg>
 <div class="app-shell">
   <aside class="sidebar" aria-label="Главное меню">
-    <a class="brand" href="#home" aria-label="Tenmiyora, главная"><img src="/assets/mark.svg" alt=""><span>Tenmiyora<small>ЛИЧНОЕ ПРОСТРАНСТВО</small></span></a>
-    <div class="sidebar-label">ВАШЕ ПРОСТРАНСТВО</div>
+    <a class="brand" href="#home" aria-label="Tenmiyora, главная"><img src="/assets/mark.svg" alt=""><span>Tenmiyora</span></a>
     <nav>
-      <a href="#home" class="nav-item active" data-nav="home" aria-label="Главная"><svg><use href="#i-home"/></svg><span>Главная</span><span class="nav-dot"></span></a>
-      <a href="#brain" class="nav-item" data-nav="brain" aria-label="Мозг Tenmiyora"><svg><use href="#i-brain"/></svg><span>Мозг Tenmiyora</span></a>
-      <a href="#disk" class="nav-item" data-nav="disk" aria-label="Диск Tenmiyora"><svg><use href="#i-disk"/></svg><span>Диск Tenmiyora</span></a>
-      <button class="nav-item" data-action="chat" aria-label="Разговор"><svg><use href="#i-chat"/></svg><span>Разговор</span><kbd>↵</kbd></button>
-      <a href="#settings" class="nav-item" data-nav="settings" aria-label="Настройки"><svg><use href="#i-settings"/></svg><span>Настройки</span></a>
+      <a href="#home" class="nav-item active" data-nav="home" aria-label="Главная"><svg><use href="#i-home"/></svg><span>Главная</span></a>
+      <button class="nav-item" data-action="chat" aria-label="Чат"><svg><use href="#i-chat"/></svg><span>Чат</span></button>
+      <a href="#brain" class="nav-item" data-nav="brain" aria-label="Мозг"><svg><use href="#i-brain"/></svg><span>Мозг</span></a>
+      <a href="#disk" class="nav-item" data-nav="disk" aria-label="Диск"><svg><use href="#i-disk"/></svg><span>Диск</span></a>
     </nav>
-    <div class="sidebar-note"><div class="note-star">✧</div><p>Большие идеи<br>начинаются с&nbsp;разговора.</p><span>TENMIYORA</span></div>
-    <div class="sidebar-bottom"><span class="live-dot"></span><span id="server-status">Подключение…</span><small>v0.9.2</small></div>
+    <div class="sidebar-bottom"><span class="live-dot"></span><span id="server-status">Подключение…</span><button class="icon-button" data-action="settings" aria-label="Настройки" title="Настройки"><svg><use href="#i-settings"/></svg></button></div>
   </aside>
   <div class="workspace">
-    <header class="topbar"><div class="breadcrumb"><span>Пространство</span><span class="slash">/</span><strong id="page-title">Главная</strong></div><div class="topbar-actions"><span class="local-badge"><svg><use href="#i-lock"/></svg>На вашем компьютере</span><button class="icon-button" data-action="settings" aria-label="Настройки Tenmiyora"><svg><use href="#i-settings"/></svg></button></div></header>
     <main id="main-content">
       <section id="home-view" class="view">
-        <div class="page-overline"><span class="tiny-star">✦</span> ВАШ РИТМ. ВАШЕ ПРОСТРАНСТВО.</div>
         <div class="welcome-hero">
-          <div class="hero-copy"><h1>Ближе к идеям.<br><em>Ближе к вам.</em></h1><p>Спокойное пространство для мыслей<br class="desktop-break"> и разговоров с Tenmiyora.</p><button class="primary-button" data-action="chat">Начать разговор<svg><use href="#i-arrow"/></svg></button><div class="hero-footnote"><span class="small-line"></span>Всегда на расстоянии одного касания</div></div>
-          <div class="hero-art" aria-hidden="true"><div class="orbit orbit-outer"></div><div class="orbit orbit-inner"></div><div class="orbit-label">TENMIYORA <span>✧</span> WHITE & GOLD</div><div class="art-star">✧</div></div>
+          <div class="hero-copy"><h1>Tenmiyora</h1><p>Разговор, память и файлы — на вашем компьютере.</p><button class="primary-button" data-action="chat">Начать разговор<svg><use href="#i-arrow"/></svg></button><span class="hero-status" id="conversation-summary">Ваш первый разговор ждёт вас</span></div>
+          <div class="hero-art" aria-hidden="true"><div class="orbit orbit-outer"></div><div class="orbit orbit-inner"></div></div>
         </div>
-        <div class="section-heading"><h2>Всё под рукой</h2><span>01 — НАЧНИТЕ ЗДЕСЬ</span></div>
-        <div class="quick-actions">
-          <button class="quick-card" data-action="chat"><span class="card-icon"><svg><use href="#i-chat"/></svg></span><span class="card-text"><strong>Продолжить разговор</strong><span id="conversation-summary">Ваш первый разговор ждёт вас</span></span><svg class="card-arrow"><use href="#i-arrow"/></svg></button>
-          <button class="quick-card" data-action="settings"><span class="card-icon"><svg><use href="#i-spark"/></svg></span><span class="card-text"><strong>Настроить под себя</strong><span>Облик, положение и модель для чата</span></span><svg class="card-arrow"><use href="#i-arrow"/></svg></button>
-        </div>
-        <div class="quick-actions knowledge-shortcuts">
-          <a class="quick-card" href="#brain"><span class="card-icon"><svg><use href="#i-brain"/></svg></span><span class="card-text"><strong>Мозг Tenmiyora</strong><span>Ветки знаний, источники и рост памяти</span></span><svg class="card-arrow"><use href="#i-arrow"/></svg></a>
-          <a class="quick-card" href="#disk"><span class="card-icon"><svg><use href="#i-disk"/></svg></span><span class="card-text"><strong>Диск Tenmiyora</strong><span>Файлы, папки и загрузка документов</span></span><svg class="card-arrow"><use href="#i-arrow"/></svg></a>
-        </div>
-        <div class="gesture-guide"><span class="guide-mark">✦</span><p><strong>Tenmiyora всегда рядом.</strong><span>Левый щелчок по аватару — чат. Правый — настройки.<br>Удерживайте и перетаскивайте её в удобное место.</span></p><span class="guide-number">自由<br><small>СВОБОДА БЫТЬ РЯДОМ</small></span></div>
-        <footer class="page-footer"><span>Tenmiyora <i>·</i> белое золото</span><span>Ваше пространство. Ваши настройки.</span></footer>
+        <p class="gesture-guide"><span class="guide-mark">✦</span>Щелчок по аватару — чат, правый щелчок — настройки. Аватар можно перетаскивать.</p>
       </section>
       <section id="brain-view" class="view knowledge-view" hidden>
-        <div class="page-overline"><span class="tiny-star">✦</span> ПАМЯТЬ И РАЗВИТИЕ</div>
-        <div class="module-head"><div><h1>Мозг <em>Tenmiyora.</em></h1><p>Ветки растут из документов на Диске и содержательных сообщений чата. Каждое знание сохраняет источник.</p></div><button class="secondary-button" id="brain-refresh">Обновить знания ↻</button></div>
+        <div class="module-head"><div><h1>Мозг</h1><p>Знания из документов на Диске и сообщений чата. У каждого знания сохраняется источник.</p></div><button class="secondary-button" id="brain-refresh">Обновить ↻</button></div>
         <div class="brain-metrics" aria-label="Показатели памяти"><div><strong id="brain-branches-count">0</strong><span>веток</span></div><div><strong id="brain-facts-count">0</strong><span>знаний</span></div><div><strong id="brain-events-count">0</strong><span>последних событий</span></div></div>
         <div class="module-columns"><section class="module-panel"><h2>Дерево знаний</h2><p class="module-muted">Выберите ветку, чтобы увидеть подтверждающие фрагменты.</p><div id="brain-tree" class="brain-tree"></div></section><section class="module-panel"><h2 id="brain-detail-title">Содержимое ветки</h2><div id="brain-detail" class="brain-detail"><p class="module-muted">Выберите ветку слева.</p></div></section></div>
         <section class="module-panel activity-panel"><h2>История роста</h2><div id="brain-events"></div></section>
@@ -82,17 +66,12 @@
         </section>
       </section>
       <section id="disk-view" class="view knowledge-view" hidden>
-        <div class="page-overline"><span class="tiny-star">✦</span> ЛОКАЛЬНОЕ ХРАНИЛИЩЕ</div>
-        <div class="module-head"><div><h1>Диск <em>Tenmiyora.</em></h1><p>Ваши файлы хранятся на компьютере. Поддерживаемые тексты автоматически пополняют Мозг.</p></div><div class="module-actions"><button class="secondary-button" id="disk-new-folder"><svg><use href="#i-folder"/></svg> Новая папка</button><button class="primary-button" id="disk-upload-button"><svg><use href="#i-upload"/></svg> Загрузить</button></div></div>
+        <div class="module-head"><div><h1>Диск</h1><p>Файлы хранятся на компьютере. Текстовые документы автоматически пополняют Мозг.</p></div><div class="module-actions"><button class="secondary-button" id="disk-new-folder"><svg><use href="#i-folder"/></svg> Новая папка</button><button class="primary-button" id="disk-upload-button"><svg><use href="#i-upload"/></svg> Загрузить</button></div></div>
         <input id="disk-file-input" type="file" multiple hidden>
         <div class="disk-toolbar"><nav id="disk-breadcrumbs" aria-label="Путь к папке"></nav><input id="disk-search" type="search" placeholder="Найти файл или папку по имени" aria-label="Поиск по именам файлов"></div>
         <div id="disk-dropzone" class="disk-dropzone" tabindex="0" role="button"><svg><use href="#i-upload"/></svg><strong>Перетащите файлы сюда</strong><span>или нажмите, чтобы выбрать · до 25 МБ на файл</span></div>
         <div class="module-panel"><div class="disk-list-header"><h2>Файлы и папки</h2><span id="disk-count" class="module-muted"></span></div><div id="disk-list" class="disk-list"></div></div>
         <p class="module-muted disk-note">DOCX, XLSX, TXT, Markdown, исходный код и другие текстовые файлы индексируются автоматически. Для PDF требуется установленный pypdf; изображения, архивы и неподдерживаемые форматы сохраняются без извлечения знаний. Файлы не загружаются в Cloud.ru сами по себе; релевантные фрагменты могут передаваться модели при обращении к чату.</p>
-      </section>
-      <section id="settings-view" class="view" hidden>
-        <div class="page-overline"><span class="tiny-star">✦</span> ВАШЕ ЛИЧНОЕ ПРОСТРАНСТВО</div><h1 class="settings-page-title">Именно <em>по-вашему.</em></h1><p class="section-description">Внешний вид, удобное положение и подключение к модели — в одном месте.</p>
-        <div class="settings-landing"><span class="card-icon large"><svg><use href="#i-settings"/></svg></span><h2>Настройки Tenmiyora</h2><p>Изменения облика видны сразу.<br>Положение сохраняется после перемещения.</p><button class="primary-button" data-action="settings">Открыть настройки<svg><use href="#i-arrow"/></svg></button></div>
       </section>
     </main>
   </div>
@@ -100,19 +79,17 @@
 <button id="avatar" class="avatar" aria-label="Tenmiyora: левый щелчок — чат, правый — настройки. Можно перетаскивать." aria-haspopup="dialog" title="Чат — левый щелчок · Настройки — правый"><img src="/assets/tenmiyora-avatar.png" alt="Tenmiyora — бело-золотая многохвостая лисица" draggable="false"><span class="avatar-label"><span class="live-dot"></span>Tenmiyora<span class="avatar-grip">⠿</span></span></button>
 <button id="avatar-restore" class="avatar-restore" hidden aria-label="Показать аватар Tenmiyora"><svg><use href="#i-spark"/></svg><span>Tenmiyora</span></button>
 <section id="chat-window" class="floating-window chat-window" role="dialog" aria-label="Разговор с Tenmiyora" hidden>
-  <header id="chat-handle" class="window-header"><div class="window-identity"><div class="mini-portrait"><img src="/assets/tenmiyora-avatar.png" alt="" draggable="false"></div><div><strong>Tenmiyora</strong><small id="chat-model-status">Личное пространство</small></div></div><div class="window-actions"><button class="icon-button" data-action="connection" aria-label="Подключение модели"><svg><use href="#i-settings"/></svg></button><button class="icon-button" id="chat-close" aria-label="Свернуть чат"><svg><use href="#i-minus"/></svg></button></div></header>
-  <div class="chat-meta"><span><span class="tiny-star">✧</span> Разговор, который остаётся с вами</span><button class="text-button" id="clear-chat">Очистить</button></div>
+  <header id="chat-handle" class="window-header"><div class="window-identity"><div class="mini-portrait"><img src="/assets/tenmiyora-avatar.png" alt="" draggable="false"></div><div><strong>Tenmiyora</strong><small id="chat-model-status">Модель ещё не подключена</small></div></div><div class="window-actions"><button class="text-button" id="clear-chat">Очистить</button><button class="icon-button" data-action="connection" aria-label="Подключение модели"><svg><use href="#i-settings"/></svg></button><button class="icon-button" id="chat-close" aria-label="Свернуть чат"><svg><use href="#i-minus"/></svg></button></div></header>
+  
   <div id="chat-messages" class="chat-messages" role="log" aria-label="Сообщения" aria-live="polite"></div>
   <div id="connection-hint" class="connection-hint"><span>Для ответов подключите модель.</span><button class="text-button" data-action="connection">Подключить <span>↗</span></button></div>
   <form id="chat-form" class="chat-composer"><label class="sr-only" for="chat-input">Сообщение Tenmiyora</label><textarea id="chat-input" rows="2" placeholder="О чём вы думаете?"></textarea><div class="composer-bottom"><span id="composer-hint">Enter — отправить · Shift+Enter — новая строка</span><button id="send-message" class="send-button" type="submit" aria-label="Отправить сообщение"><svg><use href="#i-send"/></svg></button></div></form>
-  <div class="window-grip"><svg><use href="#i-move"/></svg>Перемещайте окно за верхнюю панель</div>
 </section>
 <section id="settings-window" class="floating-window settings-window" role="dialog" aria-label="Настройки Tenmiyora" hidden>
-  <header id="settings-handle" class="window-header"><div><span class="settings-kicker">ПОД СЕБЯ</span><h2>Настройки Tenmiyora</h2></div><button class="icon-button" id="settings-close" aria-label="Закрыть настройки"><svg><use href="#i-close"/></svg></button></header>
-  <div class="settings-tabs" role="tablist" aria-label="Раздел настроек"><button id="tab-appearance" role="tab" aria-selected="true" aria-controls="appearance-panel" data-tab="appearance">Облик и поведение</button><button id="tab-connection" role="tab" aria-selected="false" aria-controls="connection-panel" data-tab="connection" tabindex="-1">Cloud.ru и модели</button></div>
+  <header id="settings-handle" class="window-header"><h2>Настройки</h2><button class="icon-button" id="settings-close" aria-label="Закрыть настройки"><svg><use href="#i-close"/></svg></button></header>
+  <div class="settings-tabs" role="tablist" aria-label="Раздел настроек"><button id="tab-appearance" role="tab" aria-selected="true" aria-controls="appearance-panel" data-tab="appearance">Аватар</button><button id="tab-connection" role="tab" aria-selected="false" aria-controls="connection-panel" data-tab="connection" tabindex="-1">Модель</button></div>
   <div class="settings-scroll">
     <div id="appearance-panel" role="tabpanel" aria-labelledby="tab-appearance">
-      <div class="appearance-preview"><img src="/assets/tenmiyora-avatar.png" alt="Предпросмотр аватара" draggable="false"><div><strong>Tenmiyora</strong><span>Белое золото</span><small>Тёплая. Спокойная. Рядом.</small></div></div>
       <label class="setting-label" for="avatar-size">Размер аватара<output id="avatar-size-value">340 px</output></label><input type="range" id="avatar-size" min="140" max="500" step="10" value="340">
       <label class="setting-label" for="avatar-opacity">Прозрачность<output id="avatar-opacity-value">100%</output></label><input type="range" id="avatar-opacity" min="25" max="100" step="5" value="100">
       <label class="toggle-row"><span><strong>Показывать аватар</strong><small>Можно вернуть кнопкой в углу</small></span><input type="checkbox" id="avatar-visible" checked><span class="toggle-ui"></span></label>
