@@ -380,7 +380,7 @@ class Grower:
         insights = 0
         try:
             if self.workspace.growth_settings()["enabled"]:
-                insights = self._deep(document, connection, limit)
+                insights = self._deep(document, connection)
         except Exception:
             logging.exception("Глубокий разбор документа %s в режиме ожидания не удался", document["id"])
         with self.store.lock, self.store.db() as db:
@@ -389,7 +389,7 @@ class Grower:
             _log(db, "documents", summary, True)
         return summary
 
-    def _deep(self, document, connection, limit):
+    def _deep(self, document, connection):
         """До трёх частей документа моделью; каждая часть сохраняется сразу после ответа."""
         from document_deep_analysis import batches, model_messages, validate_answer
         self.store.ensure_document_index(document["id"])
@@ -403,9 +403,11 @@ class Grower:
         saved = 0
         for batch in list(batches(rows))[:DEEP_BATCHES]:
             # Перед каждым запросом: разрешение ещё действует и лимит не исчерпан.
-            if self.workspace.growth_cloud() is None or not self.workspace.growth_settings()["enabled"]:
+            settings = self.workspace.growth_settings()
+            if self.workspace.growth_cloud() is None or not settings["enabled"]:
                 break
-            if not self.store.engine.reserve_semantic(limit):
+            # Лимит перечитываем: пользователь мог уменьшить его во время разбора.
+            if not self.store.engine.reserve_semantic(settings["cloud_daily"]):
                 break
             raw = self.workspace.provider("/chat/completions", {"model": connection["model"],
                 "messages": model_messages(batch), "stream": False}, connection=connection, timeout=60, max_bytes=100000)

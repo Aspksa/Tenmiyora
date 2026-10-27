@@ -180,6 +180,15 @@ class BrainIdleTests(unittest.TestCase):
         self.assertEqual(len(calls), 1)  # Короткий документ — одна часть.
         self.assertEqual(self.work.growth_status()["cloud_used_today"], 2)  # смысловой разбор + одна часть
         self.store.upload("contract.txt", CONTRACT.encode())
+        def lower_limit(fid, connection):
+            self.work.growth_update({"cloud_daily": 1})
+            return 0
+        self.store.upload("other.txt", ("Отчёт склада: остатки товара сверяются каждую пятницу, "
+                                        "расхождения передаются бухгалтерии.").encode())
+        self.work.semantic_once = lower_limit
+        self.run_all()
+        self.assertEqual(len(calls), 1)  # Лимит снизили до 1 во время разбора — новых запросов нет.
+        self.work.growth_update({"cloud_daily": 5})
         def disable(fid, connection):
             self.work.growth_update({"cloud": False})
             return 0
