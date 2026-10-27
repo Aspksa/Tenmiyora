@@ -2,7 +2,7 @@
 import sys
 import tempfile
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -85,6 +85,66 @@ class BrainGrowthTests(unittest.TestCase):
         data = self.store.brain_growth(7, 180)
         self.assertGreater(data["series"][0]["total"], 0)
         self.assertEqual(data["diary"]["knowledge"], 0)
+
+    def test_brain_level_streak_diary_days_and_topic_next_step(self):
+        from brain_growth import brain_level, next_step, streak
+        self.assertEqual(brain_level(0)["name"], "Искра")
+        self.assertEqual(brain_level(30)["level"], 3)
+        self.assertAlmostEqual(brain_level(30)["progress"], 0.2)
+        self.assertIsNone(brain_level(5000)["next"])
+        today = date(2026, 3, 10)
+        days = {(today - timedelta(days=i)).isoformat(): 1 for i in range(1, 41)}
+        self.assertEqual(streak(days, today), 40)  # Серия длиннее окна графика не обрезается.
+        days[today.isoformat()] = 2
+        days.pop((today - timedelta(days=5)).isoformat())
+        self.assertEqual(streak(days, today), 5)
+        self.assertEqual(next_step(2, 10, 1), {"name": "Уверенный", "count": 5, "sources": 1, "progress": 0.5})
+        self.assertIsNone(next_step(4, 50, 4))
+        self.store.upload("python.txt", PYTHON.encode())
+        self.store.capture_chat("Python позволяет тестировать код с помощью unittest и pytest, "
+                                "это стандартная библиотека для проверки программ в проекте.")
+        data = self.store.brain_growth(30)
+        self.assertEqual(data["brain"]["total"], data["series"][-1]["total"])
+        self.assertEqual(data["brain"]["streak"], 1)
+        today = data["diary"]["days"][0]
+        self.assertEqual(today["date"], data["diary"]["until"])
+        self.assertEqual(today["knowledge"], data["diary"]["knowledge"])
+        self.assertEqual(today["documents"], ["python.txt"])
+        self.assertGreaterEqual(today["chat"], 1)
+        topic = data["topics"][0]
+        self.assertEqual(len(topic["spark"]), 14)
+        self.assertEqual(sum(topic["spark"]), topic["count"])
+        self.assertIn("progress", topic["next"])
+
+    def test_branch_stats_count_sources_with_subbranches(self):
+        self.store.upload("python.txt", PYTHON.encode())
+        self.store.capture_chat("Python позволяет тестировать код с помощью unittest и pytest, "
+                                "это стандартная библиотека для проверки программ в проекте.")
+        root = next(row for row in self.store.branches()["branches"] if row["name"] == "Программирование")
+        stats = self.store.facts(root["id"])["stats"]
+        self.assertEqual(stats["total"], self.store.branches()["stats"]["facts"])
+        self.assertEqual(stats["documents"], 1)
+        self.assertEqual(stats["sources"][0]["name"], "python.txt")
+        self.assertGreaterEqual(stats["chat"], 1)
+        self.assertEqual(sum(stats["spark"]), stats["total"])
+
+    def test_filtered_facts_search_all_records_of_subtree(self):
+        text = "\n\n".join(f"Python модуль номер {i} позволяет тестировать код с помощью unittest и pytest." for i in range(60))
+        self.store.upload("old.txt", "Python позволяет тестировать код с помощью unittest: старый документ.".encode())
+        self.store.upload("big.txt", text.encode())
+        self.store.capture_chat("Python позволяет тестировать код с помощью unittest и pytest, это стандартная библиотека проекта.")
+        root = next(row for row in self.store.branches()["branches"] if row["name"] == "Программирование")
+        with self.store.db() as db:
+            old = db.execute("SELECT id FROM files WHERE name='old.txt'").fetchone()[0]
+        only_old = self.store.facts(root["id"], source="file:" + old)["facts"]
+        self.assertTrue(only_old)
+        self.assertTrue(all(fact["source_name"] == "old.txt" for fact in only_old))
+        chat = self.store.facts(root["id"], source="chat")["facts"]
+        self.assertTrue(chat and all(fact["source_type"] == "chat" for fact in chat))
+        found = self.store.facts(root["id"], query="СТАРЫЙ документ")["facts"]
+        self.assertEqual([fact["source_name"] for fact in found], ["old.txt"])
+        self.assertEqual(self.store.facts(root["id"])["facts"], [])  # У корня своих записей нет.
+        self.assertEqual(len(self.store.facts(root["id"], subtree=True)["facts"]), min(100, self.store.facts(root["id"])["stats"]["total"]))
 
 
 if __name__ == "__main__":

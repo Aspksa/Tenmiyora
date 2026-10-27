@@ -669,7 +669,7 @@ class Handler(BaseHTTPRequestHandler):
                 if path == "/api/brain":
                     self.json_reply(200, store.branches())
                 elif path == "/api/brain/facts":
-                    self.json_reply(200, store.facts(int(value("branch"))))
+                    self.json_reply(200, store.facts(int(value("branch")), value("source")[:200] or None, value("q")[:200] or None, value("subtree") == "1"))
                 elif path == "/api/brain/growth":
                     self.json_reply(200, store.brain_growth(value("days") or 30, value("offset") or 0))
                 elif path == "/api/brain/idle":

@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from html import unescape
 from html.parser import HTMLParser
 import hashlib
@@ -526,7 +526,7 @@ class KnowledgeStore:
                     root["facts"] = 0
                     visible[target_id] = root
                 visible[target_id]["facts"] += item["facts"]
-            recent = conn.execute("SELECT time,action,detail FROM journal ORDER BY id DESC LIMIT 15").fetchall()
+            recent = conn.execute("SELECT time,action,detail FROM journal ORDER BY id DESC LIMIT 40").fetchall()
             nodes = sorted(visible.values(), key=lambda item: (item["parent"] or 0,item["name"]))
             return {"branches": nodes, "recent": [dict(row) for row in recent],
                     "stats": self._brain_stats(conn)}
@@ -581,12 +581,14 @@ class KnowledgeStore:
                           "source_name": names.get(item.get("source_id"))})
         return {"results": found}
 
-    def facts(self, branch):
+    def facts(self, branch, source=None, query=None, subtree=False):
         from topic_aliases import projection
         with self.lock, self.db() as conn:
             mapping = projection(conn)
             canonical = mapping.get(branch,branch)
             ids = [id_ for id_ in mapping if mapping[id_] == canonical] + [canonical]
+            if source or query or subtree:
+                return {"facts": self._filtered_facts(conn, self._subtree(conn, ids), source, query)}
             params = ",".join("?" for _ in ids)
             # All old IDs remain valid and their knowledge is readable.
             rows = conn.execute(f"""SELECT k.id,k.statement AS excerpt,k.locator,
@@ -599,7 +601,69 @@ class KnowledgeStore:
                     LEFT JOIN files d ON f.source_type='file' AND d.id=f.source_id
                     WHERE f.branch IN ({params})
                     ORDER BY f.id DESC LIMIT 100""", ids).fetchall()
-            return {"facts": [dict(row) for row in rows]}
+            return {"facts": [dict(row) for row in rows], "stats": self._branch_stats(conn, ids)}
+
+    def _subtree(self, conn, ids):
+        ids = set(ids)
+        while True:
+            params = ",".join("?" for _ in ids)
+            more = {row[0] for row in conn.execute(f"SELECT id FROM branches WHERE parent IN ({params})", tuple(ids))} - ids
+            if not more:
+                return tuple(ids)
+            ids |= more
+
+    def _filtered_facts(self, conn, ids, source, query):
+        """Знания ветки с подветками из одного источника и/или со словами запроса — по всем записям, не по первым 100."""
+        params = ",".join("?" for _ in ids)
+        where, args = "", []
+        if source == "chat":
+            where = " AND {t}.source_type='chat'"
+        elif source and source.startswith("file:"):
+            where, args = " AND {t}.source_type='file' AND {t}.source_id=?", [source[5:]]
+        rows = conn.execute(f"""SELECT k.id,k.statement AS excerpt,k.locator,k.source_type,k.source_id,k.created,
+              d.name AS source_name FROM knowledge_items k
+            LEFT JOIN files d ON k.source_type='file' AND d.id=k.source_id
+            WHERE k.branch_id IN ({params}){where.format(t='k')}
+            UNION ALL
+            SELECT f.id,f.excerpt,f.locator,f.source_type,f.source_id,f.created,d.name FROM facts f
+            LEFT JOIN files d ON f.source_type='file' AND d.id=f.source_id
+            WHERE f.branch IN ({params}){where.format(t='f')}
+              AND NOT EXISTS (SELECT 1 FROM knowledge_items x WHERE x.branch_id=f.branch)
+            ORDER BY 6 DESC""", (*ids, *args, *ids, *args)).fetchall()
+        words = (query or "").casefold().split()
+        found = []
+        for row in rows:
+            text = " ".join(str(row[key] or "") for key in ("excerpt", "source_name", "locator")).casefold()
+            if all(word in text for word in words):
+                found.append(dict(row))
+                if len(found) >= 100:
+                    break
+        return found
+
+    def _branch_stats(self, conn, ids):
+        """Откуда знания ветки вместе с подветками: все записи, не только первые 100 показанных."""
+        from brain_growth import EFFECTIVE, SPARK_DAYS
+        ids = self._subtree(conn, ids)
+        params = ",".join("?" for _ in ids)
+        rows = conn.execute(f"""SELECT e.source_type,e.source_id,d.name,COUNT(*) AS n,
+              MIN(e.created) AS first,MAX(e.created) AS last FROM ({EFFECTIVE}) e
+            LEFT JOIN files d ON e.source_type='file' AND d.id=e.source_id
+            WHERE e.branch IN ({params}) GROUP BY e.source_type,e.source_id
+            ORDER BY n DESC,last DESC""", ids).fetchall()
+        start = datetime.now(timezone.utc).date() - timedelta(days=SPARK_DAYS - 1)
+        spark = [0] * SPARK_DAYS
+        for row in conn.execute(f"""SELECT date(created) AS d,COUNT(*) AS n FROM ({EFFECTIVE})
+                WHERE branch IN ({params}) AND date(created)>=? GROUP BY d""", (*ids, start.isoformat())):
+            index = (date.fromisoformat(row["d"]) - start).days
+            if 0 <= index < SPARK_DAYS:
+                spark[index] += row["n"]
+        chat = sum(row["n"] for row in rows if row["source_type"] == "chat")
+        sources = [{"type": row["source_type"], "id": row["source_id"], "name": row["name"] or "Документ удалён",
+                    "count": row["n"], "last": row["last"]} for row in rows if row["source_type"] == "file"][:12]
+        return {"total": sum(row["n"] for row in rows), "chat": chat,
+                "documents": sum(1 for row in rows if row["source_type"] == "file"), "sources": sources,
+                "first": min((row["first"] for row in rows if row["first"]), default=None),
+                "last": max((row["last"] for row in rows if row["last"]), default=None), "spark": spark}
 
     def retrieve(self, question, limit=6, origin=None):
         found = self.engine.search(question, limit)
