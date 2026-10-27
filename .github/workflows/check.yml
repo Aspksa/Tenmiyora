@@ -95,6 +95,9 @@ jobs:
       - name: Проверить навыки восстановления после ошибок
         run: python bootstrap/ci_timed.py --label 'Verified recovery' -- python -m unittest discover -s tests -p 'test_soul_recovery.py' -v
 
+      - name: Проверить способы восстановления и повторные испытания
+        run: python bootstrap/ci_timed.py --label 'Recovery method exam' -- python -m unittest discover -s tests -p 'test_recovery_method_evidence.py' -v
+
       - name: Проверить шесть инвариантов Лаборатории
         run: python bootstrap/ci_timed.py --label 'Метаморфные проверки' -- python bootstrap/brain_lab_metamorphic.py --check --output .runtime/quality-reports/brain-lab-metamorphic.json
       - name: Проверить блокировки принятия и SHA-пломбу инвариантов
