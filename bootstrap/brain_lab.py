@@ -22,6 +22,7 @@ CORE_FILES=(
     # Включаем саму лабораторию: изменение логики экзамена/принятия
     # недопустимо скрывать от цифровой подписи алгоритма.
     "brain_lab.py","brain_lab_audit.py","brain_lab_eight.py",
+    "brain_lab_integrity.py","brain_lab_adversarial.py",
     "knowledge.py","memory_engine.py","topic_router.py","topic_discovery.py",
     "topic_aliases.py","semantic.py","natural_relations.py","knowledge_relations.py",
     "knowledge_paths.py","document_understanding.py","document_deep_analysis.py",
@@ -118,6 +119,9 @@ def init_schema(db):
     for name in ("algorithm_signature","suite_signature"):
         if name not in columns:
             db.execute(f"ALTER TABLE brain_lab_generations ADD COLUMN {name} TEXT")
+    experiments={r["name"] for r in db.execute("PRAGMA table_info(brain_lab_experiments)")}
+    if "integrity_sha256" not in experiments:
+        db.execute("ALTER TABLE brain_lab_experiments ADD COLUMN integrity_sha256 TEXT")
 
 
 def signature(db):
@@ -139,6 +143,12 @@ def signature(db):
            FROM knowledge_edges ORDER BY left_id,right_id,relation,source_type,source_id"""),
         "coverage":("document_coverage","""SELECT file_id,file_sha,is_complete,notes
            FROM document_coverage ORDER BY file_id"""),
+        "segments":("document_segments","""SELECT file_id,file_sha,ordinal,kind,locator,section,excerpt
+           FROM document_segments ORDER BY file_id,ordinal"""),
+        "facts":("facts","""SELECT branch,source_type,source_id,excerpt,locator
+           FROM facts ORDER BY branch,source_type,source_id,excerpt,locator"""),
+        "borrowings":("file_borrowing","""SELECT left_id,right_id,overlap,method
+           FROM file_borrowing ORDER BY left_id,right_id"""),
         "suggestions":("relation_suggestions","""SELECT file_id,file_sha,subject,predicate,object,status
               FROM relation_suggestions ORDER BY id"""),
         "provenance":("file_provenance","""SELECT file_id,file_sha,declared_author,declared_origin
@@ -176,7 +186,8 @@ def suite_signature():
     """Fingerprint independent gold and guardrails; changed tests ≠ improvement."""
     return _digest_paths([GOLD,THRESHOLDS,LAB_ROOT/"brain_lab_holdout.py",
                           LAB_ROOT/"quality_eval.py",
-                          LAB_ROOT/"brain_lab_eight.py"])
+                          LAB_ROOT/"brain_lab_eight.py",
+                          LAB_ROOT/"brain_lab_adversarial.py"])
 
 
 def _candidates(db):
@@ -314,6 +325,26 @@ def run_experiment(db,trials=3):
         raise RuntimeError("Метрика Мозга не соответствует фактическому экзамену.")
     eight_failures=[{"metric":name,"actual":value,"minimum":1.0}
                     for name,value in eight_metrics.items() if value<1.0]
+    from brain_lab_adversarial import evaluate as adversarial_evaluate, NAMES as attack_names
+    attacks=adversarial_evaluate()
+    attack_metrics=attacks.get("metrics")
+    attack_checks=attacks.get("checks")
+    expected_attacks={"attack_"+name for name,_ in attack_names}
+    if (not isinstance(attack_metrics,dict) or set(attack_metrics)!=expected_attacks
+            or not isinstance(attack_checks,list) or len(attack_checks)!=len(expected_attacks)
+            or {row.get("id") for row in attack_checks
+                if isinstance(row,dict)}!={name for name,_ in attack_names}):
+        raise RuntimeError("Неполный набор негативных экзаменов лаборатории.")
+    if (attacks.get("passed") is not all(row.get("passed") is True
+            for row in attack_checks)):
+        raise RuntimeError("Противоречивый итог негативных экзаменов.")
+    for name,value in attack_metrics.items():
+        expected_outcome=next(row["passed"] for row in attack_checks
+                              if "attack_"+row["id"]==name)
+        if type(value) is not float or value not in (0.0,1.0) or value!=float(expected_outcome):
+            raise RuntimeError("Метрика негативных испытаний не соответствует проверке.")
+    attack_failures=[{"metric":name,"actual":value,"minimum":1.0}
+                     for name,value in attack_metrics.items() if value<1.0]
     samples=[]
     per_trial_failures=[]
     all_failures=[]
@@ -322,11 +353,11 @@ def run_experiment(db,trials=3):
     for i in range(trials):
         metrics,failures=_trial(13001+i)
         holdout,additional=holdout_evaluate(87001+i)
-        combined={**metrics,**holdout,**eight_metrics}
-        if len(combined)!=len(metrics)+len(holdout)+len(eight_metrics):
+        combined={**metrics,**holdout,**eight_metrics,**attack_metrics}
+        if len(combined)!=len(metrics)+len(holdout)+len(eight_metrics)+len(attack_metrics):
             raise RuntimeError("Пересечение имён контрольных метрик.")
         samples.append(combined)
-        current=list(failures)+list(additional)+list(eight_failures)
+        current=list(failures)+list(additional)+list(eight_failures)+list(attack_failures)
         per_trial_failures.append(current)
         all_failures.extend(current)
     if algorithm_signature()!=algorithm or suite_signature()!=suite:
@@ -340,7 +371,7 @@ def run_experiment(db,trials=3):
         "statement_recall","guardrail_citation_integrity",
         "guardrail_negative_abstention","guardrail_source_revocation",
         "guardrail_duplicate_resistance","guardrail_counterargument",
-        *eight_metrics.keys()))
+        *eight_metrics.keys(),*attack_metrics.keys()))
     baseline=db.execute("""SELECT id,metrics_json,data_signature,
         algorithm_signature,suite_signature FROM brain_lab_generations
         WHERE status='accepted' ORDER BY id DESC LIMIT 1""").fetchone()
@@ -379,6 +410,9 @@ def run_experiment(db,trials=3):
       (generation_id,baseline_id,created,verdict,regressions_json,differences_json)
       VALUES(?,?,?,?,?,?)""",(new,baseline["id"] if baseline else None,when,
                               verdict,stable_json(regressions),stable_json(differences)))
+    from brain_lab_integrity import seal_experiment,integrity_report
+    seal_experiment(db,new)
+    integrity_report(db,new,expected_trials=trials)
     return {"generation":new,"trials":trials,"baseline":baseline["id"] if baseline else None,
             "verdict":verdict,"minimum_metrics":worst,"score":score,
             "regressions":regressions,"quality_gate_failures":sorted({
@@ -388,6 +422,7 @@ def run_experiment(db,trials=3):
             "algorithm_signature":algorithm,
             "suite_signature":suite,
             "lab_eight":eight,
+            "adversarial":attacks,
             "limits":"Синтетические задачи: не доказывает развитие весов, научную точность или автономное улучшение кода."}
 
 
@@ -401,6 +436,8 @@ def accept(db,generation):
       WHERE g.id=?""",(generation,)).fetchone()
     if not item or item["status"]!="evaluated":
         raise ValueError("Поколение отсутствует или уже обработано.")
+    from brain_lab_integrity import integrity_report
+    integrity_report(db,generation)
     if item["verdict"] not in ("first_baseline","candidate_for_manual_review",
                                "baseline_requalification"):
         raise ValueError("Нельзя принять результат с регрессией либо без нового эксперимента.")
