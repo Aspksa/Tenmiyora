@@ -69,6 +69,8 @@ class ChatIntegrationTests(unittest.TestCase):
         self.assertEqual(result['messages'][-1]['finish_reason'], 'length')
         self.assertEqual(self.provider.requests[-1]['payload']['model'], 'fixture/chat-model')
         self.assertEqual(set(self.provider.requests[-1]['payload']), {'model', 'messages', 'stream'})
+        self.assertEqual(self.provider.requests[-1]['payload']['messages'][0]['role'], 'system')
+        self.assertIn('Хозяин', self.provider.requests[-1]['payload']['messages'][0]['content'])
         restored = server_module.Workspace(self.temporary.name)
         self.assertEqual(restored.public()['connection']['model'], 'fixture/chat-model')
         self.assertEqual(restored.public()['model_cache']['models'], catalog['models'])
@@ -87,12 +89,13 @@ class ChatIntegrationTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(result['messages'][0]['content'], message.strip())
         self.assertEqual(result['messages'][1]['content'], self.provider.answer)
-        self.assertEqual(self.provider.requests[-1]['payload']['messages'][0]['content'], message.strip())
+        self.assertEqual(self.provider.requests[-1]['payload']['messages'][1]['content'], message.strip())
         self.provider.answer = 'Продолжаю диалог'
         self.assertEqual(self.request('/api/chat', {'message': 'Продолжай'})[0], 200)
         context = self.provider.requests[-1]['payload']['messages']
-        self.assertEqual(len(context), 3)
-        self.assertEqual(context[1]['content'], result['messages'][1]['content'])
+        self.assertEqual(len(context), 4)
+        self.assertEqual(context[0]['role'], 'system')
+        self.assertEqual(context[2]['content'], result['messages'][1]['content'])
 
     def test_errors_missing_model_and_key_change(self):
         self.configure(key='wrong-fixture-key')
