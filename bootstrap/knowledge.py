@@ -312,7 +312,7 @@ class KnowledgeStore:
             return {"folders": [dict(x) for x in folders], "files": [dict(x) for x in files],
                     "breadcrumbs": crumb}
 
-    def upload(self, name, data, folder=None, mime="application/octet-stream", force=False):
+    def upload(self, name, data, folder=None, mime="application/octet-stream", force=False, file_id=None):
         """Повторная загрузка того же имени обновляет файл с архивированием версии.
 
         force=True заново проводит неизменённый файл через извлечение знаний."""
@@ -335,9 +335,17 @@ class KnowledgeStore:
             if folder is not None and not conn.execute(
                     "SELECT 1 FROM folders WHERE id=?", (folder,)).fetchone():
                 raise ValueError("Папка не найдена.")
-            previous = conn.execute("""SELECT id,name,sha256,size,status FROM files
-                WHERE folder IS ? AND name=? ORDER BY created DESC LIMIT 1""",
-                (folder, name)).fetchone()
+            if file_id is not None:
+                # Правка и переобучение обновляют именно этот файл, даже если
+                # в папке есть другой с тем же именем.
+                previous = conn.execute("""SELECT id,name,sha256,size,status FROM files
+                    WHERE id=?""", (file_id,)).fetchone()
+                if not previous:
+                    raise ValueError("Файл не найден.")
+            else:
+                previous = conn.execute("""SELECT id,name,sha256,size,status FROM files
+                    WHERE folder IS ? AND name=? ORDER BY created DESC LIMIT 1""",
+                    (folder, name)).fetchone()
             same = previous is not None and previous["sha256"] == checksum
             if same and not force:
                 return {"id": previous["id"], "name": name,
@@ -859,7 +867,7 @@ class KnowledgeStore:
             current = self.read_text(fid)
             with self.db() as conn:
                 row = conn.execute("SELECT folder,mime FROM files WHERE id=?", (fid,)).fetchone()
-            return self.upload(current["name"], text.encode("utf-8"), row["folder"], row["mime"])
+            return self.upload(current["name"], text.encode("utf-8"), row["folder"], row["mime"], file_id=fid)
 
     def relearn(self, fid):
         """Заново извлечь знания из неизменённого файла (например, после ошибки)."""
@@ -869,4 +877,4 @@ class KnowledgeStore:
             if not row:
                 raise ValueError("Файл не найден.")
             data = (self.objects / fid).read_bytes()
-            return self.upload(row["name"], data, row["folder"], row["mime"], force=True)
+            return self.upload(row["name"], data, row["folder"], row["mime"], force=True, file_id=fid)

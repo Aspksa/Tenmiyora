@@ -649,14 +649,16 @@
     } catch (error) { message(error.message); }
   }
   // entries: [{file, dir}], dir — относительный путь папки внутри текущей ('' — сама текущая).
-  async function upload(entries) {
-    const base = folder, folderIds = new Map([['', base]]);
-    let done = 0;
+  // base фиксируется до первого await: переход в другую папку не разрывает загрузку.
+  async function upload(entries, base = folder) {
+    const folderIds = new Map([['', base]]);
+    let step = 0, saved = 0;
+    const failed = [];
     for (const {file, dir} of entries) {
+      $('disk-count').textContent = 'Загрузка ' + (++step) + ' из ' + entries.length + ': ' + file.name;
       if (file.size > 25 * 1024 * 1024) {
-        message(file.name + ': файл больше 25 МБ'); continue;
+        failed.push(file.name); message(file.name + ': файл больше 25 МБ'); continue;
       }
-      $('disk-count').textContent = 'Загрузка ' + (++done) + ' из ' + entries.length + ': ' + file.name;
       try {
         if (!folderIds.has(dir)) {
           const made = await request('disk/folder', {parent: base, name: dir, ensure: true});
@@ -671,10 +673,12 @@
         });
         const result = await response.json();
         if (!response.ok) throw Error(result.error || 'Ошибка загрузки.');
+        saved++;
         message('Сохранён «' + file.name + '». ' + result.status + '.');
-      } catch (error) { message(file.name + ': ' + error.message); }
+      } catch (error) { failed.push(file.name); message(file.name + ': ' + error.message); }
     }
-    if (entries.length > 1) message('Загружено файлов: ' + done + '.');
+    if (entries.length > 1) message('Загружено файлов: ' + saved + ' из ' + entries.length + '.' +
+      (failed.length ? ' Не загружены: ' + failed.slice(0, 5).join(', ') + (failed.length > 5 ? ' и ещё ' + (failed.length - 5) : '') + '.' : ''));
     await refreshDisk();
   }
   const plain = files => files.map(file => ({file, dir: ''}));
@@ -701,13 +705,13 @@
     for (const entry of roots) await walk(entry, '');
     return result;
   }
-  async function uploadWithFolders(entries) {
+  async function uploadWithFolders(entries, base) {
     // Пустые папки тоже переносятся.
     for (const {dir} of entries.filter(x => !x.file)) {
-      try { await request('disk/folder', {parent: folder, name: dir, ensure: true}); }
+      try { await request('disk/folder', {parent: base, name: dir, ensure: true}); }
       catch (error) { message(dir + ': ' + error.message); }
     }
-    await upload(entries.filter(x => x.file));
+    await upload(entries.filter(x => x.file), base);
   }
   $('disk-file-input').addEventListener('change', event => {
     upload(plain([...event.target.files])); event.target.value = '';
@@ -745,7 +749,8 @@
     target.addEventListener('drop', async event => {
       if (!event.dataTransfer?.types.includes('Files')) return;
       event.preventDefault(); event.stopPropagation(); dropzone.classList.remove('drag-over');
-      try { await uploadWithFolders(await droppedEntries(event.dataTransfer)); }
+      const base = folder;
+      try { await uploadWithFolders(await droppedEntries(event.dataTransfer), base); }
       catch { message('Не удалось прочитать перетащенные файлы.'); }
     });
   }
