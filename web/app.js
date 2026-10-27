@@ -123,6 +123,7 @@
     if (requested === 'settings') { history.replaceState(null, '', '#home'); openSettings(); }
     const view = ['home', 'brain', 'disk'].includes(requested) ? requested : 'home';
     for (const name of ['home', 'brain', 'disk']) $(name + '-view').hidden = view !== name;
+    document.body.dataset.view = view;
     document.title = ({home: 'Tenmiyora', brain: 'Мозг · Tenmiyora', disk: 'Диск · Tenmiyora'})[view];
     document.querySelectorAll('[data-nav]').forEach((item) => { item.classList.toggle('active', item.dataset.nav === view); if (item.dataset.nav === view) item.setAttribute('aria-current', 'page'); else item.removeAttribute('aria-current'); });
     window.TenmiyoraModules?.show(view);

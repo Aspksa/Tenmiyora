@@ -88,29 +88,7 @@
 .panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}
 .panel-head h2{margin:0}
 .brain-pill{flex-shrink:0;font-size:11px;padding:4px 10px;border-radius:99px;background:var(--gold-soft);color:var(--gold);border:1px solid #d4af5f2e;white-space:nowrap}
-.brain-explorer{grid-template-columns:minmax(250px,.8fr) minmax(0,1.2fr)}
-.brain-tree-panel,.brain-detail-panel{display:flex;flex-direction:column;max-height:640px}
-.brain-filter{width:100%;padding:10px 12px;border:1px solid var(--line-strong);background:var(--bg);color:var(--text);border-radius:9px;font-size:13px;margin-bottom:10px}
-.brain-tree{display:grid;gap:3px;overflow:auto;padding-right:4px;min-height:0;align-content:start}
-.brain-node{display:flex;align-items:center;gap:2px;padding-left:calc(var(--depth,0) * 18px)}
-.brain-caret,.brain-caret-space{width:26px;height:26px;flex-shrink:0;display:grid;place-items:center;border-radius:6px;color:var(--faint)}
-.brain-caret:hover{background:var(--surface-3);color:var(--gold)}
-.brain-caret svg{width:15px;height:15px;transition:transform .2s}
-.brain-caret.open svg{transform:rotate(90deg)}
-.brain-branch{flex:1;min-width:0;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 11px;border:1px solid transparent;border-radius:8px;text-align:left;font-size:14px;color:var(--text);transition:background .15s,border-color .15s}
-.brain-node:not([aria-level="1"]) .brain-branch{font-size:13px;color:var(--muted)}
-.brain-branch:hover{background:var(--surface-2)}
-.brain-node.active .brain-branch{border-color:var(--gold-deep);background:var(--gold-soft);color:var(--gold-bright)}
-.brain-branch-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.brain-branch small{font-size:11px;color:var(--gold);font-variant-numeric:tabular-nums}
-.brain-weight{width:42px;height:4px;flex-shrink:0;margin-left:auto;border-radius:4px;background:linear-gradient(90deg,var(--gold-deep),var(--gold)) 0 0/var(--weight) 100% no-repeat,var(--surface-3)}
-.brain-tree-none{padding:10px}
 
-.brain-path{display:flex;flex-wrap:wrap;align-items:center;gap:4px;font-size:12px;color:var(--faint);margin-bottom:4px}
-.brain-path:empty{display:none}
-.brain-path button{color:var(--gold);font-size:12px;padding:2px 4px;border-radius:4px}
-.brain-path button:hover{background:var(--surface-3)}
-.brain-detail{overflow:auto;min-height:0;padding-right:4px}
 .brain-fact{padding:14px 0;border-bottom:1px solid var(--line)}
 .brain-fact:last-child{border-bottom:0}
 .brain-fact-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:8px}
@@ -175,7 +153,7 @@
 .brain-status.is-proposed{color:var(--gold)}
 .brain-lab-note{grid-column:1/-1;margin:0;font-size:12px}
 
-@media(max-width:1100px){.brain-explorer{grid-template-columns:1fr}.brain-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.brain-tree-panel{max-height:420px}.brain-detail-panel{max-height:none}}
+@media(max-width:1100px){.brain-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:760px){.brain-head{align-items:flex-start}.brain-search{padding-left:14px}.brain-search .primary-button svg{display:none}.brain-lab-head{flex-direction:column}.brain-lab-content,.brain-lab-tiles{grid-template-columns:1fr}.brain-search-results{padding:14px}}
 @media(max-width:470px){.brain-metrics{gap:8px}.brain-metrics>div{padding:12px;column-gap:10px}.metric-icon{width:34px;height:34px}.brain-metrics strong{font-size:22px}.brain-search .primary-button{padding:10px 14px}.brain-fact-date{margin-left:0}}
 
@@ -220,3 +198,77 @@
 .level-note{margin:2px 0 0;font-size:12px}
 @media(max-width:1100px){.brain-growth-columns{grid-template-columns:1fr}}
 @media(max-width:470px){.growth-plot{height:140px;margin-left:24px}.growth-axis{margin-left:24px}.growth-bars{gap:1px}}
+
+/* Живая карта знаний. */
+body[data-view="brain"] #avatar,body[data-view="brain"] #avatar-restore{display:none!important}
+.brain-map-panel{padding-bottom:16px}
+.brain-map-actions{display:flex;align-items:center;gap:10px;flex-shrink:0}
+.brain-map-hint{margin:4px 0 0;max-width:620px}
+.brain-map{position:relative;margin:4px -8px 0;border-radius:12px;overflow:hidden;background:radial-gradient(ellipse at center,#1f1a10 0%,var(--surface) 62%)}
+.brain-map-svg{display:block;width:100%;height:auto;max-height:68vh;stroke:none;stroke-width:1;fill:none}
+.map-orbit{fill:none;stroke:#d4af5f14;stroke-dasharray:2 6}
+.map-star{fill:#ecca7c;opacity:.25;animation:map-twinkle 4.2s ease-in-out infinite;animation-delay:var(--d)}
+.map-halo{fill:url(#map-halo);animation:map-breathe 6s ease-in-out infinite}
+.map-link{fill:none;stroke:#d4af5f;stroke-opacity:.32;stroke-width:var(--w);stroke-linecap:round;transition:stroke-opacity .2s}
+.map-link.depth-1{stroke-opacity:.5}
+.map-link.fresh{stroke:#ffe2a0;stroke-opacity:.7}
+.map-flow{fill:#ffe9b8;filter:url(#map-glow);opacity:.85}
+.map-flow.fresh{fill:#fff6dc}
+.map-node{cursor:pointer;outline:none}
+.map-dot{transition:transform .25s ease}
+.map-node:hover .map-dot,.map-node:focus-visible .map-dot,.map-node.open .map-dot{transform:scale(1.18)}
+.map-dot{fill:url(#map-node);stroke:#ecca7c;stroke-width:1.2}
+.map-node.depth-1 .map-dot{filter:url(#map-glow);stroke-width:1.6}
+.map-node:focus-visible .map-dot,.map-node.open .map-dot{stroke:#fff3cf;stroke-width:2.4}
+.map-leaves{animation:map-spin var(--spin) linear infinite}
+.map-leaf{fill:#ecca7c;opacity:.75}
+.map-aura{fill:none;stroke:#ffe2a0;stroke-width:1.5;opacity:.6;animation:map-pulse 2.4s ease-out infinite}
+.map-count{font:600 11px var(--font);fill:#17130b;text-anchor:middle;pointer-events:none}
+.map-label{font:12px var(--font);fill:var(--muted);paint-order:stroke;stroke:#0d0c0a;stroke-width:4px;stroke-linejoin:round;pointer-events:none}
+.map-label.root{font:15px var(--serif);fill:var(--gold-bright)}
+.map-node.small .map-label{opacity:.85}
+.map-fresh{font:600 10px var(--font);fill:#ffe2a0;paint-order:stroke;stroke:#0d0c0a;stroke-width:3px;pointer-events:none}
+.map-core-ring,.map-aura,.map-leaves,.map-halo,.map-dot,.map-node-body{transform-box:fill-box;transform-origin:center}
+.map-core-ring{fill:none;stroke:#ecca7c;stroke-width:1;opacity:0;animation:map-ripple 3.6s ease-out infinite}
+.map-core-ring.late{animation-delay:1.8s}
+.map-core-count{font:600 18px var(--serif);fill:#17130b;text-anchor:middle}
+.map-core-label{font:12px var(--font);fill:var(--muted);text-anchor:middle;letter-spacing:.08em}
+.brain-map.focusing .map-node:not(.lit) .map-node-body{opacity:.35}
+.brain-map.focusing .map-link:not(.lit){stroke-opacity:.12}
+.brain-map.focusing .map-link.lit{stroke-opacity:.9}
+/* Повтор роста: ветки вырастают в порядке появления. */
+.growing .map-link{stroke-dasharray:600;stroke-dashoffset:600;animation:map-draw .9s ease-out forwards;animation-delay:calc(var(--o) * 90ms)}
+.growing .map-node-body{animation:map-sprout .7s cubic-bezier(.3,1.6,.5,1) both;animation-delay:calc(var(--o) * 90ms + 250ms)}
+.growing .map-flows{animation:map-fade 1s both;animation-delay:calc(var(--count) * 90ms + 600ms)}
+.brain-map.narrow .map-label{font-size:17px}.brain-map.narrow .map-label.root{font-size:21px}.brain-map.narrow .map-core-label{font-size:16px}
+.brain-map-empty{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);margin:0;width:min(420px,90%);text-align:center;font-size:13px;color:var(--muted)}
+.brain-map-legend{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:12px;font-size:12px;color:var(--faint)}
+.brain-map-legend span{display:inline-flex;align-items:center;gap:7px}
+.brain-map-legend i{display:inline-block;border-radius:50%}
+.lg-core{width:12px;height:12px;background:radial-gradient(#fff3cf,#9c7a3a);box-shadow:0 0 8px #d4af5f}
+.lg-branch{width:10px;height:10px;background:radial-gradient(#ecca7c,#7a5e2c);border:1px solid #ecca7c}
+.lg-leaf{width:5px;height:5px;background:#ecca7c}
+.lg-fresh{width:10px;height:10px;border:1.5px solid #ffe2a0;box-shadow:0 0 8px #ffe2a0}
+.map-card{position:absolute;width:min(340px,92%);max-height:78%;overflow:auto;padding:14px 16px 10px;background:#1d1a14f2;border:1px solid var(--gold-deep);border-radius:12px;box-shadow:var(--shadow);backdrop-filter:blur(6px);animation:brain-rise .2s ease-out;z-index:3}
+.map-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.map-card-head h3{font:19px var(--serif);color:var(--gold-bright);margin:0}
+.map-card-path{display:block;font-size:11px;color:var(--faint);margin-bottom:2px}
+.map-card-stats{font-size:12px;color:var(--gold);margin:4px 0 6px}
+.map-card .brain-fact{padding:10px 0}
+.map-card .brain-fact-text{font-size:13px}
+.map-card .brain-subbranches{justify-content:flex-start;padding:8px 0 4px}
+.map-card-more{width:100%;margin:8px 0 4px}
+@keyframes map-spin{to{transform:rotate(360deg)}}
+@keyframes map-twinkle{50%{opacity:.7}}
+@keyframes map-breathe{50%{transform:scale(1.08);opacity:.75}}
+@keyframes map-pulse{from{opacity:.7;transform:scale(.85)}to{opacity:0;transform:scale(1.5)}}
+@keyframes map-ripple{from{opacity:.55;transform:scale(.7)}to{opacity:0;transform:scale(1.6)}}
+@keyframes map-draw{to{stroke-dashoffset:0}}
+@keyframes map-sprout{from{transform:scale(0);opacity:0}}
+@keyframes map-fade{from{opacity:0}}
+/* Плавное появление графика и уровней. */
+.growth-bar{transform-origin:bottom;animation:growth-rise .6s cubic-bezier(.2,.8,.3,1) both;animation-delay:calc(var(--i,0) * 18ms)}
+@keyframes growth-rise{from{transform:scaleY(0)}}
+.level-bar{animation:level-fill 1s cubic-bezier(.2,.8,.3,1) both;animation-delay:calc(var(--i,0) * 80ms)}
+@keyframes level-fill{from{background-size:0 100%,auto}}
+@media(max-width:760px){.brain-map-panel .panel-head{flex-direction:column}.brain-map-actions{align-self:stretch;justify-content:space-between}.brain-map-svg{max-height:none}.map-card{left:4%!important;right:4%;width:auto;top:auto!important;bottom:8px;max-height:70%}}

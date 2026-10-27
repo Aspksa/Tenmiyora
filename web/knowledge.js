@@ -3,7 +3,6 @@
   'use strict';
   const $ = id => document.getElementById(id);
   let folder = null, searchTimer, loading = false;
-  let selectedBranch = null;
   const headers = {'X-Tenmiyora-Client': 'web'};
   function message(text) {
     const area = $('toast');
@@ -320,8 +319,7 @@
 
   // ---- Мозг ----
   let brainData = {branches: [], recent: []};
-  let brainLoading = false, brainLoaded = false, factsRequest = 0, searchRequest = 0;
-  const expanded = new Set();
+  let brainLoading = false, factsRequest = 0, searchRequest = 0;
   function svgIcon(name) {
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
@@ -411,64 +409,6 @@
     foot.append(actions);
     card.append(foot);
     return card;
-  }
-
-  function renderTree() {
-    const list = $('brain-tree');
-    const filter = $('brain-filter').value.trim().toLowerCase();
-    list.replaceChildren();
-    const branches = brainData.branches;
-    $('brain-tree-count').textContent = branches.length ? branches.length + ' ' + plural(branches.length, 'ветка', 'ветки', 'веток') : '';
-    if (!branches.length) {
-      list.append(emptyState('Пока нет знаний. Загрузите текстовый документ на Диск или поделитесь содержательной информацией в чате.'));
-      return;
-    }
-    const roots = branches.filter(item => item.parent === null || !branches.some(other => other.id === item.parent));
-    const totals = new Map();
-    const total = node => {
-      if (!totals.has(node.id)) totals.set(node.id, subtreeTotal(node));
-      return totals.get(node.id);
-    };
-    const largest = Math.max(1, ...roots.map(total));
-    const matches = node => !filter || node.name.toLowerCase().includes(filter) ||
-      childrenOf(node.id).some(matches);
-    function addNode(node, depth) {
-      if (!matches(node)) return;
-      const children = childrenOf(node.id);
-      const open = Boolean(filter) || expanded.has(node.id);
-      const row = element('div', 'brain-node' + (node.id === selectedBranch ? ' active' : ''));
-      row.style.setProperty('--depth', depth);
-      row.setAttribute('role', 'treeitem');
-      row.setAttribute('aria-level', depth + 1);
-      row.setAttribute('aria-selected', node.id === selectedBranch ? 'true' : 'false');
-      if (children.length) {
-        row.setAttribute('aria-expanded', open ? 'true' : 'false');
-        const caret = button('', () => {
-          if (expanded.has(node.id)) expanded.delete(node.id); else expanded.add(node.id);
-          renderTree();
-        }, 'brain-caret' + (open ? ' open' : ''));
-        caret.setAttribute('aria-label', (open ? 'Свернуть' : 'Развернуть') + ' «' + node.name + '»');
-        caret.append(svgIcon('chevron'));
-        row.append(caret);
-      } else {
-        row.append(element('span', 'brain-caret-space'));
-      }
-      const main = button('', () => selectBranch(node), 'brain-branch');
-      main.append(element('span', 'brain-branch-name', node.name));
-      const count = total(node);
-      main.title = node.name + ' · ' + knowledgeCount(count);
-      if (depth === 0) {
-        const bar = element('span', 'brain-weight');
-        bar.style.setProperty('--weight', Math.max(4, Math.round(count / largest * 100)) + '%');
-        main.append(bar);
-      }
-      main.append(element('small', '', count));
-      row.append(main);
-      list.append(row);
-      if (open) children.forEach(child => addNode(child, depth + 1));
-    }
-    roots.forEach(root => addNode(root, 0));
-    if (!list.children.length) list.append(element('p', 'module-muted brain-tree-none', 'Нет веток с таким названием.'));
   }
 
   function renderEvents() {
@@ -624,6 +564,7 @@
       const col = element('div', 'growth-col' + (day.date === today ? ' today' : ''));
       col.tabIndex = 0;
       const bar = element('span', 'growth-bar' + (day.added ? '' : ' empty'));
+      bar.style.setProperty('--i', index);
       bar.style.height = (day.added ? Math.max(2, day.added / top * 100) : 0) + '%';
       col.append(bar);
       const show = () => {
@@ -704,6 +645,7 @@
       badge.append(dots, document.createTextNode(topic.level_name));
       head.append(name, badge);
       const bar = element('span', 'level-bar');
+      bar.style.setProperty('--i', topics.indexOf(topic));
       bar.style.setProperty('--fill', Math.max(3, Math.round(topic.count / largest * 100)) + '%');
       const meta = element('small', 'level-meta', knowledgeCount(topic.count) + ' · ' + topic.sources + ' ' +
         plural(topic.sources, 'источник', 'источника', 'источников') + (topic.week ? ' · +' + topic.week + ' за неделю' : ''));
@@ -719,6 +661,7 @@
       renderGrowthChart(data.series);
       renderDiary(data.diary);
       renderLevels(data.topics);
+      mapFresh = data.branches_week || {};
     } catch (error) {
       $('brain-growth-chart').replaceChildren(emptyState(error.message, 'spark'));
     }
@@ -729,72 +672,279 @@
     brainLoading = true;
     const refresh = $('brain-refresh');
     refresh.classList.add('spinning'); refresh.disabled = true;
-    if (!brainLoaded) $('brain-tree').replaceChildren(...Array.from({length: 5}, () => element('div', 'brain-skeleton')));
     try {
       const data = await request('brain');
       brainData = {branches: data.branches || [], recent: data.recent || []};
-      brainLoaded = true;
       const stats = data.stats || {};
       $('brain-branches-count').textContent = brainData.branches.length;
       $('brain-facts-count').textContent = stats.facts ?? brainData.branches.reduce((count, row) => count + row.facts, 0);
       $('brain-files-count').textContent = stats.files ?? 0;
       $('brain-chat-count').textContent = stats.chat ?? 0;
-      if (selectedBranch !== null && !brainData.branches.some(item => item.id === selectedBranch)) resetDetail();
-      renderTree();
       renderEvents();
       await Promise.all([loadLab(), loadGrowth()]);
+      renderMap();
     } catch (error) { message(error.message); }
     finally { brainLoading = false; refresh.classList.remove('spinning'); refresh.disabled = false; }
   }
-  function resetDetail() {
-    selectedBranch = null;
-    $('brain-detail-title').textContent = 'Содержимое ветки';
-    $('brain-detail-path').replaceChildren();
-    $('brain-detail-count').hidden = true;
-    $('brain-detail').replaceChildren(emptyState('Выберите ветку слева, чтобы увидеть знания и их источники.'));
+  // Живая карта знаний: ядро, ветки по кругу, знания-листья, потоки и рост.
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const MAP = {width: 1000, height: 640, rx: 1.5};
+  let mapNodes = new Map(), mapFresh = {}, mapPlayed = false, openNodeId = null;
+  const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function svg(tag, attrs, className) {
+    const node = document.createElementNS(SVG_NS, tag);
+    for (const [key, value] of Object.entries(attrs || {})) node.setAttribute(key, value);
+    if (className) node.setAttribute('class', className);
+    return node;
   }
-  function openBranch(id) {
-    const node = brainData.branches.find(item => item.id === id);
-    if (node) selectBranch(node, true);
-    else message('Ветка не найдена. Нажмите «Обновить».');
+  function polar(angle, radius) {
+    return [MAP.width / 2 + Math.cos(angle) * radius * MAP.rx, MAP.height / 2 + Math.sin(angle) * radius];
   }
-  async function selectBranch(branch, reveal) {
-    selectedBranch = branch.id;
-    const chain = ancestors(branch);
-    chain.forEach(parent => expanded.add(parent.id));
-    renderTree();
-    $('brain-detail-title').textContent = branch.name;
-    const path = $('brain-detail-path');
-    path.replaceChildren();
-    for (const parent of chain) {
-      path.append(button(parent.name, () => selectBranch(parent)), element('span', '', '›'));
+  // Радиальная раскладка: сектор ветки пропорционален числу её листьев.
+  function layoutMap() {
+    const branches = brainData.branches;
+    const known = new Set(branches.map(item => item.id));
+    const roots = branches.filter(item => item.parent === null || !known.has(item.parent));
+    const leaves = node => { const kids = childrenOf(node.id); return kids.length ? kids.reduce((sum, kid) => sum + leaves(kid), 0) : 1; };
+    const totalLeaves = roots.reduce((sum, root) => sum + leaves(root), 0) || 1;
+    const placed = [];
+    let cursor = -Math.PI / 2;
+    const place = (node, depth, from, to, parent) => {
+      const angle = (from + to) / 2;
+      const radius = [0, 125, 205, 262, 300][Math.min(depth, 4)];
+      const total = subtreeTotal(node);
+      const size = depth === 1 ? Math.min(26, 9 + Math.sqrt(total) * 2.6) : Math.min(14, 4.5 + Math.sqrt(total) * 1.6);
+      const [x, y] = polar(angle, radius);
+      const item = {node, depth, angle, x, y, size, total, parent, children: []};
+      placed.push(item);
+      if (parent) parent.children.push(item);
+      const kids = childrenOf(node.id).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+      const span = to - from, weight = kids.reduce((sum, kid) => sum + leaves(kid), 0) || 1;
+      let start = from;
+      for (const kid of kids) {
+        const share = span * leaves(kid) / weight;
+        place(kid, depth + 1, start, start + share, item);
+        start += share;
+      }
+    };
+    for (const root of roots.sort((a, b) => subtreeTotal(b) - subtreeTotal(a))) {
+      const share = Math.PI * 2 * leaves(root) / totalLeaves;
+      place(root, 1, cursor, cursor + share, null);
+      cursor += share;
     }
-    const detail = $('brain-detail');
-    detail.replaceChildren(...Array.from({length: 3}, () => element('div', 'brain-skeleton tall')));
-    $('brain-detail-count').hidden = true;
-    const ticket = ++factsRequest;
-    if (reveal || matchMedia('(max-width:1100px)').matches) detail.closest('.module-panel').scrollIntoView({behavior: 'smooth', block: 'start'});
-    try {
-      const data = await request('brain/facts?branch=' + encodeURIComponent(branch.id));
-      if (ticket !== factsRequest) return;
-      detail.replaceChildren();
-      const count = $('brain-detail-count');
-      count.textContent = data.facts.length >= 100 ? '100+ знаний' : knowledgeCount(data.facts.length);
-      count.hidden = false;
-      if (!data.facts.length) {
-        const children = childrenOf(branch.id);
-        detail.append(emptyState(children.length ? 'Прямых записей нет. Знания лежат в подразделах:' : 'В этой ветке пока нет записей.'));
-        if (children.length) {
-          const chips = element('div', 'brain-subbranches');
-          children.forEach(child => chips.append(button(child.name, () => selectBranch(child), 'brain-chip')));
-          detail.append(chips);
+    return placed;
+  }
+  function linkPath(from, to) {
+    const [cx, cy] = from ? [from.x, from.y] : [MAP.width / 2, MAP.height / 2];
+    const bend = polar(to.angle, ([0, 70, 165, 235, 285][Math.min(to.depth, 4)]));
+    return `M${cx.toFixed(1)},${cy.toFixed(1)} Q${bend[0].toFixed(1)},${bend[1].toFixed(1)} ${to.x.toFixed(1)},${to.y.toFixed(1)}`;
+  }
+  function renderMap() {
+    const box = $('brain-map');
+    closeMapCard();
+    const narrow = box.clientWidth > 0 && box.clientWidth < 640;
+    Object.assign(MAP, narrow ? {width: 600, height: 720, rx: 1, narrow} : {width: 1000, height: 640, rx: 1.5, narrow});
+    box.classList.toggle('narrow', narrow);
+    box.replaceChildren();
+    mapNodes = new Map();
+    const placed = layoutMap();
+    const total = brainData.branches.reduce((sum, item) => sum + item.facts, 0);
+    $('brain-map-count').textContent = brainData.branches.length ? brainData.branches.length + ' ' + plural(brainData.branches.length, 'ветка', 'ветки', 'веток') : '';
+    const root = svg('svg', {viewBox: `0 0 ${MAP.width} ${MAP.height}`, role: 'group', 'aria-label': 'Карта знаний Мозга'}, 'brain-map-svg');
+    const defs = svg('defs');
+    defs.innerHTML = '<radialGradient id="map-core"><stop offset="0" stop-color="#fff3cf"/><stop offset=".45" stop-color="#ecca7c"/><stop offset="1" stop-color="#9c7a3a"/></radialGradient>' +
+      '<radialGradient id="map-halo"><stop offset="0" stop-color="#d4af5f" stop-opacity=".35"/><stop offset="1" stop-color="#d4af5f" stop-opacity="0"/></radialGradient>' +
+      '<radialGradient id="map-node"><stop offset="0" stop-color="#ecca7c"/><stop offset="1" stop-color="#7a5e2c"/></radialGradient>' +
+      '<filter id="map-glow" x="-1" y="-1" width="3" height="3"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>';
+    root.append(defs);
+    // Фон: орбиты и мерцающие звёзды.
+    const sky = svg('g', {}, 'map-sky');
+    for (const radius of [125, 205, 262]) sky.append(svg('ellipse', {cx: MAP.width / 2, cy: MAP.height / 2, rx: radius * MAP.rx, ry: radius}, 'map-orbit'));
+    for (let i = 0; i < 46; i++) {
+      const star = svg('circle', {cx: (i * 211 % MAP.width), cy: (i * 137 % MAP.height), r: i % 5 ? .8 : 1.4}, 'map-star');
+      star.style.setProperty('--d', (i % 7) * .6 + 's');
+      sky.append(star);
+    }
+    const halo = svg('circle', {cx: MAP.width / 2, cy: MAP.height / 2, r: 150}, 'map-halo');
+    halo.style.transformOrigin = `${MAP.width / 2}px ${MAP.height / 2}px`;
+    root.append(sky, halo);
+    const links = svg('g', {}, 'map-links'), flows = svg('g', {}, 'map-flows'), nodes = svg('g', {}, 'map-nodes');
+    root.append(links, flows, nodes);
+    const order = [...placed].sort((a, b) => String(a.node.created).localeCompare(String(b.node.created)) || a.depth - b.depth);
+    order.forEach((item, index) => { item.order = index; });
+    placed.forEach((item, index) => {
+      const fresh = mapFresh[item.node.id] || 0;
+      const path = svg('path', {d: linkPath(item.parent, item), id: 'map-link-' + index}, 'map-link depth-' + item.depth + (fresh ? ' fresh' : ''));
+      path.style.setProperty('--w', Math.max(.8, Math.min(4, Math.sqrt(item.total) * (item.depth === 1 ? .9 : .5))));
+      path.style.setProperty('--o', item.order);
+      links.append(path);
+      // Потоки энергии от ядра к веткам: больше знаний — чаще.
+      if (!calm() && (item.depth === 1 || fresh) && item.total) {
+        const pulses = item.depth === 1 ? Math.min(3, 1 + Math.floor(item.total / 15)) : 1;
+        for (let p = 0; p < pulses; p++) {
+          const dot = svg('circle', {r: fresh ? 2.6 : 2}, 'map-flow' + (fresh ? ' fresh' : ''));
+          const motion = svg('animateMotion', {dur: (3.2 + (index % 4) * .7) + 's', begin: (p * 1.3 + index * .17).toFixed(2) + 's', repeatCount: 'indefinite'});
+          const ref = svg('mpath');
+          ref.setAttribute('href', '#map-link-' + index);
+          motion.append(ref);
+          dot.append(motion);
+          flows.append(dot);
         }
       }
-      for (const fact of data.facts) detail.append(knowledgeCard(fact));
-    } catch (error) {
-      if (ticket === factsRequest) detail.replaceChildren(emptyState(error.message));
+      const group = svg('g', {transform: `translate(${item.x.toFixed(1)} ${item.y.toFixed(1)})`, tabindex: 0, role: 'button',
+        'aria-label': item.node.name + ': ' + knowledgeCount(item.total) + (fresh ? ', +' + fresh + ' за неделю' : '')},
+        'map-node depth-' + item.depth + (fresh ? ' fresh' : '') + (item.depth > 1 ? ' small' : ''));
+      group.style.setProperty('--o', item.order);
+      const inner = svg('g', {}, 'map-node-body');
+      if (fresh) inner.append(svg('circle', {r: item.size + 9}, 'map-aura'));
+      // Листья-знания вращаются вокруг ветки.
+      const orbit = svg('g', {}, 'map-leaves');
+      orbit.style.setProperty('--spin', (18 + (index % 5) * 6) + 's');
+      const leaves = Math.min(item.depth === 1 ? 14 : 7, item.node.facts);
+      for (let l = 0; l < leaves; l++) {
+        const a = l / leaves * Math.PI * 2, r = item.size + 5 + (l % 2) * 3;
+        orbit.append(svg('circle', {cx: (Math.cos(a) * r).toFixed(1), cy: (Math.sin(a) * r).toFixed(1), r: item.depth === 1 ? 1.8 : 1.3}, 'map-leaf'));
+      }
+      inner.append(orbit, svg('circle', {r: item.size}, 'map-dot'));
+      if (item.depth === 1) {
+        const count = svg('text', {y: 4}, 'map-count');
+        count.textContent = item.total;
+        inner.append(count);
+      }
+      const outward = Math.cos(item.angle) >= 0;
+      const label = svg('text', {x: (outward ? 1 : -1) * (item.size + 9), y: item.depth === 1 ? -item.size - 6 : 4,
+        'text-anchor': item.depth === 1 ? 'middle' : (outward ? 'start' : 'end')}, 'map-label' + (item.depth === 1 ? ' root' : ''));
+      if (item.depth === 1) label.setAttribute('x', 0);
+      label.textContent = item.node.name.length > 26 ? item.node.name.slice(0, 25) + '…' : item.node.name;
+      inner.append(label);
+      if (fresh) {
+        const badge = svg('text', {x: 0, y: item.size + (item.depth === 1 ? 16 : 13), 'text-anchor': 'middle'}, 'map-fresh');
+        badge.textContent = '+' + fresh;
+        inner.append(badge);
+      }
+      group.append(inner);
+      const open = () => openMapCard(item);
+      group.addEventListener('click', open);
+      group.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); open(); } });
+      group.addEventListener('mouseenter', () => highlightChain(item, true));
+      group.addEventListener('mouseleave', () => highlightChain(item, false));
+      nodes.append(group);
+      mapNodes.set(item.node.id, {item, group, path});
+    });
+    // Ядро поверх всего: общий объём памяти.
+    const core = svg('g', {transform: `translate(${MAP.width / 2} ${MAP.height / 2})`}, 'map-core');
+    core.append(svg('circle', {r: 52}, 'map-core-ring'), svg('circle', {r: 52}, 'map-core-ring late'), svg('circle', {r: 34, fill: 'url(#map-core)', filter: 'url(#map-glow)'}));
+    const coreCount = svg('text', {y: 6}, 'map-core-count');
+    coreCount.textContent = total;
+    const coreLabel = svg('text', {y: 52 + 20}, 'map-core-label');
+    coreLabel.textContent = placed.length ? knowledgeCount(total).replace(/^\d+ /, '') : 'ждёт первых знаний';
+    core.append(coreCount, coreLabel);
+    root.append(core);
+    box.append(root);
+    root.style.setProperty('--count', placed.length || 1);
+    if (!placed.length) box.append(element('p', 'brain-map-empty', 'Загрузите документ на Диск или расскажите что-нибудь в чате — здесь вырастут первые ветки.'));
+    if (!mapPlayed && placed.length) { mapPlayed = true; playGrowth(); }
+  }
+  function highlightChain(item, on) {
+    const box = $('brain-map');
+    box.classList.toggle('focusing', on);
+    for (let cur = item; cur; cur = cur.parent) {
+      const entry = mapNodes.get(cur.node.id);
+      entry?.group.classList.toggle('lit', on);
+      entry?.path.classList.toggle('lit', on);
     }
   }
+  // Повтор роста: ветки появляются в порядке, в котором их узнал Мозг.
+  function playGrowth() {
+    const svgRoot = $('brain-map').querySelector('svg');
+    if (!svgRoot || calm()) return;
+    svgRoot.classList.remove('growing');
+    void svgRoot.getBoundingClientRect();
+    svgRoot.classList.add('growing');
+    const counter = svgRoot.querySelector('.map-core-count');
+    const target = Number(counter.textContent) || 0, started = performance.now(), duration = 600 + mapNodes.size * 90;
+    const tick = now => {
+      const t = Math.min(1, (now - started) / duration);
+      counter.textContent = Math.round(target * (1 - Math.pow(1 - t, 3)));
+      if (t < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
+  function closeMapCard() {
+    $('brain-map')?.querySelector('.map-card')?.remove();
+    $('brain-map')?.querySelectorAll('.map-node.open').forEach(node => node.classList.remove('open'));
+    openNodeId = null;
+  }
+  async function openMapCard(item) {
+    closeMapCard();
+    openNodeId = item.node.id;
+    const box = $('brain-map');
+    mapNodes.get(item.node.id)?.group.classList.add('open');
+    const card = element('div', 'map-card');
+    card.setAttribute('role', 'dialog');
+    card.setAttribute('aria-label', item.node.name);
+    const left = item.x / MAP.width * 100, top = item.y / MAP.height * 100;
+    card.style.left = Math.min(70, Math.max(2, left > 50 ? left - 34 : left + 3)) + '%';
+    card.style.top = Math.min(54, Math.max(2, top - 18)) + '%';
+    const head = element('div', 'map-card-head');
+    const titles = element('div');
+    const chain = ancestors(item.node);
+    if (chain.length) titles.append(element('small', 'map-card-path', chain.map(node => node.name).join(' › ')));
+    titles.append(element('h3', '', item.node.name));
+    const close = button('', closeMapCard, 'icon-button');
+    close.setAttribute('aria-label', 'Закрыть');
+    close.append(svgIcon('close'));
+    head.append(titles, close);
+    const fresh = mapFresh[item.node.id] || 0;
+    const stats = element('p', 'map-card-stats', knowledgeCount(item.total) + (item.children.length ? ' · ' + item.children.length + ' ' + plural(item.children.length, 'подветка', 'подветки', 'подветок') : '') + (fresh ? ' · +' + fresh + ' за неделю' : ''));
+    const list = element('div', 'map-card-list');
+    list.append(element('div', 'brain-skeleton tall'));
+    card.append(head, stats, list);
+    if (item.children.length) {
+      const chips = element('div', 'brain-subbranches');
+      item.children.forEach(child => chips.append(button(child.node.name, () => openMapCard(child), 'brain-chip')));
+      card.append(chips);
+    }
+    box.append(card);
+    card.addEventListener('keydown', event => { if (event.key === 'Escape') { closeMapCard(); mapNodes.get(item.node.id)?.group.focus(); } });
+    close.focus({preventScroll: true});
+    const ticket = ++factsRequest;
+    try {
+      const data = await request('brain/facts?branch=' + encodeURIComponent(item.node.id));
+      if (ticket !== factsRequest || openNodeId !== item.node.id) return;
+      list.replaceChildren();
+      if (!data.facts.length) list.append(element('p', 'module-muted', item.children.length ? 'Прямых записей нет, знания лежат в подветках.' : 'В этой ветке пока нет записей.'));
+      const facts = data.facts;
+      facts.slice(0, 3).forEach(fact => list.append(knowledgeCard(fact)));
+      if (facts.length > 3) {
+        const more = button('Показать все (' + (facts.length >= 100 ? '100+' : facts.length) + ')', () => {
+          more.remove();
+          facts.slice(3).forEach(fact => list.append(knowledgeCard(fact)));
+        }, 'secondary-button map-card-more');
+        list.append(more);
+      }
+    } catch (error) {
+      if (ticket === factsRequest) list.replaceChildren(emptyState(error.message));
+    }
+  }
+  function openBranch(id) {
+    const entry = mapNodes.get(id);
+    if (!entry) { message('Ветка не найдена. Нажмите «Обновить».'); return; }
+    $('brain-map').closest('.module-panel').scrollIntoView({behavior: calm() ? 'auto' : 'smooth', block: 'start'});
+    openMapCard(entry.item);
+  }
+  document.addEventListener('click', event => {
+    if (openNodeId !== null && !event.target.closest('.map-card,.map-node,.brain-chip,.level-name')) closeMapCard();
+  });
+  $('brain-map-replay').addEventListener('click', playGrowth);
+  let mapResize;
+  addEventListener('resize', () => {
+    clearTimeout(mapResize);
+    mapResize = setTimeout(() => {
+      const box = $('brain-map');
+      if (!$('brain-view').hidden && box.clientWidth && (box.clientWidth < 640) !== Boolean(MAP.narrow)) renderMap();
+    }, 200);
+  });
 
   async function searchBrain(event) {
     event.preventDefault();
@@ -823,7 +973,6 @@
     }
   }
   $('brain-search-form').addEventListener('submit', searchBrain);
-  $('brain-filter').addEventListener('input', renderTree);
   $('brain-refresh').addEventListener('click', loadBrain);
   window.TenmiyoraModules = {
     show(view) {
