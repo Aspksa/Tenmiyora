@@ -38,7 +38,7 @@ class ExperienceTests(unittest.TestCase):
     def test_validation_and_exam(self):
         state=observe(DEFAULT_EXPERIENCE,"запомни опыт: успех = сначала проверка улучшила качество")
         self.assertTrue(examine(DEFAULT_EXPERIENCE,state)["passed"])
-        self.assertNotIn("password",str(validate_experience({"version":1,"episodes":[{"kind":"success","summary":"password","private":"secret"}],"habits":{"bad":"secret"}})))
+        self.assertNotIn("secret",str(validate_experience({"version":1,"episodes":[{"kind":"success","summary":"password","private":"secret"}],"habits":{"bad":"secret"}})))
         self.assertEqual(examine(state,DEFAULT_EXPERIENCE)["passed"],False)
 
     def test_restart_keeps_experience_and_persona(self):
