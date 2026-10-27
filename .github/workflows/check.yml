@@ -71,6 +71,9 @@ jobs:
       - name: Проверить развитие личности Tenmiyora
         run: python bootstrap/ci_timed.py --label 'Soul evolution' -- python -m unittest discover -s tests -p 'test_soul_evolution.py' -v
 
+      - name: Проверить память отношений Tenmiyora
+        run: python bootstrap/ci_timed.py --label 'Relationship memory' -- python -m unittest discover -s tests -p 'test_relationship_memory.py' -v
+
       - name: Проверить шесть инвариантов Лаборатории
         run: python bootstrap/ci_timed.py --label 'Метаморфные проверки' -- python bootstrap/brain_lab_metamorphic.py --check --output .runtime/quality-reports/brain-lab-metamorphic.json
       - name: Проверить блокировки принятия и SHA-пломбу инвариантов
