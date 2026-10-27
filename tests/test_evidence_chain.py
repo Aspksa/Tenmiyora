@@ -99,7 +99,7 @@ class EvidenceChainTests(unittest.TestCase):
             "Регламент устанавливает еженедельную проверку тормозной системы автомобиля.")
         self.assertTrue(self.store.retrieve("еженедельную проверку тормозной системы"))
         self.store.upload("procedure.txt",
-            "Обновлённый регламент устанавливает ежедневный контроль освещения автомобиля.")
+            "Обновлённый регламент устанавливает ежедневный контроль освещения автомобиля.".encode("utf-8"))
         current = self.store.document_overview(source)
         self.assertTrue(current["complete"])
         self.assertFalse(any("еженедельную проверку тормозной системы" in row["excerpt"]
