@@ -143,6 +143,43 @@ class CheckpointIntegrityTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"значения"):
             self.store.brain_lab_accept(result["generation"])
 
+    def test_missing_legacy_trial_count_requires_requalification(self):
+        result=self.experiment(2)
+        with self.store.db() as db:
+            db.execute("UPDATE brain_lab_generations SET trial_count=NULL WHERE id=?",
+                       (result["generation"],))
+        with self.assertRaisesRegex(ValueError,"полного комплекта"):
+            self.store.brain_lab_accept(result["generation"])
+        self.assertIsNone(self.accepted_id())
+
+    def test_corrupt_accepted_baseline_metrics_cannot_fake_comparison(self):
+        baseline=self.experiment()
+        self.store.brain_lab_accept(baseline["generation"])
+        with self.store.db() as db:
+            row=db.execute("SELECT metrics_json FROM brain_lab_generations WHERE id=?",
+                           (baseline["generation"],)).fetchone()
+            metrics=json.loads(row["metrics_json"])
+            metrics.pop("guardrail_counterargument")
+            db.execute("UPDATE brain_lab_generations SET metrics_json=? WHERE id=?",
+                       (json.dumps(metrics),baseline["generation"]))
+        second=self.experiment()
+        self.assertEqual(second["verdict"],"baseline_requalification")
+        self.assertEqual(second["regressions"],[])
+        self.assertEqual(second["baseline"],baseline["generation"])
+
+    def test_corrupt_accepted_baseline_nan_never_becomes_improvement(self):
+        baseline=self.experiment()
+        self.store.brain_lab_accept(baseline["generation"])
+        with self.store.db() as db:
+            row=db.execute("SELECT metrics_json FROM brain_lab_generations WHERE id=?",
+                           (baseline["generation"],)).fetchone()
+            metrics=json.loads(row["metrics_json"])
+            metrics["source_integrity"]=float("nan")
+            db.execute("UPDATE brain_lab_generations SET metrics_json=? WHERE id=?",
+                       (json.dumps(metrics),baseline["generation"]))
+        second=self.experiment()
+        self.assertEqual(second["verdict"],"baseline_requalification")
+
     def test_rejection_does_not_modify_user_document_or_branches(self):
         item=self.store.upload("личное_описание.txt",
             "Исполнитель обязан представить расчёт в течение 14 дней.".encode())["id"]
