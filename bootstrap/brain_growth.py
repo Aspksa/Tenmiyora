@@ -72,8 +72,12 @@ def growth(db, days=30, offset_minutes=0):
                        "quality": quality.get(day)})
 
     roots = _roots(db)
-    topics = {}
+    visible = projection(db)
+    topics, fresh = {}, {}
     for row in db.execute(f"SELECT branch,source_type,source_id,date(created,?) AS d FROM ({EFFECTIVE})", (shift,)):
+        if row["d"] and row["d"] >= week.isoformat():
+            target = visible.get(row["branch"], row["branch"])
+            fresh[target] = fresh.get(target, 0) + 1
         root = roots.get(row["branch"])
         if not root:
             continue
@@ -116,4 +120,5 @@ def growth(db, days=30, offset_minutes=0):
         "top_topics": [{"name": item["name"], "week": item["week"]}
                        for item in sorted(levels, key=lambda item: -item["week"]) if item["week"]][:3],
     }
-    return {"series": series, "diary": diary, "topics": levels}
+    # Прирост за неделю по видимым веткам — для подсветки на карте знаний.
+    return {"series": series, "diary": diary, "topics": levels, "branches_week": fresh}

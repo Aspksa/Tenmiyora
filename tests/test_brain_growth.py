@@ -51,6 +51,9 @@ class BrainGrowthTests(unittest.TestCase):
         self.assertIn("Программирование", names)
         programming = next(t for t in data["topics"] if t["name"] == "Программирование")
         self.assertEqual(programming["week"], programming["count"])
+        visible_all = {row["id"] for row in self.store.branches()["branches"]}
+        self.assertTrue(set(data["branches_week"]) <= visible_all)
+        self.assertEqual(sum(data["branches_week"].values()), data["diary"]["knowledge"])
         visible = {row["id"] for row in self.store.branches()["branches"] if row["parent"] is None}
         self.assertTrue({topic["id"] for topic in data["topics"]} <= visible)
 
