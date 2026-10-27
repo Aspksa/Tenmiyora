@@ -226,11 +226,20 @@ def merge_topics(db, keep, merge, names=None):
     return rows[keep]
 
 
+def private_lines_removed(text):
+    """Строки с паролями, ключами и контактами не уходят в модель, как и в смысловом разборе."""
+    from knowledge import SECRET_RE
+    from semantic import SENSITIVE
+    return "\n".join(line for line in (text or "").split("\n")
+                     if not SECRET_RE.search(line) and not SENSITIVE.search(line))
+
+
 def next_document(db):
     """Самый новый документ без смыслового разбора и без попытки в режиме ожидания."""
     tried = set(_state(db, "documents_tried", []))
     for row in db.execute("""SELECT id,sha256,name FROM files WHERE status LIKE 'готово%'
-          AND status NOT LIKE '%смысловой анализ завершён%' ORDER BY created DESC"""):
+          AND status NOT LIKE '%смысловой анализ завершён%'
+          AND status NOT LIKE '%смысловой анализ ожидает%' ORDER BY created DESC"""):
         if f"{row['id']}:{row['sha256']}" not in tried:
             return dict(row)
     return None
@@ -337,7 +346,7 @@ class Grower:
             plan = [("exam", exam_due, lambda: exam(self.store)),
                     ("gaps", not exam_due and gaps_due, self._gaps),
                     ("tidy", tidy_due, lambda: tidy(self.store)),
-                    ("documents", document is not None, lambda: self._document(document))]
+                    ("documents", document is not None, lambda: self._document(document, force))]
             for name, due, run in plan:
                 if not due:
                     continue
@@ -356,7 +365,7 @@ class Grower:
             _set_state(db, "gaps_after", _state(db, "exam_at"))
         return summary
 
-    def _document(self, document):
+    def _document(self, document, force=False):
         """Смысловой разбор одного документа моделью — только с разрешением и в лимите."""
         connection = self.workspace.growth_cloud()
         if connection is None:
@@ -380,7 +389,7 @@ class Grower:
         insights = 0
         try:
             if self.workspace.growth_settings()["enabled"]:
-                insights = self._deep(document, connection)
+                insights = self._deep(document, connection, force)
         except Exception:
             logging.exception("Глубокий разбор документа %s в режиме ожидания не удался", document["id"])
         with self.store.lock, self.store.db() as db:
@@ -389,15 +398,16 @@ class Grower:
             _log(db, "documents", summary, True)
         return summary
 
-    def _deep(self, document, connection):
+    def _deep(self, document, connection, force=False):
         """До трёх частей документа моделью; каждая часть сохраняется сразу после ответа."""
         from document_deep_analysis import batches, model_messages, validate_answer
         self.store.ensure_document_index(document["id"])
         with self.store.db() as conn:
             info = conn.execute("""SELECT c.file_sha FROM document_coverage c
                 JOIN files f ON f.id=c.file_id AND f.sha256=c.file_sha WHERE c.file_id=?""", (document["id"],)).fetchone()
-            rows = conn.execute("SELECT ordinal,locator,excerpt FROM document_segments WHERE file_id=? ORDER BY ordinal",
-                                (document["id"],)).fetchall()
+            rows = [{"ordinal": r["ordinal"], "locator": r["locator"], "excerpt": private_lines_removed(r["excerpt"])}
+                    for r in conn.execute("SELECT ordinal,locator,excerpt FROM document_segments WHERE file_id=? ORDER BY ordinal",
+                                          (document["id"],))]
         if not info:
             return 0
         saved = 0
@@ -405,6 +415,9 @@ class Grower:
             # Перед каждым запросом: разрешение ещё действует и лимит не исчерпан.
             settings = self.workspace.growth_settings()
             if self.workspace.growth_cloud() is None or not settings["enabled"]:
+                break
+            # Пользователь вернулся к работе — новых запросов не начинаем (кроме «Запустить сейчас»).
+            if not force and self.workspace.idle_seconds() < settings["idle_minutes"] * 60:
                 break
             # Лимит перечитываем: пользователь мог уменьшить его во время разбора.
             if not self.store.engine.reserve_semantic(settings["cloud_daily"]):

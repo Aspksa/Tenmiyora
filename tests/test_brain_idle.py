@@ -25,7 +25,7 @@ class BrainIdleTests(unittest.TestCase):
 
     def run_all(self):
         done = []
-        while (step := self.work.grower.step()) is not None:
+        while (step := self.work.grower.step(force=True)) is not None:
             done.append(step[0])
             self.assertLess(len(done), 10)
         return done
@@ -133,6 +133,7 @@ class BrainIdleTests(unittest.TestCase):
             self.work.data["connection"].update(key="k", model="m")
         self.work.growth_update({"cloud": True})
         self.work.semantic_once = lambda fid, connection: None
+        self.work.provider = lambda *args, **kwargs: {"choices": [{"message": {"content": "{}"}}]}
         with self.store.db() as db:
             from brain_idle import _set_state, _state
             _set_state(db, "documents_tried", ["gone:sha"] + [f"x{i}:y" for i in range(3)])
@@ -196,6 +197,42 @@ class BrainIdleTests(unittest.TestCase):
         self.work.growth_update({"cloud": True})
         self.run_all()
         self.assertEqual(len(calls), 1)  # Выключили во время разбора — новых запросов нет.
+
+    def test_deep_review_hides_secrets_and_stops_when_user_returns(self):
+        self.store.upload("notes.txt", ("Поставщик передаёт товар покупателю после оплаты счёта.\n"
+                                        "password=demonstration-only-secret-value\n"
+                                        "Связь: manager@example.com\n"
+                                        "Покупатель проверяет товар в течение трёх дней.").encode())
+        with self.work.lock:
+            self.work.data["connection"].update(key="k", model="m")
+        self.work.growth_update({"cloud": True, "cloud_daily": 10})
+        sent = []
+        self.work.semantic_once = lambda fid, connection: 0
+        self.work.provider = lambda suffix, payload, **kw: sent.append(json.dumps(payload, ensure_ascii=False)) or {
+            "choices": [{"message": {"content": "{}"}}]}
+        self.run_all()
+        self.assertEqual(len(sent), 1)
+        self.assertNotIn("demonstration-only-secret-value", sent[0])
+        self.assertNotIn("manager@example.com", sent[0])
+        self.assertIn("Покупатель проверяет товар", sent[0])
+        # Пользователь вернулся во время смыслового разбора — глубокий разбор не начинается.
+        self.store.upload("contract.txt", CONTRACT.encode())
+        self.work.last_active -= 10_000
+        def user_returns(fid, connection):
+            self.work.touch()
+            return 0
+        self.work.semantic_once = user_returns
+        self.assertEqual(self.work.grower.step()[0], "documents")
+        self.assertEqual(len(sent), 1)
+
+    def test_documents_waiting_for_upload_analysis_are_skipped(self):
+        from brain_idle import next_document
+        self.store.upload("python.txt", PYTHON.encode())
+        with self.store.db() as db:
+            fid = db.execute("SELECT id FROM files").fetchone()[0]
+        self.store.mark_semantic(fid, "готово; смысловой анализ ожидает")
+        with self.store.db() as db:
+            self.assertIsNone(next_document(db))
 
     def test_settings_validation_and_persistence(self):
         self.assertFalse(self.work.growth_settings()["cloud"])
