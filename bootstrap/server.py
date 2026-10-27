@@ -27,6 +27,7 @@ from knowledge import KnowledgeStore, MAX_UPLOAD
 from semantic import make_messages, parse_topics, samples_from_text
 from soul_engine import DEFAULT_SOUL, validate_soul, evolve, persona_guidance
 from relationship_memory import DEFAULT_RELATIONSHIP, validate_relationship, remember, guidance
+from soul_experience import DEFAULT_EXPERIENCE, validate_experience, observe, guidance as experience_guidance
 from relation_suggestions import validate_candidates
 
 VERSION = "0.9.6"
@@ -46,7 +47,7 @@ STATIC = {
 PASSIVE = {"/api/brain/pulses", "/api/brain/idle", "/api/brain/activity"}
 DEFAULT = {
     "appearance": {"size": 340, "opacity": 100, "visible": True, "pinned": False, "motion": True},
-    "layout": {}, "messages": [], "soul": DEFAULT_SOUL, "relationship": DEFAULT_RELATIONSHIP,
+    "layout": {}, "messages": [], "soul": DEFAULT_SOUL, "relationship": DEFAULT_RELATIONSHIP, "experience": DEFAULT_EXPERIENCE,
     "connection": {"url": CLOUDRU_URL, "model": "", "key": "", "verified_at": None},
     "model_cache": {"url": "", "models": [], "details": [], "loaded_at": None},
     "growth": {"enabled": True, "cloud": False, "idle_minutes": 15, "cloud_daily": 10},
@@ -166,7 +167,8 @@ class Workspace:
                                  "model_cache": stored.get("model_cache", deepcopy(DEFAULT["model_cache"])),
                                  "growth": validate_growth(stored.get("growth")),
                                  "soul": validate_soul(stored.get("soul", DEFAULT_SOUL)),
-                                 "relationship": validate_relationship(stored.get("relationship", DEFAULT_RELATIONSHIP))}
+                                 "relationship": validate_relationship(stored.get("relationship", DEFAULT_RELATIONSHIP)),
+                                 "experience": validate_experience(stored.get("experience", DEFAULT_EXPERIENCE))}
                 except (ValueError, KeyError, TypeError, AppError):
                     raise AppError("Файл .runtime/workspace.json повреждён. Сохраните его копию и уберите из рабочей папки для нового запуска.", 500) from None
 
@@ -462,6 +464,7 @@ class Workspace:
                 self.data["messages"].append(user_message)
                 self.data["soul"] = evolve(self.data["soul"], content)
                 self.data["relationship"] = remember(self.data["relationship"], content)
+                self.data["experience"] = observe(self.data["experience"], content)
                 self.save()
                 context = [{"role": message["role"], "content": message["content"]} for message in self.data["messages"] if message["role"] in ("user", "assistant")]
             api_host = urllib.parse.urlsplit(connection["url"]).hostname
@@ -514,6 +517,7 @@ class Workspace:
             # Only explicit, non-sensitive preferences; external providers receive
             # no raw relationship history or private conversation excerpts.
             context[0]["content"] += " " + guidance(self.data["relationship"])
+            context[0]["content"] += " " + experience_guidance(self.data["experience"])
             result = self.provider("/chat/completions", {"model": model, "messages": context, "stream": False}, connection=connection)
             try:
                 answer = result["choices"][0]["message"]["content"]
