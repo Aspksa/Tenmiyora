@@ -206,9 +206,13 @@ class KnowledgeStore:
         self.engine = MemoryEngine(self)
         from document_understanding import init_schema as document_schema
         from brain_lab import init_schema as brain_lab_schema
+        from brain_pulse import init_schema as pulse_schema
+        from brain_idle import init_schema as idle_schema
         with self.lock, self.db() as conn:
             document_schema(conn)
             brain_lab_schema(conn)
+            pulse_schema(conn)
+            idle_schema(conn)
 
     @contextmanager
     def db(self):
@@ -550,7 +554,7 @@ class KnowledgeStore:
         """Поиск по Мозгу для интерфейса: те же строгие правила, что и для чата."""
         if not isinstance(question, str) or len(question.strip()) < 2:
             raise ValueError("Введите запрос для поиска.")
-        results = self.retrieve(question.strip()[:300], limit)
+        results = self.retrieve(question.strip()[:300], limit, origin="search")
         from topic_aliases import projection
         files = {item["source_id"] for item in results if item.get("source_type") == "file"}
         names, branches = {}, {}
@@ -597,8 +601,24 @@ class KnowledgeStore:
                     ORDER BY f.id DESC LIMIT 100""", ids).fetchall()
             return {"facts": [dict(row) for row in rows]}
 
-    def retrieve(self, question, limit=6):
-        return self.engine.search(question, limit)
+    def retrieve(self, question, limit=6, origin=None):
+        found = self.engine.search(question, limit)
+        if origin and found:
+            # Импульс на карте Мозга: какие ветки дали знания для этого вопроса.
+            from brain_pulse import record
+            with self.lock, self.db() as conn:
+                record(conn, [item.get("branch_id") for item in found], origin, now())
+        return found
+
+    def brain_activity(self):
+        from brain_pulse import activity
+        with self.lock, self.db() as conn:
+            return activity(conn)
+
+    def brain_pulses(self, since=0):
+        from brain_pulse import pulses
+        with self.lock, self.db() as conn:
+            return pulses(conn, since)
 
     def _legacy_retrieve(self, question, limit=6):
         terms = set(WORD_RE.findall(question.lower()))

@@ -23,7 +23,7 @@ CORE_FILES=(
     # недопустимо скрывать от цифровой подписи алгоритма.
     "brain_lab.py","brain_lab_audit.py","brain_lab_eight.py",
     "brain_lab_integrity.py","brain_lab_adversarial.py",
-    "brain_lab_preflight.py",
+    "brain_lab_preflight.py","brain_lab_metamorphic.py",
     "knowledge.py","memory_engine.py","topic_router.py","topic_discovery.py",
     "topic_aliases.py","semantic.py","natural_relations.py","knowledge_relations.py",
     "knowledge_paths.py","document_understanding.py","document_deep_analysis.py",
@@ -188,7 +188,8 @@ def suite_signature():
     return _digest_paths([GOLD,THRESHOLDS,LAB_ROOT/"brain_lab_holdout.py",
                           LAB_ROOT/"quality_eval.py",
                           LAB_ROOT/"brain_lab_eight.py",
-                          LAB_ROOT/"brain_lab_adversarial.py"])
+                          LAB_ROOT/"brain_lab_adversarial.py",
+                          LAB_ROOT/"brain_lab_metamorphic.py"])
 
 
 def _candidates(db):
@@ -348,6 +349,28 @@ def run_experiment(db,trials=3):
             raise RuntimeError("Метрика негативных испытаний не соответствует проверке.")
     attack_failures=[{"metric":name,"actual":value,"minimum":1.0}
                      for name,value in attack_metrics.items() if value<1.0]
+    from brain_lab_metamorphic import evaluate as metamorphic_evaluate, NAMES as invariant_names
+    metamorphic=metamorphic_evaluate()
+    invariant_metrics=metamorphic.get("metrics")
+    invariant_checks=metamorphic.get("checks")
+    expected_invariants={"invariant_"+name for name,_ in invariant_names}
+    if (not isinstance(invariant_metrics,dict)
+            or set(invariant_metrics)!=expected_invariants
+            or not isinstance(invariant_checks,list)
+            or len(invariant_checks)!=len(expected_invariants)
+            or {row.get("id") for row in invariant_checks
+                if isinstance(row,dict)}!={name for name,_ in invariant_names}):
+        raise RuntimeError("Неполный набор метаморфных испытаний лаборатории.")
+    if (metamorphic.get("passed") is not all(row.get("passed") is True
+            for row in invariant_checks)):
+        raise RuntimeError("Противоречивый итог метаморфных испытаний.")
+    for name,value in invariant_metrics.items():
+        outcome=next(row["passed"] for row in invariant_checks
+                     if "invariant_"+row["id"]==name)
+        if type(value) is not float or value not in (0.0,1.0) or value!=float(outcome):
+            raise RuntimeError("Метрика инварианта не соответствует проверке.")
+    invariant_failures=[{"metric":name,"actual":value,"minimum":1.0}
+                        for name,value in invariant_metrics.items() if value<1.0]
     samples=[]
     per_trial_failures=[]
     all_failures=[]
@@ -356,11 +379,11 @@ def run_experiment(db,trials=3):
     for i in range(trials):
         metrics,failures=_trial(13001+i)
         holdout,additional=holdout_evaluate(87001+i)
-        combined={**metrics,**holdout,**eight_metrics,**attack_metrics}
-        if len(combined)!=len(metrics)+len(holdout)+len(eight_metrics)+len(attack_metrics):
+        combined={**metrics,**holdout,**eight_metrics,**attack_metrics,**invariant_metrics}
+        if len(combined)!=len(metrics)+len(holdout)+len(eight_metrics)+len(attack_metrics)+len(invariant_metrics):
             raise RuntimeError("Пересечение имён контрольных метрик.")
         samples.append(combined)
-        current=list(failures)+list(additional)+list(eight_failures)+list(attack_failures)
+        current=list(failures)+list(additional)+list(eight_failures)+list(attack_failures)+list(invariant_failures)
         per_trial_failures.append(current)
         all_failures.extend(current)
     if algorithm_signature()!=algorithm or suite_signature()!=suite:
@@ -378,7 +401,7 @@ def run_experiment(db,trials=3):
         "statement_recall","guardrail_citation_integrity",
         "guardrail_negative_abstention","guardrail_source_revocation",
         "guardrail_duplicate_resistance","guardrail_counterargument",
-        *eight_metrics.keys(),*attack_metrics.keys()))
+        *eight_metrics.keys(),*attack_metrics.keys(),*invariant_metrics.keys()))
     baseline=db.execute("""SELECT id,metrics_json,data_signature,
         algorithm_signature,suite_signature FROM brain_lab_generations
         WHERE status='accepted' ORDER BY id DESC LIMIT 1""").fetchone()
@@ -430,6 +453,7 @@ def run_experiment(db,trials=3):
             "suite_signature":suite,
             "lab_eight":eight,
             "adversarial":attacks,
+            "metamorphic":metamorphic,
             "limits":"Синтетические задачи: не доказывает развитие весов, научную точность или автономное улучшение кода."}
 
 

@@ -10,7 +10,7 @@ import hashlib
 import json
 import math
 
-VERSION=1
+VERSION=2
 
 
 def _json(data):
@@ -78,8 +78,9 @@ def integrity_report(db,generation,expected_trials=None):
                "guardrail_duplicate_resistance","guardrail_counterargument")
     comparison=[k for k in fields if k.startswith("lab8_")]
     attacks=[k for k in fields if k.startswith("attack_")]
-    required=[*mandatory,*comparison,*attacks]
-    if len(comparison)!=8 or len(attacks)!=5 or any(
+    invariants=[k for k in fields if k.startswith("invariant_")]
+    required=[*mandatory,*comparison,*attacks,*invariants]
+    if len(comparison)!=8 or len(attacks)!=5 or len(invariants)!=6 or any(
             key not in minima for key in required):
         raise ValueError("Протокол не включает обязательные защитные метрики.")
     score=min(minima[key] for key in required)
