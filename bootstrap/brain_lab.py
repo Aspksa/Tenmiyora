@@ -456,6 +456,17 @@ def _validate_saved_trials(db, item):
     from brain_lab_eight import NAMES as names
     if any(worst.get("lab8_"+name)!=1.0 for name,_ in names):
         raise ValueError("Не все восемь поведенческих экзаменов пройдены.")
+    required=("retrieval_hit_at_k","source_integrity","negative_query_accuracy",
+              "statement_recall","guardrail_citation_integrity",
+              "guardrail_negative_abstention","guardrail_source_revocation",
+              "guardrail_duplicate_resistance","guardrail_counterargument")
+    try:
+        actual_score=min(worst[key] for key in required+tuple(
+            "lab8_"+name for name,_ in names))
+    except KeyError as exc:
+        raise ValueError("Отсутствует обязательная метрика безопасности.") from exc
+    if abs(actual_score-item["quality_score"])>1e-8:
+        raise ValueError("Итоговая оценка не совпадает с результатами экзамена.")
     return len(entries)
 
 
