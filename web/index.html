@@ -33,6 +33,7 @@
   <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
   <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol>
   <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
   <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
 </svg>
 <div class="app-shell">
@@ -87,11 +88,16 @@
         </section>
       </section>
       <section id="disk-view" class="view knowledge-view" hidden>
-        <div class="module-head"><div><h1>Диск</h1><p>Файлы хранятся на компьютере. Текстовые документы автоматически пополняют Мозг.</p></div><div class="module-actions"><button class="secondary-button" id="disk-new-folder"><svg><use href="#i-folder"/></svg> Новая папка</button><button class="primary-button" id="disk-upload-button"><svg><use href="#i-upload"/></svg> Загрузить</button></div></div>
+        <div class="module-head"><div><h1>Диск</h1><p>Файлы хранятся на компьютере. Текстовые документы автоматически пополняют Мозг.</p></div><div class="module-actions"><button class="secondary-button" id="disk-new-folder"><svg><use href="#i-folder"/></svg> Новая папка</button><button class="secondary-button" id="disk-new-file"><svg><use href="#i-file"/></svg> Новый файл</button><button class="primary-button" id="disk-upload-button"><svg><use href="#i-upload"/></svg> Загрузить</button></div></div>
         <input id="disk-file-input" type="file" multiple hidden>
-        <div class="disk-toolbar"><nav id="disk-breadcrumbs" aria-label="Путь к папке"></nav><input id="disk-search" type="search" placeholder="Найти файл или папку по имени" aria-label="Поиск по именам файлов"></div>
-        <div id="disk-dropzone" class="disk-dropzone" tabindex="0" role="button"><svg><use href="#i-upload"/></svg><strong>Перетащите файлы сюда</strong><span>или нажмите, чтобы выбрать · до 25 МБ на файл</span></div>
-        <div class="module-panel"><div class="disk-list-header"><h2>Файлы и папки</h2><span id="disk-count" class="module-muted"></span></div><div id="disk-list" class="disk-list"></div></div>
+        <div class="disk-layout">
+          <aside class="module-panel disk-tree-panel"><details id="disk-tree-details" open><summary><h2>Дерево</h2><span class="module-muted">папки и файлы</span></summary><div id="disk-tree" class="disk-tree" role="tree" aria-label="Дерево папок и файлов"></div></details></aside>
+          <div class="disk-main">
+            <div class="disk-toolbar"><nav id="disk-breadcrumbs" aria-label="Путь к папке"></nav><input id="disk-search" type="search" placeholder="Найти файл или папку по имени" aria-label="Поиск по именам файлов"></div>
+            <div id="disk-dropzone" class="disk-dropzone" tabindex="0" role="button"><svg><use href="#i-upload"/></svg><strong>Перетащите файлы сюда</strong><span>или нажмите, чтобы выбрать · до 25 МБ на файл</span></div>
+            <div class="module-panel"><div class="disk-list-header"><h2>Файлы и папки</h2><span id="disk-count" class="module-muted"></span></div><div id="disk-list" class="disk-list"></div></div>
+          </div>
+        </div>
         <p class="module-muted disk-note">DOCX, XLSX, TXT, Markdown, исходный код и другие текстовые файлы индексируются автоматически. Для PDF требуется установленный pypdf; изображения, архивы и неподдерживаемые форматы сохраняются без извлечения знаний. Файлы не загружаются в Cloud.ru сами по себе; релевантные фрагменты могут передаваться модели при обращении к чату.</p>
       </section>
     </main>

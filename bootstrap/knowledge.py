@@ -231,6 +231,54 @@ class KnowledgeStore:
             self.log(conn, "папка", name)
             return {"id": fid, "name": name}
 
+    def create_folder_path(self, parent, path):
+        """Цепочка «Проекты/2026/Отчёты»: существующие звенья переиспользуются."""
+        if not isinstance(path, str):
+            raise ValueError("Неверное имя.")
+        parts = [clean_name(part) for part in re.split(r"[/\\]", path.strip().strip("/\\"))]
+        if len(parts) > 20:
+            raise ValueError("Цепочка не может быть длиннее 20 папок.")
+        with self.lock, self.db() as conn:
+            if parent is not None and not conn.execute("SELECT 1 FROM folders WHERE id=?", (parent,)).fetchone():
+                raise ValueError("Родительская папка не найдена.")
+            node, created = parent, []
+            for name in parts:
+                row = conn.execute("SELECT id FROM folders WHERE parent IS ? AND name=?", (node, name)).fetchone()
+                if row:
+                    node = row["id"]
+                    continue
+                fid = secrets.token_hex(16)
+                conn.execute("INSERT INTO folders VALUES(?,?,?,?)", (fid, node, name, now()))
+                created.append({"id": fid, "name": name})
+                node = fid
+            if not created:
+                raise ValueError("Такие папки уже существуют.")
+            self.log(conn, "папка", "/".join(parts))
+            return {"id": node, "name": parts[-1], "created": created}
+
+    def create_text_file(self, folder, name, text=""):
+        """Новый текстовый файл проходит тот же путь, что и загрузка: Мозг учится на нём."""
+        name = clean_name(name)
+        if not Path(name).suffix:
+            name += ".md"
+        if not isinstance(text, str):
+            raise ValueError("Неверное содержимое файла.")
+        mime = "text/markdown" if name.lower().endswith(".md") else "text/plain"
+        # RLock держится до конца upload(): параллельное создание того же имени
+        # не должно превратиться в тихую замену чужого файла.
+        with self.lock:
+            with self.db() as conn:
+                if conn.execute("SELECT 1 FROM files WHERE folder IS ? AND name=?", (folder, name)).fetchone():
+                    raise ValueError("Файл с таким именем уже есть в этой папке.")
+            return self.upload(name, text.encode("utf-8"), folder, mime)
+
+    def tree(self):
+        """Вся структура Диска одним запросом для дерева папок и файлов."""
+        with self.lock, self.db() as conn:
+            folders = conn.execute("SELECT id,parent,name FROM folders ORDER BY name COLLATE NOCASE").fetchall()
+            files = conn.execute("SELECT id,folder,name,size,status FROM files ORDER BY name COLLATE NOCASE").fetchall()
+            return {"folders": [dict(x) for x in folders], "files": [dict(x) for x in files]}
+
     def listing(self, parent=None, query=""):
         with self.lock, self.db() as conn:
             if parent is not None and not conn.execute("SELECT 1 FROM folders WHERE id=?", (parent,)).fetchone():

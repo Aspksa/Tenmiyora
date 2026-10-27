@@ -418,6 +418,12 @@ class Workspace:
         finally:
             self.chat_lock.release()
 
+    def create_disk_file(self, payload):
+        result = self.knowledge.create_text_file(payload.get("folder"), payload.get("name"), payload.get("text", ""))
+        if result["status"] == "готово" and self.schedule_semantic(result["id"]):
+            result["status"] = "готово; смысловой анализ выполняется"
+        return result
+
     def analyze_document(self,payload):
         """Только по запросу пользователя; облако — при двух подтверждениях."""
         fid=payload.get("id")
@@ -555,7 +561,7 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/state":
             if self.authorized(browser=True):
                 self.json_reply(200, self.server.workspace.public())
-        elif path in ("/api/brain", "/api/brain/facts", "/api/brain/search", "/api/brain/growth", "/api/brain/lab", "/api/disk", "/api/disk/download", "/api/document"):
+        elif path in ("/api/brain", "/api/brain/facts", "/api/brain/search", "/api/brain/growth", "/api/brain/lab", "/api/disk", "/api/disk/tree", "/api/disk/download", "/api/document"):
             if not self.authorized(browser=True):
                 return
             try:
@@ -575,6 +581,8 @@ class Handler(BaseHTTPRequestHandler):
                     self.json_reply(200, store.brain_lab_report())
                 elif path == "/api/disk":
                     self.json_reply(200, store.listing(value("folder") or None, value("q")))
+                elif path == "/api/disk/tree":
+                    self.json_reply(200, store.tree())
                 elif path == "/api/document":
                     self.json_reply(200, store.document_overview(value("id")))
                 else:
@@ -626,7 +634,8 @@ class Handler(BaseHTTPRequestHandler):
                    "/api/brain/lab/revert": lambda p: store.brain_lab_revert(p.get("generation")),
                    "/api/document/ask": lambda p: store.document_answer(p.get("id"),p.get("question")),
                    "/api/document/deep": self.server.workspace.analyze_document,
-                   "/api/disk/folder": lambda p: store.create_folder(p.get("parent"), p.get("name")),
+                   "/api/disk/folder": lambda p: (store.create_folder_path if "/" in str(p.get("name", "")) else store.create_folder)(p.get("parent"), p.get("name")),
+                   "/api/disk/file": self.server.workspace.create_disk_file,
                    "/api/disk/rename": lambda p: store.rename(p.get("kind"), p.get("id"), p.get("name")),
                    "/api/disk/delete": lambda p: store.delete(p.get("kind"), p.get("id")),
                    "/api/preferences": self.server.workspace.preferences, "/api/connection": self.server.workspace.connection,
@@ -643,7 +652,8 @@ class Handler(BaseHTTPRequestHandler):
             if self.headers.get_content_type() != "application/json":
                 raise AppError("Ожидается JSON.", 415)
             length = int(self.headers.get("Content-Length", "0"))
-            if length <= 0 or (self.path != "/api/chat" and length > 128 * 1024):
+            limit = 1024 * 1024 if self.path == "/api/disk/file" else 128 * 1024
+            if length <= 0 or (self.path != "/api/chat" and length > limit):
                 raise AppError("Неверный размер запроса.", 413)
             self.connection.settimeout(10)
             payload = json.loads(self.rfile.read(length))
