@@ -6,16 +6,18 @@ on:
   workflow_dispatch:
   release:
     types: [published]
+  schedule:
+    - cron: '17 2 * * 1'
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'release' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
 permissions:
   contents: read
 jobs:
   quick-check:
     name: quick-check
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -44,9 +46,15 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_test_shard.py' -v
       - name: Проверить веб-макет
         run: node --test tests/layout.test.cjs
+      - name: Установить зависимости защитных регрессий
+        run: python -m pip install 'pypdf>=5,<7'
+      - name: Проверить целостность Лаборатории развития
+        run: python -m unittest discover -s tests -p 'test_brain_lab_integrity.py' -v
+      - name: Проверить негативные сценарии Лаборатории
+        run: python -m unittest discover -s tests -p 'test_brain_lab_adversarial.py' -v
 
   check:
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'release'
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'release' || github.event_name == 'schedule'
     strategy:
       fail-fast: false
       matrix:
@@ -73,21 +81,32 @@ jobs:
         run: python -m pip install "pypdf>=5,<7"
       - name: Проверить сервер, Мозг и запуск BAT — часть ${{ matrix.shard }}
         run: python bootstrap/test_shard.py --shard ${{ matrix.shard }} --total 4
-      - name: Проверить 8 внутренних поведенческих экзаменов Мозга
+
+  lab-exams:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'release' || github.event_name == 'schedule'
+    name: Лаборатория (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Подготовить PDF-декодер
+        run: python -m pip install 'pypdf>=5,<7'
+      - name: Проверить 8 поведенческих экзаменов
         run: python bootstrap/brain_lab_eight.py --check --output .runtime/quality-reports/brain-lab-eight.json
-      - name: Проверить 5 негативных экзаменов и защиту эксперимента
+      - name: Проверить 5 негативных экзаменов
         run: python bootstrap/brain_lab_adversarial.py --check --output .runtime/quality-reports/brain-lab-adversarial.json
-      - name: Проверить 12 внутренних аудитов Лаборатории развития
+      - name: Проверить 12 внутренних аудитов
         run: python bootstrap/brain_lab_audit.py --check --output .runtime/quality-reports/brain-lab-audit.json
-      - name: Проверить JavaScript и положение окон
-        run: |
-          node --check web/app.js
-          node --check web/layout.js
-          node --check web/knowledge.js
-          node --test tests/layout.test.cjs
 
   quality:
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'release'
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'release' || github.event_name == 'schedule'
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
