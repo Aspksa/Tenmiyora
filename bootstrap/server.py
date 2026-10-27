@@ -31,6 +31,7 @@ from soul_quality import quality_guidance
 from soul_failures import DEFAULT_FAILURES, validate_failures, record_failure, guidance as failure_guidance
 from soul_recovery import DEFAULT_RECOVERY, validate_recovery, record as recovery_record, guidance as recovery_guidance
 from soul_operation_audit import DEFAULT_AUDIT, validate_audit, observe_operation
+from evolution_ledger import DEFAULT_LEDGER, validate_ledger, begin as ledger_begin, finish as ledger_finish
 from relationship_memory import DEFAULT_RELATIONSHIP, validate_relationship, remember, guidance
 from soul_experience import DEFAULT_EXPERIENCE, validate_experience, observe, guidance as experience_guidance, verified_outcome
 from relation_suggestions import validate_candidates
@@ -52,7 +53,7 @@ STATIC = {
 PASSIVE = {"/api/brain/pulses", "/api/brain/idle", "/api/brain/activity"}
 DEFAULT = {
     "appearance": {"size": 340, "opacity": 100, "visible": True, "pinned": False, "motion": True},
-    "layout": {}, "messages": [], "soul": DEFAULT_SOUL, "relationship": DEFAULT_RELATIONSHIP, "experience": DEFAULT_EXPERIENCE, "failures": DEFAULT_FAILURES, "recovery": DEFAULT_RECOVERY, "operation_audit": DEFAULT_AUDIT,
+    "layout": {}, "messages": [], "soul": DEFAULT_SOUL, "relationship": DEFAULT_RELATIONSHIP, "experience": DEFAULT_EXPERIENCE, "failures": DEFAULT_FAILURES, "recovery": DEFAULT_RECOVERY, "operation_audit": DEFAULT_AUDIT, "evolution_ledger": DEFAULT_LEDGER,
     "connection": {"url": CLOUDRU_URL, "model": "", "key": "", "verified_at": None},
     "model_cache": {"url": "", "models": [], "details": [], "loaded_at": None},
     "growth": {"enabled": True, "cloud": False, "idle_minutes": 15, "cloud_daily": 10},
@@ -176,7 +177,8 @@ class Workspace:
                                  "experience": validate_experience(stored.get("experience", DEFAULT_EXPERIENCE)),
                                  "failures": validate_failures(stored.get("failures", DEFAULT_FAILURES)),
                                  "recovery": validate_recovery(stored.get("recovery", DEFAULT_RECOVERY)),
-                                 "operation_audit": validate_audit(stored.get("operation_audit", DEFAULT_AUDIT))}
+                                 "operation_audit": validate_audit(stored.get("operation_audit", DEFAULT_AUDIT)),
+                                 "evolution_ledger": validate_ledger(stored.get("evolution_ledger", DEFAULT_LEDGER))}
                 except (ValueError, KeyError, TypeError, AppError):
                     raise AppError("Файл .runtime/workspace.json повреждён. Сохраните его копию и уберите из рабочей папки для нового запуска.", 500) from None
 
@@ -552,10 +554,18 @@ class Workspace:
             self.chat_lock.release()
 
     def create_disk_file(self, payload):
+        with self.lock:
+            self.data["evolution_ledger"], task = ledger_begin(self.data["evolution_ledger"], "disk_save")
+            self.save()
         try:
-            return self.learned(self.knowledge.create_text_file(payload.get("folder"), payload.get("name"), payload.get("text", "")))
+            result = self.learned(self.knowledge.create_text_file(payload.get("folder"), payload.get("name"), payload.get("text", "")))
+            with self.lock:
+                self.data["evolution_ledger"] = ledger_finish(self.data["evolution_ledger"], task, "passed" if result.get("status", "").startswith("готово") else "failed")
+                self.save()
+            return result
         except (OSError, IOError):
             with self.lock:
+                self.data["evolution_ledger"] = ledger_finish(self.data["evolution_ledger"], task, "failed")
                 self.data["failures"] = record_failure(self.data["failures"], "disk_save_failed")
                 self.data["recovery"] = recovery_record(self.data["recovery"], "disk_save_failed", False)
                 self.data["operation_audit"] = observe_operation(self.data["operation_audit"], "disk_save", "not_checked", "failed", "backend_write")
@@ -598,6 +608,9 @@ class Workspace:
             if not local and (payload.get("allow_external") is not True or not consent):
                 raise AppError("Отправка текста внешней модели отключена. Для включения задайте "
                                "TENMIYORA_DOCUMENT_EXTERNAL_ENABLED=1 перед запуском и подтвердите запрос.",403)
+            with self.lock:
+                self.data["evolution_ledger"], task = ledger_begin(self.data["evolution_ledger"], "document_hash_check")
+                self.save()
             from document_deep_analysis import review
             self.knowledge.ensure_document_index(fid)
             with self.knowledge.db() as conn:
@@ -606,6 +619,7 @@ class Workspace:
                 file=conn.execute("SELECT sha256 FROM files WHERE id=?",(fid,)).fetchone()
                 if not file or file["sha256"]!=result.pop("_source_sha"):
                     with self.lock:
+                        self.data["evolution_ledger"] = ledger_finish(self.data["evolution_ledger"], task, "failed")
                         self.data["failures"] = record_failure(self.data["failures"], "document_source_changed")
                         self.data["recovery"] = recovery_record(self.data["recovery"], "document_source_changed", False)
                         self.data["operation_audit"] = observe_operation(self.data["operation_audit"], "document_hash_check", "source_reported", "failed", "compare_source_hash")
@@ -614,6 +628,7 @@ class Workspace:
             # Count only a completed, source-hash-verified analysis; not a
             # claim that its conclusions were independently correct.
             with self.lock:
+                self.data["evolution_ledger"] = ledger_finish(self.data["evolution_ledger"], task, "passed")
                 self.data["experience"] = verified_outcome(self.data["experience"], "document_reviewed")
                 self.data["recovery"] = recovery_record(self.data["recovery"], "document_source_changed", True)
                 self.data["operation_audit"] = observe_operation(self.data["operation_audit"], "document_hash_check", "source_reported", "passed", "compare_source_hash")
