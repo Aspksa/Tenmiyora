@@ -76,7 +76,7 @@ jobs:
           cache: 'pip'
           cache-dependency-path: requirements-ci.txt
       - name: Проверить PowerShell 5.1
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && matrix.shard == 0
         shell: powershell
         run: |
           foreach ($script in Get-ChildItem bootstrap,tests -Filter *.ps1) {
