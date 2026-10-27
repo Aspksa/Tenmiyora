@@ -584,7 +584,10 @@ class Workspace:
                     self.knowledge.capture_chat(content)
                 except Exception:
                     logging.exception("Не удалось пополнить память из чата")
-                return {"messages": deepcopy(self.data["messages"])}
+                temporal = self.chat_journal.temporal_memory()
+                return {"messages": deepcopy(self.data["messages"]), "temporal_memory": {
+                    "topics": len(temporal["topics"]), "links": len(temporal["links"]),
+                    "invalid_evidence": temporal["invalid_evidence"]}}
         finally:
             self.chat_lock.release()
 
