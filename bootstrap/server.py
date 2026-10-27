@@ -36,6 +36,7 @@ from unified_evolution_exam import run_exam, coaching
 from lab_personality_bridge import assess as assess_lab_personality
 from improvement_pipeline import DEFAULT_IMPROVEMENTS, validate as validate_improvements, report as improvement_report
 from improvement_benchmark import DEFAULT_GATE, validate_gate
+from improvement_trial_runner import run_trial
 from relationship_memory import DEFAULT_RELATIONSHIP, validate_relationship, remember, guidance
 from soul_experience import DEFAULT_EXPERIENCE, validate_experience, observe, guidance as experience_guidance, verified_outcome
 from relation_suggestions import validate_candidates
@@ -777,6 +778,7 @@ class Handler(BaseHTTPRequestHandler):
                 elif path == "/api/brain/lab":
                     lab = store.brain_lab_report()
                     lab["personality_development"] = assess_lab_personality(self.server.workspace.data, lab)
+                    lab["improvement_trials"] = [run_trial(kind) for kind in ("verify_disk_saves", "verify_document_hash", "inspect_unfinished_tasks")]
                     self.json_reply(200, lab)
                 elif path == "/api/disk":
                     self.json_reply(200, store.listing(value("folder") or None, value("q")))
