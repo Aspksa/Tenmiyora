@@ -56,6 +56,28 @@ class EightBehaviorTests(unittest.TestCase):
                     "SELECT COUNT(*) FROM brain_lab_generations WHERE status='accepted'"
                 ).fetchone()[0],0)
 
+    def test_partial_or_inconsistent_eight_suite_fails_closed(self):
+        import brain_lab
+        with tempfile.TemporaryDirectory() as root:
+            store=KnowledgeStore(root)
+            genuine=brain_lab_eight.evaluate()
+            missing=dict(genuine,
+                         checks=genuine["checks"][:-1],
+                         metrics={k:v for k,v in genuine["metrics"].items()
+                                  if k!="lab8_safe_aliases"})
+            inconsistent=dict(genuine,passed=False)
+            mismatched=dict(genuine,
+                            metrics={**genuine["metrics"],"lab8_core":0.0})
+            for broken in (missing,inconsistent,mismatched):
+                with self.subTest(variant=len(broken["metrics"]),
+                                  verdict=broken["passed"]):
+                    with patch("brain_lab_eight.evaluate",return_value=broken):
+                        with self.assertRaises(RuntimeError):
+                            store.brain_lab_experiment(1)
+            with store.db() as db:
+                self.assertEqual(db.execute(
+                    "SELECT COUNT(*) FROM brain_lab_generations").fetchone()[0],0)
+
     def test_no_network_or_user_database_or_code_edits(self):
         with tempfile.TemporaryDirectory() as root:
             user=KnowledgeStore(root)
