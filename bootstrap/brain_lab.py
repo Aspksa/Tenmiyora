@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 import hashlib
 import json
+import math
 import random
 
 MAX_TRIALS=12
@@ -391,12 +392,58 @@ def run_experiment(db,trials=3):
             "limits":"Синтетические задачи: не доказывает развитие весов, научную точность или автономное улучшение кода."}
 
 
+def _validate_saved_trials(db, item):
+    """Fail closed on incomplete/tampered evidence before a manual decision.
+
+    The experiment verdict alone is not sufficient: independently verify
+    persisted trial rows, failure flags and worst-case metrics.
+    """
+    entries=db.execute("""SELECT trial_no,seed,metrics_json,pass_thresholds
+      FROM brain_lab_trials WHERE generation_id=?
+      ORDER BY trial_no""",(item["id"],)).fetchall()
+    if not 1<=len(entries)<=MAX_TRIALS:
+        raise ValueError("Нет полного комплекта испытаний: поколение не принимается.")
+    try:
+        aggregate=json.loads(item["metrics_json"])
+    except (ValueError,TypeError) as exc:
+        raise ValueError("Метрики поколения повреждены.") from exc
+    if not isinstance(aggregate,dict) or not aggregate:
+        raise ValueError("Не найдены проверенные метрики поколения.")
+    observed=[]
+    for number,trial in enumerate(entries,1):
+        if (trial["trial_no"]!=number or trial["seed"]!=13000+number
+                or trial["pass_thresholds"]!=1):
+            raise ValueError("Испытания неполные либо хотя бы одно не прошло контроль.")
+        try:
+            metrics=json.loads(trial["metrics_json"])
+        except (ValueError,TypeError) as exc:
+            raise ValueError("Метрики испытания повреждены.") from exc
+        if not isinstance(metrics,dict) or set(metrics)!=set(aggregate):
+            raise ValueError("Несовпадение метрик между испытаниями и поколением.")
+        if any(type(v) not in (int,float) or not math.isfinite(v)
+               or v<0 or v>1 for v in metrics.values()):
+            raise ValueError("Некорректные значения измеренных показателей.")
+        observed.append(metrics)
+    worst={k:min(t[k] for t in observed) for k in aggregate}
+    if (any(type(v) not in (int,float) or not math.isfinite(v)
+            or abs(v-worst[k])>1e-8 for k,v in aggregate.items())
+            or type(item["quality_score"]) not in (int,float)
+            or not math.isfinite(item["quality_score"])
+            or not 0<=item["quality_score"]<=1):
+        raise ValueError("Сводные результаты не совпадают с исходными испытаниями.")
+    from brain_lab_eight import NAMES as names
+    if any(worst.get("lab8_"+name)!=1.0 for name,_ in names):
+        raise ValueError("Не все восемь поведенческих экзаменов пройдены.")
+    return len(entries)
+
+
 def accept(db,generation):
     """Explicit acceptance of an evaluated checkpoint, not application of code."""
     if type(generation) is not int or generation<1:
         raise ValueError("Некорректный номер поколения.")
-    item=db.execute("""SELECT g.id,g.status,g.data_signature,
-       g.algorithm_signature,g.suite_signature,e.verdict
+    item=db.execute("""SELECT g.id,g.status,g.data_signature,g.parent_id,
+       g.algorithm_signature,g.suite_signature,g.metrics_json,g.quality_score,
+       e.verdict,e.baseline_id
       FROM brain_lab_generations g JOIN brain_lab_experiments e ON e.generation_id=g.id
       WHERE g.id=?""",(generation,)).fetchone()
     if not item or item["status"]!="evaluated":
@@ -404,6 +451,12 @@ def accept(db,generation):
     if item["verdict"] not in ("first_baseline","candidate_for_manual_review",
                                "baseline_requalification"):
         raise ValueError("Нельзя принять результат с регрессией либо без нового эксперимента.")
+    current=db.execute("""SELECT id FROM brain_lab_generations
+          WHERE status='accepted' ORDER BY id DESC LIMIT 1""").fetchone()
+    accepted_id=current["id"] if current else None
+    if item["baseline_id"]!=accepted_id or item["parent_id"]!=accepted_id:
+        raise ValueError("Контрольное поколение изменилось после экзамена: нужен новый эксперимент.")
+    _validate_saved_trials(db,item)
     if signature(db)!=item["data_signature"]:
         raise ValueError("Данные изменились с момента экзамена: требуется повторная проверка.")
     if (algorithm_signature()!=item["algorithm_signature"] or
