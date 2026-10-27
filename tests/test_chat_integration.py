@@ -71,6 +71,12 @@ class ChatIntegrationTests(unittest.TestCase):
         self.assertEqual(set(self.provider.requests[-1]['payload']), {'model', 'messages', 'stream'})
         self.assertEqual(self.provider.requests[-1]['payload']['messages'][0]['role'], 'system')
         self.assertIn('Хозяин', self.provider.requests[-1]['payload']['messages'][0]['content'])
+        persona = self.provider.requests[-1]['payload']['messages'][0]['content']
+        self.assertIn('мифическая лисица', persona)
+        self.assertIn('ласковая', persona)
+        self.assertIn('поручения', persona)
+        self.assertIn('безопасность', persona)
+        self.assertIn('выполненные без реального результата', persona)
         restored = server_module.Workspace(self.temporary.name)
         self.assertEqual(restored.public()['connection']['model'], 'fixture/chat-model')
         self.assertEqual(restored.public()['model_cache']['models'], catalog['models'])
