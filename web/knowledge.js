@@ -1448,9 +1448,13 @@
       !data.model_connected ? 'Чтобы разбирать документы, подключите модель: правый щелчок по аватару → Cloud.ru и модели.' :
       'Сегодня запросов к модели: ' + data.cloud_used_today + ' из ' + s.cloud_daily + '. Тексты документов уходят в Cloud.ru только в этих пределах.';
     // Тот же набор вопросов не перерисовываем: иначе опрос стирал бы недописанный ответ.
-    const questions = $('brain-idle-questions'), key = data.questions.map(q => q.id).join(',');
-    if (questions.dataset.key !== key || !questions.childElementCount) {
+    // Новая формулировка тех же вопросов ждёт, пока вы дописываете ответ.
+    const questions = $('brain-idle-questions'), ids = data.questions.map(q => q.id).join(',');
+    const key = ids + '|' + data.questions.map(q => q.text + JSON.stringify(q.details || {})).join('|');
+    const drafting = [...questions.querySelectorAll('textarea')].some(area => area.value.trim());
+    if ((questions.dataset.key !== key && !(drafting && questions.dataset.ids === ids)) || !questions.childElementCount) {
       questions.dataset.key = key;
+      questions.dataset.ids = ids;
       questions.replaceChildren();
       if (!data.questions.length) questions.append(element('p', 'module-muted', 'Вопросов пока нет. Они появятся, когда Мозг найдёт пробелы.'));
       for (const q of data.questions) questions.append(idleQuestion(q));
@@ -1710,14 +1714,10 @@
           (stats.last ? ' · последнее ' + shortDate(stats.last) : ''));
         pulse.append(note);
       }
-      let filter = null;
-      const draw = () => {
-        const query = filterInput.value.trim().toLowerCase();
-        const shown = data.facts.filter(fact => (!filter || (fact.source_type === filter.type && (filter.type === 'chat' || fact.source_id === filter.id))) &&
-          (!query || (fact.excerpt + ' ' + (fact.source_name || '') + ' ' + fact.locator).toLowerCase().includes(query)));
+      let filter = null, filterTicket = 0, filterTimer;
+      const paintList = (shown, empty) => {
         list.replaceChildren();
-        if (!data.facts.length) { list.append(element('p', 'module-muted', item.children.length ? 'Прямых записей нет, знания лежат в подветках.' : 'В этой ветке пока нет записей.')); return; }
-        if (!shown.length) { list.append(element('p', 'module-muted', filter ? 'Знания из этого источника лежат в подветках или не подходят под поиск.' : 'Ничего не найдено.')); return; }
+        if (!shown.length) { list.append(element('p', 'module-muted', empty)); return; }
         let limit = 6;
         const more = button('', () => { limit += 12; paint(); }, 'secondary-button map-card-more');
         const paint = () => {
@@ -1725,6 +1725,29 @@
           if (shown.length > limit) { more.textContent = 'Показать ещё (' + (shown.length - limit) + ')'; list.append(more); }
         };
         paint();
+      };
+      // Фильтр по источнику и поиск идут на сервер: по всем записям ветки с подветками, а не по первым 100.
+      const draw = () => {
+        const query = filterInput.value.trim();
+        const ticket = ++filterTicket;
+        clearTimeout(filterTimer);
+        // У темы без своих записей сразу показываем знания её подветок.
+        const subtree = !filter && !query && !data.facts.length && item.children.length;
+        if (!filter && !query && !subtree) {
+          paintList(data.facts, 'В этой ветке пока нет записей.');
+          return;
+        }
+        filterTimer = setTimeout(async () => {
+          try {
+            const params = new URLSearchParams({branch: item.node.id});
+            if (filter) params.set('source', filter.type === 'chat' ? 'chat' : 'file:' + filter.id);
+            if (query) params.set('q', query);
+            if (subtree) params.set('subtree', '1');
+            const found = await request('brain/facts?' + params);
+            if (ticket !== filterTicket || openNodeId !== item.node.id) return;
+            paintList(found.facts, 'Ничего не найдено.');
+          } catch (error) { if (ticket === filterTicket) list.replaceChildren(emptyState(error.message)); }
+        }, query ? 250 : 0);
       };
       filterInput.addEventListener('input', draw);
       // Источники: полоски по числу знаний, по нажатию фильтруют список.
@@ -1764,11 +1787,8 @@
     if (!entry) { message('Ветка не найдена. Нажмите «Обновить».'); return; }
     openMapCard(entry.item);
   }
-  document.addEventListener('click', event => {
-    // composedPath видит и элементы, удалённые обработчиком этого же клика.
-    const inside = event.composedPath().some(node => node instanceof Element && node.matches('.map-card,.map-node,.brain-chip,.level-name'));
-    if (openNodeId !== null && !inside) closeMapCard();
-  });
+  // Панель ветки закрывается крестиком, Escape или нажатием на затемнённый фон: фон перекрывает всю страницу,
+  // поэтому отдельный обработчик «клика снаружи» не нужен и не закрывает панель, открытую с меток или уровней.
   $('brain-map-replay').addEventListener('click', playGrowth);
   $('brain-map-sleep').addEventListener('click', () => { sleepMode = !$('brain-map').classList.contains('sleeping'); updateSleep(); });
   let mapResize;

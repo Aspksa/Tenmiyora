@@ -560,12 +560,14 @@ class KnowledgeStore:
                           "source_name": names.get(item.get("source_id"))})
         return {"results": found}
 
-    def facts(self, branch):
+    def facts(self, branch, source=None, query=None, subtree=False):
         from topic_aliases import projection
         with self.lock, self.db() as conn:
             mapping = projection(conn)
             canonical = mapping.get(branch,branch)
             ids = [id_ for id_ in mapping if mapping[id_] == canonical] + [canonical]
+            if source or query or subtree:
+                return {"facts": self._filtered_facts(conn, self._subtree(conn, ids), source, query)}
             params = ",".join("?" for _ in ids)
             # All old IDs remain valid and their knowledge is readable.
             rows = conn.execute(f"""SELECT k.id,k.statement AS excerpt,k.locator,
@@ -580,17 +582,47 @@ class KnowledgeStore:
                     ORDER BY f.id DESC LIMIT 100""", ids).fetchall()
             return {"facts": [dict(row) for row in rows], "stats": self._branch_stats(conn, ids)}
 
-    def _branch_stats(self, conn, ids):
-        """Откуда знания ветки вместе с подветками: все записи, не только первые 100 показанных."""
-        from brain_growth import EFFECTIVE, SPARK_DAYS
+    def _subtree(self, conn, ids):
         ids = set(ids)
         while True:
             params = ",".join("?" for _ in ids)
             more = {row[0] for row in conn.execute(f"SELECT id FROM branches WHERE parent IN ({params})", tuple(ids))} - ids
             if not more:
-                break
+                return tuple(ids)
             ids |= more
-        ids = tuple(ids)
+
+    def _filtered_facts(self, conn, ids, source, query):
+        """Знания ветки с подветками из одного источника и/или со словами запроса — по всем записям, не по первым 100."""
+        params = ",".join("?" for _ in ids)
+        where, args = "", []
+        if source == "chat":
+            where = " AND {t}.source_type='chat'"
+        elif source and source.startswith("file:"):
+            where, args = " AND {t}.source_type='file' AND {t}.source_id=?", [source[5:]]
+        rows = conn.execute(f"""SELECT k.id,k.statement AS excerpt,k.locator,k.source_type,k.source_id,k.created,
+              d.name AS source_name FROM knowledge_items k
+            LEFT JOIN files d ON k.source_type='file' AND d.id=k.source_id
+            WHERE k.branch_id IN ({params}){where.format(t='k')}
+            UNION ALL
+            SELECT f.id,f.excerpt,f.locator,f.source_type,f.source_id,f.created,d.name FROM facts f
+            LEFT JOIN files d ON f.source_type='file' AND d.id=f.source_id
+            WHERE f.branch IN ({params}){where.format(t='f')}
+              AND NOT EXISTS (SELECT 1 FROM knowledge_items x WHERE x.branch_id=f.branch)
+            ORDER BY 6 DESC""", (*ids, *args, *ids, *args)).fetchall()
+        words = (query or "").casefold().split()
+        found = []
+        for row in rows:
+            text = " ".join(str(row[key] or "") for key in ("excerpt", "source_name", "locator")).casefold()
+            if all(word in text for word in words):
+                found.append(dict(row))
+                if len(found) >= 100:
+                    break
+        return found
+
+    def _branch_stats(self, conn, ids):
+        """Откуда знания ветки вместе с подветками: все записи, не только первые 100 показанных."""
+        from brain_growth import EFFECTIVE, SPARK_DAYS
+        ids = self._subtree(conn, ids)
         params = ",".join("?" for _ in ids)
         rows = conn.execute(f"""SELECT e.source_type,e.source_id,d.name,COUNT(*) AS n,
               MIN(e.created) AS first,MAX(e.created) AS last FROM ({EFFECTIVE}) e

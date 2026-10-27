@@ -56,16 +56,13 @@ def brain_level(total):
     return item
 
 
-def streak(series):
-    """Дней подряд с новыми знаниями; пустой сегодняшний день серию ещё не рвёт."""
-    days = [day["added"] for day in series]
-    if days and not days[-1]:
-        days.pop()
+def streak(per_day, today):
+    """Дней подряд с новыми знаниями по всей истории; пустой сегодняшний день серию ещё не рвёт."""
+    day = today if per_day.get(today.isoformat()) else today - timedelta(days=1)
     count = 0
-    for added in reversed(days):
-        if not added:
-            break
+    while per_day.get(day.isoformat()):
         count += 1
+        day -= timedelta(days=1)
     return count
 
 
@@ -172,7 +169,7 @@ def growth(db, days=30, offset_minutes=0):
     diary["days"] = diary_days(db, shift, since, mapping)
     total = series[-1]["total"] if series else 0
     best = max(series, key=lambda day: day["added"]) if series else None
-    brain = {**brain_level(total), "week": diary["knowledge"], "streak": streak(series),
+    brain = {**brain_level(total), "week": diary["knowledge"], "streak": streak(per_day, today),
              "best_day": best if best and best["added"] else None, "topics": len(levels)}
     # Прирост за неделю по видимым веткам — для подсветки на карте знаний.
     return {"series": series, "diary": diary, "topics": levels, "branches_week": fresh, "brain": brain}
