@@ -12,6 +12,7 @@ WORDS=re.compile(r"[a-zа-яё0-9]{3,}",re.I)
 LIMIT=4
 MAX_CANDIDATES_SCAN=800
 MIN_QUERY_TOKEN_LENGTH=4
+SHORT_TOPICS={"чай","кот","сон","рис","код","дом"}
 
 # Conservative endings for Russian topic matching, not unrestricted stemming.
 ENDINGS=("иями","ями","ами","ого","ему","ыми","ими","иях","ах","ях","ов","ев","ей","ой","ий","ый","ая","ое","ые","ам","ям","ом","ем","у","ю","а","я","ы","и","е")
@@ -26,7 +27,7 @@ def normalize(word):
 
 def tokens(text):
     return {normalize(x) for x in (w.casefold() for w in WORDS.findall(text))
-            if x not in STOP and len(normalize(x))>=MIN_QUERY_TOKEN_LENGTH}
+            if x not in STOP and (len(normalize(x))>=MIN_QUERY_TOKEN_LENGTH or normalize(x) in SHORT_TOPICS)}
 
 def recall(journal,question,*,limit=LIMIT,exclude_turn_id=None):
     if not isinstance(question,str) or not 0<len(question)<=5000 or private(question):
