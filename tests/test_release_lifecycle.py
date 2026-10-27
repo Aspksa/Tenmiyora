@@ -1,6 +1,9 @@
 import unittest
 from unittest.mock import patch
 from pathlib import Path
+import sys
+from pathlib import Path
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'bootstrap'))
 from release_lifecycle import upgrade
 
 class LifecycleTests(unittest.TestCase):
