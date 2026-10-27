@@ -297,24 +297,30 @@
     document.body.append(dialog);
     return fileDialog = dialog;
   }
+  let fileOpenTicket = 0;
   async function openFileDialog(item) {
+    // Ответ от более раннего открытия не должен подменить текст и цель сохранения.
+    const ticket = ++fileOpenTicket;
+    const target = item && item.id ? item : null;
+    let text = '';
+    if (target) {
+      try { text = (await request('disk/text?' + new URLSearchParams({id: target.id}))).text; }
+      catch (error) { if (ticket === fileOpenTicket) message(error.message); return; }
+      if (ticket !== fileOpenTicket) return;
+    }
     const dialog = ensureFileDialog();
-    editing = item && item.id ? item : null;
+    editing = target;
     $('disk-file-name-label').hidden = !!editing;
     $('disk-file-title').textContent = editing ? editing.name : 'Новый файл';
     $('disk-file-submit').textContent = editing ? 'Сохранить' : 'Создать';
-    $('disk-file-name').value = ''; $('disk-file-text').value = '';
+    $('disk-file-name').value = ''; $('disk-file-text').value = text;
     if (editing) {
-      try {
-        const data = await request('disk/text?' + new URLSearchParams({id: editing.id}));
-        $('disk-file-text').value = data.text;
-        $('disk-file-place').textContent = 'Изменения сохранятся новой версией файла, Мозг переучится на новом тексте.';
-      } catch (error) { message(error.message); return; }
+      $('disk-file-place').textContent = 'Изменения сохранятся новой версией файла, Мозг переучится на новом тексте.';
     } else {
       const crumbs = [...$('disk-breadcrumbs').querySelectorAll('button')].map(x => x.textContent);
       $('disk-file-place').textContent = 'Папка: ' + (crumbs.join(' / ') || 'Мой диск');
     }
-    dialog.showModal();
+    if (!dialog.open) dialog.showModal();
     (editing ? $('disk-file-text') : $('disk-file-name')).focus();
   }
   // Метка: что Мозг знает о файле.
