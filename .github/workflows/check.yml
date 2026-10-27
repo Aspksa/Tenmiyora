@@ -122,6 +122,9 @@ jobs:
       - name: Проверить безопасную подготовку пакетов обновления
         run: python bootstrap/ci_timed.py --label 'Release staging' -- python -m unittest discover -s tests -p 'test_release_staging.py' -v
 
+      - name: Проверить транзакционную установку и откат
+        run: python bootstrap/ci_timed.py --label 'Release transaction' -- python -m unittest discover -s tests -p 'test_release_transaction.py' -v
+
       - name: Проверить шесть инвариантов Лаборатории
         run: python bootstrap/ci_timed.py --label 'Метаморфные проверки' -- python bootstrap/brain_lab_metamorphic.py --check --output .runtime/quality-reports/brain-lab-metamorphic.json
       - name: Проверить блокировки принятия и SHA-пломбу инвариантов
