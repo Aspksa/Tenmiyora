@@ -1,6 +1,6 @@
 (function (root) {
   'use strict';
-  const INLINE = /`([^`\n]+)`|\*\*([^*\n]+?)\*\*|__([^_\n]+?)__|\*([^*\s][^*\n]*?)\*|\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g;
+  const INLINE = /`([^`\n]{1,300})`|\*\*([^*\n]{1,300}?)\*\*|__([^_\n]{1,300}?)__|\*([^*\s][^*\n]{0,299}?)\*|\[([^\]\n]{1,300})\]\((https?:\/\/[^\s)]{1,500})\)/g;
   function inline(text) {
     const out = [], pattern = new RegExp(INLINE.source, 'g'); let last = 0, match;
     while ((match = pattern.exec(text))) {
@@ -14,7 +14,15 @@
     if (last < text.length) out.push({t: 'text', v: text.slice(last)});
     return out;
   }
-  const splitRow = (line) => line.trim().replace(/^\||\|$/g, '').split('|').map((cell) => cell.trim());
+  const splitRow = (line) => {
+    const cells = []; let cell = '';
+    for (const char of line.trim().replace(/^\|/, '').replace(/(^|[^\\])\|$/, '$1')) {
+      if (char === '|' && !cell.endsWith('\\')) { cells.push(cell.trim()); cell = ''; }
+      else cell += char;
+    }
+    cells.push(cell.trim());
+    return cells.map((value) => value.replace(/\\\|/g, '|'));
+  };
   const isRule = (line) => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(line) && line.includes('-');
   const LIST = /^\s*([-*+]|\d{1,3}[.)])\s+(.*)$/;
   function blocks(source) {
@@ -31,7 +39,7 @@
         out.push({t: 'codeblock', lang: fence[1], v: code.join('\n')});
         continue;
       }
-      const heading = line.match(/^\s{0,3}(#{1,4})\s+(.+?)\s*#*\s*$/);
+      const heading = line.match(/^\s{0,3}(#{1,4})\s+(.+?)(?:\s+#+)?\s*$/);
       if (heading) { out.push({t: 'heading', level: heading[1].length, c: inline(heading[2])}); i++; continue; }
       if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { out.push({t: 'rule'}); i++; continue; }
       if (line.includes('|') && i + 1 < lines.length && isRule(lines[i + 1])) {
@@ -48,14 +56,14 @@
       }
       const item = line.match(LIST);
       if (item) {
-        const ordered = /\d/.test(item[1]), items = [];
+        const ordered = /\d/.test(item[1]), start = ordered ? parseInt(item[1], 10) : 1, items = [];
         while (i < lines.length) {
           const next = lines[i].match(LIST);
           if (next && /\d/.test(next[1]) === ordered) { items.push([next[2]]); i++; }
           else if (lines[i].trim() && /^\s{2,}\S/.test(lines[i]) && items.length) { items[items.length - 1].push(lines[i].trim()); i++; }
           else break;
         }
-        out.push({t: ordered ? 'ol' : 'ul', items: items.map((parts) => inline(parts.join(' ')))});
+        out.push({t: ordered ? 'ol' : 'ul', start, items: items.map((parts) => inline(parts.join(' ')))});
         continue;
       }
       const paragraph = [];

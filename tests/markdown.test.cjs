@@ -23,3 +23,16 @@ test('only http links are kept and html stays text', () => {
 test('unclosed fence does not hang', () => {
   assert.equal(parse('```\nкод без конца')[0].t, 'codeblock');
 });
+test('literal hashes stay in headings, list numbers and escaped pipes are kept', () => {
+  assert.equal(parse('## Using C# and F#')[0].c[0].v, 'Using C# and F#');
+  assert.equal(parse('## Title ##')[0].c[0].v, 'Title');
+  assert.equal(parse('4. четыре\n5. пять')[0].start, 4);
+  const [table] = parse('| Expression | Result |\n|---|---|\n| a \\| b | 3 |');
+  assert.equal(table.rows[0].length, 2);
+  assert.equal(table.rows[0][0][0].v, 'a | b');
+});
+test('unmatched delimiters parse in near-linear time', () => {
+  const started = Date.now();
+  for (const text of ['['.repeat(40000), '*'.repeat(40000), '`'.repeat(40000), '[a'.repeat(20000), '**a'.repeat(13000)]) parse(text);
+  assert.ok(Date.now() - started < 1500);
+});
