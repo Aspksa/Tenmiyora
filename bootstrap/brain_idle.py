@@ -33,6 +33,7 @@ TIDY_EVERY = timedelta(hours=12)
 QUESTIONS_PER_TOPIC = 3
 MAX_OPEN_QUESTIONS = 12
 DEEP_BATCHES = 3
+MIN_ANSWER = 70  # Как в KnowledgeStore.capture_chat: короче — не знание.
 TASK_NAMES = {"exam": "Самоэкзамен", "gaps": "Поиск пробелов", "tidy": "Порядок в темах",
               "documents": "Разбор документа моделью"}
 
@@ -215,8 +216,8 @@ def merge_topics(db, keep, merge):
     if len(rows) != 2:
         raise ValueError("Темы уже изменились. Обновите Мозг.")
     alias = normalize_label(rows[merge])
-    if db.execute("SELECT 1 FROM topic_aliases WHERE alias_key=?", (normalize_label(rows[keep]),)).fetchone():
-        raise ValueError("Эта тема сама уже объединена с другой.")
+    if db.execute("SELECT 1 FROM topic_aliases WHERE alias_key IN (?,?)", (normalize_label(rows[keep]), alias)).fetchone():
+        raise ValueError("Одна из этих тем уже объединена с другой. Обновите Мозг.")
     db.execute("""INSERT OR IGNORE INTO topic_aliases(alias_key,alias_name,canonical_id,left_key,right_key,created)
         VALUES(?,?,?,?,?,?)""", (alias, rows[merge], keep, "user:" + normalize_label(rows[keep]), "user:" + alias, clock()))
     return rows[keep]
@@ -247,15 +248,17 @@ def answer_question(store, qid, action, text=""):
         elif action == "dismiss":
             status = "dismissed"
         elif action == "answer":
-            if not isinstance(text, str) or len(text.strip()) < 10:
-                raise ValueError("Напишите ответ хотя бы в несколько слов.")
+            if not isinstance(text, str) or len(text.strip()) < MIN_ANSWER:
+                raise ValueError(f"Напишите чуть подробнее: Мозг запоминает ответы от {MIN_ANSWER} символов.")
+            # Ответ попадает в Мозг тем же путём, что и сообщение в чате; вопрос
+            # закрывается, только если знание действительно сохранилось.
+            result["learned"] = store.capture_chat(text.strip()[:4000])
+            if not result["learned"]:
+                raise ValueError("Мозг не нашёл в ответе нового знания. Добавьте конкретики: что, где, когда, сколько.")
             status = "answered"
         else:
             raise ValueError("Неизвестное действие.")
         db.execute("UPDATE brain_idle_questions SET status=?,changed=? WHERE id=?", (status, clock(), qid))
-    if action == "answer":
-        # Ответ попадает в Мозг тем же путём, что и сообщение в чате.
-        result["learned"] = store.capture_chat(text.strip()[:4000])
     return result
 
 
@@ -371,7 +374,8 @@ class Grower:
         added = self.workspace.semantic_once(document["id"], connection)
         insights = 0
         try:
-            insights = self._deep(document, connection, limit)
+            if self.workspace.growth_settings()["enabled"]:
+                insights = self._deep(document, connection, limit)
         except Exception:
             logging.exception("Глубокий разбор документа %s в режиме ожидания не удался", document["id"])
         with self.store.lock, self.store.db() as db:
@@ -381,15 +385,28 @@ class Grower:
         return summary
 
     def _deep(self, document, connection, limit):
-        from document_deep_analysis import review
+        from document_deep_analysis import batches, review
         self.store.ensure_document_index(document["id"])
-        batches = 0
-        while batches < DEEP_BATCHES and self.store.engine.reserve_semantic(limit):
-            batches += 1
-        if not batches:
-            return 0
         with self.store.db() as conn:
-            result = review(conn, self.workspace.provider, connection, document["id"], "", batches)
+            rows = conn.execute("SELECT ordinal,locator,excerpt FROM document_segments WHERE file_id=? ORDER BY ordinal",
+                                (document["id"],)).fetchall()
+        count = min(DEEP_BATCHES, len(list(batches(rows))))
+        if not count or self.workspace.growth_cloud() is None:
+            return 0
+
+        def provider(*args, **kwargs):
+            # Перед каждым запросом: разрешение ещё действует и лимит не исчерпан.
+            if self.workspace.growth_cloud() is None or not self.workspace.growth_settings()["enabled"]:
+                raise PermissionError("Разбор моделью выключен")
+            if not self.store.engine.reserve_semantic(limit):
+                raise PermissionError("Дневной лимит исчерпан")
+            return self.workspace.provider(*args, **kwargs)
+
+        try:
+            with self.store.db() as conn:
+                result = review(conn, provider, connection, document["id"], "", count)
+        except PermissionError:
+            return 0
         with self.store.lock, self.store.db() as db:
             current = db.execute("SELECT sha256 FROM files WHERE id=?", (document["id"],)).fetchone()
             if not current or current["sha256"] != result["_source_sha"]:

@@ -68,8 +68,10 @@ class BrainIdleTests(unittest.TestCase):
         self.run_all()
         question = self.work.growth_status()["questions"][0]
         before = self.store.branches()["stats"]["chat"]
-        with self.assertRaises(server.AppError):
-            self.work.growth_question({"id": question["id"], "action": "answer", "text": "да"})
+        for short in ("да", "Оплата по договору производится в течение десяти дней."):
+            with self.assertRaises(server.AppError):
+                self.work.growth_question({"id": question["id"], "action": "answer", "text": short})
+        self.assertIn(question["id"], [q["id"] for q in self.work.growth_status()["questions"]])
         self.work.growth_question({"id": question["id"], "action": "answer",
                                    "text": "Договор поставки продлевается ежегодно в январе, оплата по счёту в течение пяти дней."})
         self.assertGreater(self.store.branches()["stats"]["chat"], before)
@@ -88,6 +90,38 @@ class BrainIdleTests(unittest.TestCase):
             self.work.growth_question({"id": merge[0]["id"], "action": "bogus"})
         self.work.growth_question({"id": merge[0]["id"], "action": "merge"})
         self.assertEqual(len(self.store.branches()["branches"]), visible - 1)
+
+    def test_overlapping_merge_is_rejected_after_first(self):
+        with self.store.db() as db:
+            for name in ("Логистика", "Логистика склада", "Логистика склада товаров"):
+                db.execute("INSERT INTO branches(parent,name,created) VALUES(NULL,?,'2026-01-01')", (name,))
+        self.run_all()
+        merges = [q for q in self.work.growth_status()["questions"] if q["kind"] == "merge"]
+        self.assertEqual(len(merges), 3)
+        third = [q for q in merges if "товаров" in q["text"]]
+        self.work.growth_question({"id": third[0]["id"], "action": "merge"})
+        with self.assertRaises(server.AppError):
+            self.work.growth_question({"id": third[1]["id"], "action": "merge"})
+
+    def test_deep_review_reserves_only_real_batches_and_stops_when_disabled(self):
+        self.store.upload("python.txt", PYTHON.encode())
+        with self.work.lock:
+            self.work.data["connection"].update(key="k", model="m")
+        self.work.growth_update({"cloud": True, "cloud_daily": 5})
+        calls = []
+        self.work.semantic_once = lambda fid, connection: 0
+        self.work.provider = lambda *args, **kwargs: calls.append(1) or {"choices": [{"message": {"content": "{}"}}]}
+        self.run_all()
+        self.assertEqual(len(calls), 1)  # Короткий документ — одна часть.
+        self.assertEqual(self.work.growth_status()["cloud_used_today"], 2)  # смысловой разбор + одна часть
+        self.store.upload("contract.txt", CONTRACT.encode())
+        def disable(fid, connection):
+            self.work.growth_update({"cloud": False})
+            return 0
+        self.work.semantic_once = disable
+        self.work.growth_update({"cloud": True})
+        self.run_all()
+        self.assertEqual(len(calls), 1)  # Выключили во время разбора — новых запросов нет.
 
     def test_settings_validation_and_persistence(self):
         self.assertFalse(self.work.growth_settings()["cloud"])

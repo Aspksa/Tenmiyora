@@ -1072,10 +1072,14 @@
     $('brain-idle-note').textContent = !s.cloud ? 'Без модели Мозг сам себя экзаменует, ищет пробелы и наводит порядок в темах. Всё на компьютере, бесплатно.' :
       !data.model_connected ? 'Чтобы разбирать документы, подключите модель: правый щелчок по аватару → Cloud.ru и модели.' :
       'Сегодня запросов к модели: ' + data.cloud_used_today + ' из ' + s.cloud_daily + '. Тексты документов уходят в Cloud.ru только в этих пределах.';
-    const questions = $('brain-idle-questions');
-    questions.replaceChildren();
-    if (!data.questions.length) questions.append(element('p', 'module-muted', 'Вопросов пока нет. Они появятся, когда Мозг найдёт пробелы.'));
-    for (const q of data.questions) questions.append(idleQuestion(q));
+    // Тот же набор вопросов не перерисовываем: иначе опрос стирал бы недописанный ответ.
+    const questions = $('brain-idle-questions'), key = data.questions.map(q => q.id).join(',');
+    if (questions.dataset.key !== key || !questions.childElementCount) {
+      questions.dataset.key = key;
+      questions.replaceChildren();
+      if (!data.questions.length) questions.append(element('p', 'module-muted', 'Вопросов пока нет. Они появятся, когда Мозг найдёт пробелы.'));
+      for (const q of data.questions) questions.append(idleQuestion(q));
+    }
     const log = $('brain-idle-log');
     log.replaceChildren();
     if (!data.log.length) log.append(element('p', 'module-muted', 'Здесь появится отчёт: что Мозг сделал, пока вас не было.'));
@@ -1119,9 +1123,9 @@
         actions.hidden = true;
         const form = element('form', 'brain-idle-reply');
         const area = element('textarea');
-        area.rows = 3; area.maxLength = 4000;
+        area.rows = 3; area.maxLength = 4000; area.minLength = 70;
         area.setAttribute('aria-label', 'Ваш ответ');
-        area.placeholder = 'Напишите своими словами: Мозг запомнит это как сообщение из чата.';
+        area.placeholder = 'Напишите своими словами, хотя бы пару предложений: Мозг запомнит это как сообщение из чата.';
         const send = element('button', 'primary-button', 'Запомнить');
         send.type = 'submit';
         form.append(area, send);
