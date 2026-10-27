@@ -38,7 +38,7 @@ def recall(journal,question,*,limit=LIMIT,exclude_turn_id=None):
         rows=db.execute(
             "SELECT c.turn_id,c.kind,c.start,c.end,c.fingerprint,c.polarity,c.status,"
             "t.text,t.digest,t.role FROM candidates c JOIN turns t ON t.id=c.turn_id "
-            "ORDER BY c.turn_id DESC,c.start DESC LIMIT ?").fetchall()
+            "ORDER BY c.turn_id DESC,c.start DESC LIMIT ?",(MAX_CANDIDATES_SCAN,)).fetchall()
     scored=[]
     # A shared commonplace word alone is not evidence of the same subject.
     # Source integrity and exact candidate matching remain mandatory.
