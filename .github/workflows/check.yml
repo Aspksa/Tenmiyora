@@ -161,6 +161,9 @@ jobs:
       - name: Проверить доказательную память разговоров
         run: python bootstrap/ci_timed.py --label 'Chat evidence' -- python -m unittest discover -s tests -p 'test_chat_evidence.py' -v
 
+      - name: Независимый экзамен смысловой памяти чата
+        run: python bootstrap/ci_timed.py --label 'Chat semantic evidence' -- python -m unittest discover -s tests -p 'test_chat_semantic_exam.py' -v
+
       - name: Проверить шесть инвариантов Лаборатории
         run: python bootstrap/ci_timed.py --label 'Метаморфные проверки' -- python bootstrap/brain_lab_metamorphic.py --check --output .runtime/quality-reports/brain-lab-metamorphic.json
       - name: Проверить блокировки принятия и SHA-пломбу инвариантов
