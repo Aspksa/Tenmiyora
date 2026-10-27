@@ -27,7 +27,7 @@ from knowledge import KnowledgeStore, MAX_UPLOAD
 from semantic import make_messages, parse_topics, samples_from_text
 from soul_engine import DEFAULT_SOUL, validate_soul, evolve, persona_guidance
 from soul_maturation import maturation_guidance
-from soul_romance import DEFAULT_ROMANCE, validate as validate_romance, progress as romance_progress, guidance as romance_guidance
+from soul_romance import DEFAULT_ROMANCE, validate as validate_romance, progress as romance_progress, guidance as romance_guidance, evolve_from_feedback as romance_evolve
 from soul_reflection import DEFAULT_REFLECTION, validate as validate_reflection, reflect as soul_reflect, guidance as reflection_guidance
 from soul_continuity import DEFAULT_CONTINUITY, validate as validate_continuity, observe as observe_continuity
 from soul_quality import quality_guidance
@@ -493,6 +493,7 @@ class Workspace:
                 self.data["relationship"] = remember(self.data["relationship"], content)
                 self.data["romance"] = romance_progress(self.data["romance"], content)
                 self.data["experience"] = observe(self.data["experience"], content)
+                self.data["romance"] = romance_evolve(self.data["romance"], self.data["experience"])
                 self.data["soul_reflection"] = soul_reflect(self.data["soul_reflection"], self.data["experience"])
                 self.data["soul_continuity"] = observe_continuity(
                     self.data["soul_continuity"], before_soul, before_experience,
