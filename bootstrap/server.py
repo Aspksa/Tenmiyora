@@ -658,7 +658,7 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/state":
             if self.authorized(browser=True):
                 self.json_reply(200, self.server.workspace.public())
-        elif path in ("/api/brain", "/api/brain/facts", "/api/brain/search", "/api/brain/growth", "/api/brain/activity", "/api/brain/pulses", "/api/brain/idle", "/api/brain/lab", "/api/disk", "/api/disk/tree", "/api/disk/text", "/api/disk/download", "/api/document"):
+        elif path in ("/api/brain", "/api/brain/facts", "/api/brain/search", "/api/brain/growth", "/api/brain/insight", "/api/brain/activity", "/api/brain/pulses", "/api/brain/idle", "/api/brain/lab", "/api/disk", "/api/disk/tree", "/api/disk/text", "/api/disk/download", "/api/document"):
             if not self.authorized(browser=True):
                 return
             try:
@@ -672,6 +672,8 @@ class Handler(BaseHTTPRequestHandler):
                     self.json_reply(200, store.facts(int(value("branch")), value("source")[:200] or None, value("q")[:200] or None, value("subtree") == "1"))
                 elif path == "/api/brain/growth":
                     self.json_reply(200, store.brain_growth(value("days") or 30, value("offset") or 0))
+                elif path == "/api/brain/insight":
+                    self.json_reply(200, store.brain_insight(value("offset") or 0))
                 elif path == "/api/brain/idle":
                     self.json_reply(200, self.server.workspace.growth_status())
                 elif path == "/api/brain/activity":

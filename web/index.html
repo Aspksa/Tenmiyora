@@ -29,6 +29,14 @@
   <symbol id="i-send" viewBox="0 0 24 24"><path d="m12 4 7 8M12 4l-7 8M12 4v16"/></symbol>
   <symbol id="i-move" viewBox="0 0 24 24"><path d="m9 5 3-3 3 3m-3-3v20m-3-3 3 3 3-3M5 9l-3 3 3 3m-3-3h20m-3-3 3 3-3 3"/></symbol>
   <symbol id="i-reset" viewBox="0 0 24 24"><path d="M3 10a9 9 0 1 1 2 8M3 4v6h6"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+  <symbol id="i-coin" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9 8h4.5a2.5 2.5 0 0 1 0 5H9m0-5v9m-1.5-2H13"/></symbol>
+  <symbol id="i-company" viewBox="0 0 24 24"><path d="M4 21V5l8-2v18m0 0h8V9l-8-2M8 8v.01M8 12v.01M8 16v.01M16 12v.01M16 16v.01"/></symbol>
+  <symbol id="i-truck" viewBox="0 0 24 24"><path d="M3 6h11v10H3zM14 10h4l3 3v3h-7"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/></symbol>
+  <symbol id="i-contract" viewBox="0 0 24 24"><path d="M7 3h8l4 4v14H7zM15 3v4h4M10 12h6m-6 4h4"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3 2 20h20L12 3Zm0 6v5m0 3v.01"/></symbol>
+  <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4m8-4v4"/></symbol>
   <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z"/></symbol>
   <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 2.4 6.6L21 12l-6.6 2.4L12 21l-2.4-6.6L3 12l6.6-2.4Z"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
@@ -60,54 +68,85 @@
         <p class="gesture-guide"><span class="guide-mark">✦</span>Щелчок по аватару — чат, правый щелчок — настройки. Аватар можно перетаскивать.</p>
       </section>
       <section id="brain-view" class="view knowledge-view brain-view" hidden>
-        <div class="module-head brain-head"><div><span class="brain-eyebrow"><svg><use href="#i-brain"/></svg>Память Tenmiyora</span><h1>Мозг</h1><p>Знания из документов на Диске и сообщений чата. У каждого знания сохраняется источник.</p></div><button class="secondary-button" id="brain-refresh"><svg><use href="#i-reset"/></svg>Обновить</button></div>
-        <form id="brain-search-form" class="brain-search" role="search"><svg><use href="#i-search"/></svg><label class="sr-only" for="brain-search-input">Поиск по Мозгу</label><input id="brain-search-input" type="search" maxlength="300" placeholder="Спросите Мозг: например, «сроки оплаты по договору»" autocomplete="off"><button class="primary-button" type="submit">Найти<svg><use href="#i-arrow"/></svg></button></form>
-        <section id="brain-search-results" class="brain-search-results" aria-live="polite" hidden></section>
-        <div class="brain-metrics" aria-label="Показатели памяти">
-          <div><span class="metric-icon"><svg><use href="#i-brain"/></svg></span><strong id="brain-branches-count">0</strong><span>веток</span></div>
-          <div><span class="metric-icon"><svg><use href="#i-spark"/></svg></span><strong id="brain-facts-count">0</strong><span>знаний</span></div>
-          <div><span class="metric-icon"><svg><use href="#i-file"/></svg></span><strong id="brain-files-count">0</strong><span>документов</span></div>
-          <div><span class="metric-icon"><svg><use href="#i-chat"/></svg></span><strong id="brain-chat-count">0</strong><span>из чата</span></div>
-        </div>
-        <section class="module-panel brain-map-panel" aria-labelledby="brain-map-title">
-          <div class="panel-head"><div><h2 id="brain-map-title">Дерево знаний</h2><p class="module-muted brain-map-hint">У каждой темы свой цвет. По веткам от ядра текут токи знаний, а цветные дуги показывают, какие темы обмениваются знаниями: наведите на тему или дугу, чтобы увидеть её связи. Нажмите на ветку, чтобы открыть её.</p></div><div class="brain-map-actions"><span id="brain-map-count" class="brain-pill"></span><button type="button" id="brain-map-sleep" class="icon-button" aria-pressed="false" aria-label="Режим сна" title="Режим сна: ночью включается сам"><svg><use href="#i-moon"/></svg></button><button type="button" id="brain-map-replay" class="secondary-button"><svg><use href="#i-spark"/></svg>Показать рост</button></div></div>
-          <div id="brain-map" class="brain-map"></div>
+        <section class="brain-stage" aria-labelledby="brain-title">
+          <div class="stage-top">
+            <div class="stage-title"><span class="brain-eyebrow"><svg><use href="#i-brain"/></svg>Память Tenmiyora</span><h1 id="brain-title">Мозг</h1><p id="brain-stage-line" class="stage-line">Знания из документов на Диске и сообщений чата. У каждого знания сохраняется источник.</p></div>
+            <div class="brain-metrics stage-metrics" aria-label="Показатели памяти">
+              <div><strong id="brain-branches-count">0</strong><span>веток</span></div>
+              <div><strong id="brain-facts-count">0</strong><span>знаний</span></div>
+              <div><strong id="brain-files-count">0</strong><span>документов</span></div>
+              <div><strong id="brain-chat-count">0</strong><span>из чата</span></div>
+            </div>
+          </div>
+          <div class="stage-map">
+            <div id="brain-map" class="brain-map"></div>
+            <div class="brain-map-actions stage-actions"><span id="brain-map-count" class="brain-pill"></span><button type="button" id="brain-map-sleep" class="icon-button" aria-pressed="false" aria-label="Режим сна" title="Режим сна: ночью включается сам"><svg><use href="#i-moon"/></svg></button><button type="button" id="brain-map-replay" class="secondary-button"><svg><use href="#i-spark"/></svg>Показать рост</button><button class="icon-button" id="brain-refresh" aria-label="Обновить" title="Обновить"><svg><use href="#i-reset"/></svg></button></div>
+          </div>
+          <form id="brain-search-form" class="brain-search" role="search"><svg><use href="#i-search"/></svg><label class="sr-only" for="brain-search-input">Спросить Мозг</label><input id="brain-search-input" type="search" maxlength="300" placeholder="Спросите Мозг: например, «сроки оплаты по договору»" autocomplete="off"><button class="primary-button" type="submit">Найти<svg><use href="#i-arrow"/></svg></button></form>
           <div id="brain-map-topics" class="brain-map-topics" aria-label="Темы на карте"></div>
-          <div class="brain-map-legend" aria-hidden="true"><span><i class="lg-core"></i>ядро</span><span><i class="lg-branch"></i>ветка, цвет — тема</span><span><i class="lg-leaf"></i>знания</span><span><i class="lg-current"></i>ток знаний</span><span><i class="lg-synapse"></i>обмен между темами</span><span><i class="lg-fresh"></i>рост за неделю</span><span><i class="lg-rest"></i>давно без дела</span></div>
+          <details class="stage-legend"><summary>Как читать карту</summary><p class="module-muted brain-map-hint">У каждой темы свой цвет. По веткам от ядра текут токи знаний, а цветные дуги показывают, какие темы обмениваются знаниями: наведите на тему или дугу, чтобы увидеть её связи. Нажмите на ветку, чтобы открыть её.</p>
+            <div class="brain-map-legend" aria-hidden="true"><span><i class="lg-core"></i>ядро</span><span><i class="lg-branch"></i>ветка, цвет — тема</span><span><i class="lg-leaf"></i>знания</span><span><i class="lg-current"></i>ток знаний</span><span><i class="lg-synapse"></i>обмен между темами</span><span><i class="lg-fresh"></i>рост за неделю</span><span><i class="lg-rest"></i>давно без дела</span></div>
+          </details>
         </section>
-        <section class="module-panel brain-idle-panel" aria-labelledby="brain-idle-title">
-          <div class="panel-head"><div><h2 id="brain-idle-title">Сам растёт, пока вы отдыхаете</h2><p id="brain-idle-state" class="brain-idle-state" aria-live="polite">Загрузка…</p></div><button type="button" id="brain-idle-run" class="secondary-button"><svg><use href="#i-spark"/></svg>Запустить сейчас</button></div>
-          <div class="brain-idle-settings">
-            <label class="brain-switch"><input type="checkbox" id="brain-idle-enabled"><span class="brain-switch-track" aria-hidden="true"></span><span>Расти, когда я не работаю</span></label>
-            <label class="brain-idle-field">Начинать через <select id="brain-idle-minutes"><option value="5">5</option><option value="10">10</option><option value="15">15</option><option value="30">30</option><option value="60">60</option></select> мин тишины</label>
-            <label class="brain-switch"><input type="checkbox" id="brain-idle-cloud"><span class="brain-switch-track" aria-hidden="true"></span><span>Разбирать документы моделью Cloud.ru</span></label>
-            <label class="brain-idle-field">Не больше <select id="brain-idle-daily"><option value="5">5</option><option value="10">10</option><option value="20">20</option><option value="30">30</option><option value="50">50</option></select> запросов в день</label>
-          </div>
-          <p id="brain-idle-note" class="module-muted brain-idle-note"></p>
-          <div class="brain-idle-columns">
-            <div><h3>Вопросы к вам</h3><div id="brain-idle-questions" class="brain-idle-list"></div></div>
-            <div><h3>Что сделано</h3><div id="brain-idle-log" class="brain-idle-list"></div></div>
-          </div>
-          <div id="brain-idle-insights"></div>
-        </section>
-        <section class="module-panel brain-growth-panel" aria-labelledby="brain-growth-title">
-          <div class="panel-head"><div><h2 id="brain-growth-title">Мозг растёт</h2><p id="brain-growth-summary" class="module-muted brain-growth-summary"></p></div><span class="brain-pill">30 дней</span></div>
-          <div class="growth-hero">
-            <div id="brain-level" class="brain-level"></div>
-            <div class="growth-main"><div id="brain-growth-stats" class="growth-stats"></div><div id="brain-growth-chart" class="brain-growth-chart"></div></div>
-          </div>
-        </section>
-        <div class="brain-growth-columns">
-          <section class="module-panel" aria-labelledby="brain-diary-title"><div class="panel-head"><h2 id="brain-diary-title">Дневник развития</h2><span id="brain-diary-range" class="brain-pill"></span></div><div id="brain-diary" class="brain-diary"></div></section>
-          <section class="module-panel" aria-labelledby="brain-levels-title"><div class="panel-head"><h2 id="brain-levels-title">Уровень по темам</h2><span class="module-muted">кольцо — путь до следующего уровня</span></div><div id="brain-levels" class="brain-levels"></div></section>
+        <section id="brain-search-results" class="brain-search-results" aria-live="polite" hidden></section>
+        <nav class="brain-tabs" role="tablist" aria-label="Разделы Мозга">
+          <button type="button" role="tab" id="brain-tab-overview" data-brain-tab="overview" aria-controls="brain-pane-overview" aria-selected="true"><svg><use href="#i-home"/></svg>Главное</button>
+          <button type="button" role="tab" id="brain-tab-foresight" data-brain-tab="foresight" aria-controls="brain-pane-foresight" aria-selected="false" tabindex="-1"><svg><use href="#i-eye"/></svg>Предчувствия<b id="brain-badge-foresight" class="tab-badge" hidden></b></button>
+          <button type="button" role="tab" id="brain-tab-dossiers" data-brain-tab="dossiers" aria-controls="brain-pane-dossiers" aria-selected="false" tabindex="-1"><svg><use href="#i-user"/></svg>Досье<b id="brain-badge-dossiers" class="tab-badge muted" hidden></b></button>
+          <button type="button" role="tab" id="brain-tab-money" data-brain-tab="money" aria-controls="brain-pane-money" aria-selected="false" tabindex="-1"><svg><use href="#i-coin"/></svg>Деньги</button>
+          <button type="button" role="tab" id="brain-tab-growth" data-brain-tab="growth" aria-controls="brain-pane-growth" aria-selected="false" tabindex="-1"><svg><use href="#i-spark"/></svg>Рост</button>
+          <button type="button" role="tab" id="brain-tab-idle" data-brain-tab="idle" aria-controls="brain-pane-idle" aria-selected="false" tabindex="-1"><svg><use href="#i-moon"/></svg>Сам растёт<b id="brain-badge-idle" class="tab-badge" hidden></b></button>
+          <button type="button" role="tab" id="brain-tab-lab" data-brain-tab="lab" aria-controls="brain-pane-lab" aria-selected="false" tabindex="-1"><svg><use href="#i-check"/></svg>Лаборатория</button>
+        </nav>
+        <div id="brain-pane-overview" class="brain-pane" role="tabpanel" aria-labelledby="brain-tab-overview"><div id="brain-overview" class="brain-overview"></div></div>
+        <div id="brain-pane-foresight" class="brain-pane" role="tabpanel" aria-labelledby="brain-tab-foresight" hidden>
+          <section class="module-panel"><div class="panel-head"><div><h2>Предчувствия</h2><p class="module-muted">Что вот-вот наступит, что уже просрочено и чего не хватает в цепочке документов. Каждое предупреждение — с цитатой и источником.</p></div><span id="brain-foresight-today" class="brain-pill"></span></div><div id="brain-foresight-radar" class="foresight-radar"></div><div id="brain-foresight-filters" class="insight-filters" role="group" aria-label="Показать"></div><div id="brain-foresight" class="foresight-list"></div></section>
         </div>
-        <section class="module-panel activity-panel"><div class="panel-head"><h2>История роста</h2><span class="module-muted">что Мозг читал и запоминал</span></div><div id="brain-events" class="brain-timeline"></div></section>
-        <section class="module-panel brain-lab-panel" aria-labelledby="brain-lab-title">
-          <div class="brain-lab-head"><div><h2 id="brain-lab-title">Лаборатория развития</h2><p class="module-muted">Поколения, проверочные задачи, пробелы и навыки. Только локально, без изменения кода или весов модели.</p></div>
-          <div class="brain-lab-actions"><button type="button" id="brain-lab-scan" class="secondary-button"><svg><use href="#i-search"/></svg>Найти пробелы</button><button type="button" id="brain-lab-exam" class="secondary-button"><svg><use href="#i-check"/></svg>Провести экзамен</button></div></div>
-          <p id="brain-lab-status" class="brain-lab-status" aria-live="polite">Экзамены выполняются по отдельному запросу.</p>
-          <div id="brain-lab-content" class="brain-lab-content"></div>
-        </section>
+        <div id="brain-pane-dossiers" class="brain-pane" role="tabpanel" aria-labelledby="brain-tab-dossiers" hidden>
+          <section class="module-panel"><div class="panel-head"><div><h2>Живые досье</h2><p class="module-muted">Люди, компании, машины и договоры собираются сами из документов и чата. Нажмите на карточку, чтобы увидеть хронологию и связи.</p></div><input id="brain-dossier-search" class="insight-search" type="search" placeholder="Найти по имени" aria-label="Найти досье по имени"></div><div id="brain-dossier-filters" class="insight-filters" role="group" aria-label="Вид"></div><div id="brain-dossiers" class="dossier-grid"></div></section>
+        </div>
+        <div id="brain-pane-money" class="brain-pane" role="tabpanel" aria-labelledby="brain-tab-money" hidden>
+          <section class="module-panel"><div class="panel-head"><div><h2>Карта денег</h2><p class="module-muted">Все суммы из договоров, счетов и чата: кто кому платит, за что и когда. Одна и та же сумма по одному договору считается один раз. НДС, неустойки и суммы без плательщика и срока (например, из бюджета) в итог не входят.</p></div></div><div id="brain-money-tiles" class="money-tiles"></div><div id="brain-money-flows" class="money-flows"></div><div id="brain-money-filters" class="insight-filters" role="group" aria-label="Показать"></div><div id="brain-money" class="money-list"></div></section>
+        </div>
+        <div id="brain-pane-growth" class="brain-pane" role="tabpanel" aria-labelledby="brain-tab-growth" hidden>
+          <section class="module-panel brain-growth-panel" aria-labelledby="brain-growth-title">
+            <div class="panel-head"><div><h2 id="brain-growth-title">Мозг растёт</h2><p id="brain-growth-summary" class="module-muted brain-growth-summary"></p></div><span class="brain-pill">30 дней</span></div>
+            <div class="growth-hero">
+              <div id="brain-level" class="brain-level"></div>
+              <div class="growth-main"><div id="brain-growth-stats" class="growth-stats"></div><div id="brain-growth-chart" class="brain-growth-chart"></div></div>
+            </div>
+          </section>
+          <div class="brain-growth-columns">
+            <section class="module-panel" aria-labelledby="brain-diary-title"><div class="panel-head"><h2 id="brain-diary-title">Дневник развития</h2><span id="brain-diary-range" class="brain-pill"></span></div><div id="brain-diary" class="brain-diary"></div></section>
+            <section class="module-panel" aria-labelledby="brain-levels-title"><div class="panel-head"><h2 id="brain-levels-title">Уровень по темам</h2><span class="module-muted">кольцо — путь до следующего уровня</span></div><div id="brain-levels" class="brain-levels"></div></section>
+          </div>
+          <section class="module-panel activity-panel"><div class="panel-head"><h2>История роста</h2><span class="module-muted">что Мозг читал и запоминал</span></div><div id="brain-events" class="brain-timeline"></div></section>
+        </div>
+        <div id="brain-pane-idle" class="brain-pane" role="tabpanel" aria-labelledby="brain-tab-idle" hidden>
+          <section class="module-panel brain-idle-panel" aria-labelledby="brain-idle-title">
+            <div class="panel-head"><div><h2 id="brain-idle-title">Сам растёт, пока вы отдыхаете</h2><p id="brain-idle-state" class="brain-idle-state" aria-live="polite">Загрузка…</p></div><button type="button" id="brain-idle-run" class="secondary-button"><svg><use href="#i-spark"/></svg>Запустить сейчас</button></div>
+            <div class="brain-idle-settings">
+              <label class="brain-switch"><input type="checkbox" id="brain-idle-enabled"><span class="brain-switch-track" aria-hidden="true"></span><span>Расти, когда я не работаю</span></label>
+              <label class="brain-idle-field">Начинать через <select id="brain-idle-minutes"><option value="5">5</option><option value="10">10</option><option value="15">15</option><option value="30">30</option><option value="60">60</option></select> мин тишины</label>
+              <label class="brain-switch"><input type="checkbox" id="brain-idle-cloud"><span class="brain-switch-track" aria-hidden="true"></span><span>Разбирать документы моделью Cloud.ru</span></label>
+              <label class="brain-idle-field">Не больше <select id="brain-idle-daily"><option value="5">5</option><option value="10">10</option><option value="20">20</option><option value="30">30</option><option value="50">50</option></select> запросов в день</label>
+            </div>
+            <p id="brain-idle-note" class="module-muted brain-idle-note"></p>
+            <div class="brain-idle-columns">
+              <div><h3>Вопросы к вам</h3><div id="brain-idle-questions" class="brain-idle-list"></div></div>
+              <div><h3>Что сделано</h3><div id="brain-idle-log" class="brain-idle-list"></div></div>
+            </div>
+            <div id="brain-idle-insights"></div>
+          </section>
+        </div>
+        <div id="brain-pane-lab" class="brain-pane" role="tabpanel" aria-labelledby="brain-tab-lab" hidden>
+          <section class="module-panel brain-lab-panel" aria-labelledby="brain-lab-title">
+            <div class="brain-lab-head"><div><h2 id="brain-lab-title">Лаборатория развития</h2><p class="module-muted">Поколения, проверочные задачи, пробелы и навыки. Только локально, без изменения кода или весов модели.</p></div>
+            <div class="brain-lab-actions"><button type="button" id="brain-lab-scan" class="secondary-button"><svg><use href="#i-search"/></svg>Найти пробелы</button><button type="button" id="brain-lab-exam" class="secondary-button"><svg><use href="#i-check"/></svg>Провести экзамен</button></div></div>
+            <p id="brain-lab-status" class="brain-lab-status" aria-live="polite">Экзамены выполняются по отдельному запросу.</p>
+            <div id="brain-lab-content" class="brain-lab-content"></div>
+          </section>
+        </div>
       </section>
       <section id="disk-view" class="view knowledge-view" hidden>
         <div class="module-head"><div><h1>Диск</h1><p>Файлы хранятся на компьютере. Текстовые документы автоматически пополняют Мозг.</p></div><div class="module-actions"><button class="secondary-button" id="disk-new-folder"><svg><use href="#i-folder"/></svg> Новая папка</button><button class="secondary-button" id="disk-new-file"><svg><use href="#i-file"/></svg> Новый файл</button><button class="primary-button" id="disk-upload-button"><svg><use href="#i-upload"/></svg> Загрузить</button></div></div>
