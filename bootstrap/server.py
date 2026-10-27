@@ -29,6 +29,7 @@ from soul_engine import DEFAULT_SOUL, validate_soul, evolve, persona_guidance
 from soul_maturation import maturation_guidance
 from soul_quality import quality_guidance
 from soul_failures import DEFAULT_FAILURES, validate_failures, record_failure, guidance as failure_guidance
+from soul_recovery import DEFAULT_RECOVERY, validate_recovery, record as recovery_record, guidance as recovery_guidance
 from relationship_memory import DEFAULT_RELATIONSHIP, validate_relationship, remember, guidance
 from soul_experience import DEFAULT_EXPERIENCE, validate_experience, observe, guidance as experience_guidance, verified_outcome
 from relation_suggestions import validate_candidates
@@ -50,7 +51,7 @@ STATIC = {
 PASSIVE = {"/api/brain/pulses", "/api/brain/idle", "/api/brain/activity"}
 DEFAULT = {
     "appearance": {"size": 340, "opacity": 100, "visible": True, "pinned": False, "motion": True},
-    "layout": {}, "messages": [], "soul": DEFAULT_SOUL, "relationship": DEFAULT_RELATIONSHIP, "experience": DEFAULT_EXPERIENCE, "failures": DEFAULT_FAILURES,
+    "layout": {}, "messages": [], "soul": DEFAULT_SOUL, "relationship": DEFAULT_RELATIONSHIP, "experience": DEFAULT_EXPERIENCE, "failures": DEFAULT_FAILURES, "recovery": DEFAULT_RECOVERY,
     "connection": {"url": CLOUDRU_URL, "model": "", "key": "", "verified_at": None},
     "model_cache": {"url": "", "models": [], "details": [], "loaded_at": None},
     "growth": {"enabled": True, "cloud": False, "idle_minutes": 15, "cloud_daily": 10},
@@ -172,7 +173,8 @@ class Workspace:
                                  "soul": validate_soul(stored.get("soul", DEFAULT_SOUL)),
                                  "relationship": validate_relationship(stored.get("relationship", DEFAULT_RELATIONSHIP)),
                                  "experience": validate_experience(stored.get("experience", DEFAULT_EXPERIENCE)),
-                                 "failures": validate_failures(stored.get("failures", DEFAULT_FAILURES))}
+                                 "failures": validate_failures(stored.get("failures", DEFAULT_FAILURES)),
+                                 "recovery": validate_recovery(stored.get("recovery", DEFAULT_RECOVERY))}
                 except (ValueError, KeyError, TypeError, AppError):
                     raise AppError("Файл .runtime/workspace.json повреждён. Сохраните его копию и уберите из рабочей папки для нового запуска.", 500) from None
 
@@ -525,6 +527,7 @@ class Workspace:
             context[0]["content"] += " " + maturation_guidance(self.data["soul"], self.data["experience"])
             context[0]["content"] += " " + quality_guidance(self.data["experience"])
             context[0]["content"] += " " + failure_guidance(self.data["failures"])
+            context[0]["content"] += " " + recovery_guidance(self.data["recovery"])
             result = self.provider("/chat/completions", {"model": model, "messages": context, "stream": False}, connection=connection)
             try:
                 answer = result["choices"][0]["message"]["content"]
@@ -552,6 +555,7 @@ class Workspace:
         except (OSError, IOError):
             with self.lock:
                 self.data["failures"] = record_failure(self.data["failures"], "disk_save_failed")
+                self.data["recovery"] = recovery_record(self.data["recovery"], "disk_save_failed", False)
                 self.save()
             raise
 
@@ -564,6 +568,7 @@ class Workspace:
             # quality or store filenames, file contents or identifiers here.
             with self.lock:
                 self.data["experience"] = verified_outcome(self.data["experience"], "disk_saved")
+                self.data["recovery"] = recovery_record(self.data["recovery"], "disk_save_failed", True)
                 self.save()
         return result
 
@@ -598,12 +603,14 @@ class Workspace:
                 if not file or file["sha256"]!=result.pop("_source_sha"):
                     with self.lock:
                         self.data["failures"] = record_failure(self.data["failures"], "document_source_changed")
+                        self.data["recovery"] = recovery_record(self.data["recovery"], "document_source_changed", False)
                         self.save()
                     raise AppError("Документ изменился во время анализа; результат не сохранён.",409)
             # Count only a completed, source-hash-verified analysis; not a
             # claim that its conclusions were independently correct.
             with self.lock:
                 self.data["experience"] = verified_outcome(self.data["experience"], "document_reviewed")
+                self.data["recovery"] = recovery_record(self.data["recovery"], "document_source_changed", True)
                 self.save()
             return result
         finally:
