@@ -149,6 +149,26 @@ jobs:
         if: always()
         run: python bootstrap/ci_timed.py --report
 
+  release-smoke:
+    name: Windows release smoke
+    runs-on: windows-latest
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Проверить PowerShell синтаксис обновления
+        shell: powershell
+        run: |
+          $tokens = $null
+          $errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'bootstrap/update-offline.ps1'),[ref]$tokens,[ref]$errors)
+          if ($errors.Count) { $errors | Format-List; exit 1 }
+      - name: Сквозная офлайн-установка и откат в Windows
+        run: python bootstrap/windows_release_smoke.py
+
   check:
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'release' || github.event_name == 'schedule'
     strategy:
