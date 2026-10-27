@@ -907,8 +907,6 @@ function renderMap() {
     const card = element('div', 'map-card');
     card.setAttribute('role', 'dialog');
     card.setAttribute('aria-label', item.node.name);
-    const left = item.x / MAP.width * 100;
-    card.style.left = Math.min(70, Math.max(2, left > 50 ? left - 34 : left + 3)) + '%';
     const head = element('div', 'map-card-head');
     const titles = element('div');
     const chain = ancestors(item.node);
@@ -955,8 +953,12 @@ function renderMap() {
   }
   // Карточка целиком внутри карты: рядом с веткой, но не ниже нижнего края.
   function positionMapCard(card, item) {
+    const box = $('brain-map'), width = box.clientWidth, height = box.clientHeight, gap = 8;
+    // Карточка — рядом с веткой, на стороне, где больше места, но всегда целиком в карте.
+    const x = item.x / MAP.width * width, cardWidth = card.offsetWidth;
+    const left = x > width / 2 ? x - cardWidth - 24 : x + 24;
+    card.style.left = Math.max(gap, Math.min(left, width - cardWidth - gap)) + 'px';
     if (MAP.narrow) return;
-    const box = $('brain-map'), height = box.clientHeight, gap = 8;
     const wanted = item.y / MAP.height * height - 60;
     card.style.top = Math.max(gap, Math.min(wanted, height - card.offsetHeight - gap)) + 'px';
   }
