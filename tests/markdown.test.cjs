@@ -36,3 +36,11 @@ test('unmatched delimiters parse in near-linear time', () => {
   for (const text of ['['.repeat(40000), '*'.repeat(40000), '`'.repeat(40000), '[a'.repeat(20000), '**a'.repeat(13000)]) parse(text);
   assert.ok(Date.now() - started < 1500);
 });
+test('links keep balanced parentheses and lists keep fenced code', () => {
+  const [p] = parse('[Rust](https://en.wikipedia.org/wiki/Rust_(programming_language)) тут');
+  assert.equal(p.c[0].href, 'https://en.wikipedia.org/wiki/Rust_(programming_language)');
+  const tree = parse('1. Запустите:\n   ```python\n   if True:\n       print("ok")\n   ```\n2. Готово');
+  assert.deepEqual(tree.map((block) => block.t), ['ol', 'codeblock', 'ol']);
+  assert.equal(tree[1].v, 'if True:\n    print("ok")');
+  assert.equal(tree[2].start, 2);
+});

@@ -1,6 +1,6 @@
 (function (root) {
   'use strict';
-  const INLINE = /`([^`\n]{1,300})`|\*\*([^*\n]{1,300}?)\*\*|__([^_\n]{1,300}?)__|\*([^*\s][^*\n]{0,299}?)\*|\[([^\]\n]{1,300})\]\((https?:\/\/[^\s)]{1,500})\)/g;
+  const INLINE = /`([^`\n]{1,300})`|\*\*([^*\n]{1,300}?)\*\*|__([^_\n]{1,300}?)__|\*([^*\s][^*\n]{0,299}?)\*|\[([^\]\n]{1,300})\]\((https?:\/\/(?:[^\s()]|\([^\s()]{0,200}\)){1,500})\)/g;
   function inline(text) {
     const out = [], pattern = new RegExp(INLINE.source, 'g'); let last = 0, match;
     while ((match = pattern.exec(text))) {
@@ -31,12 +31,12 @@
     while (i < lines.length) {
       const line = lines[i];
       if (!line.trim()) { i++; continue; }
-      const fence = line.match(/^\s*```\s*([\w+#.-]*)\s*$/);
+      const fence = line.match(/^(\s*)```\s*([\w+#.-]*)\s*$/);
       if (fence) {
         const code = []; i++;
-        while (i < lines.length && !/^\s*```\s*$/.test(lines[i])) code.push(lines[i++]);
+        while (i < lines.length && !/^\s*```\s*$/.test(lines[i])) code.push(lines[i++].startsWith(fence[1]) ? lines[i - 1].slice(fence[1].length) : lines[i - 1]);
         i++;
-        out.push({t: 'codeblock', lang: fence[1], v: code.join('\n')});
+        out.push({t: 'codeblock', lang: fence[2], v: code.join('\n')});
         continue;
       }
       const heading = line.match(/^\s{0,3}(#{1,4})\s+(.+?)(?:\s+#+)?\s*$/);
@@ -60,7 +60,7 @@
         while (i < lines.length) {
           const next = lines[i].match(LIST);
           if (next && /\d/.test(next[1]) === ordered) { items.push([next[2]]); i++; }
-          else if (lines[i].trim() && /^\s{2,}\S/.test(lines[i]) && items.length) { items[items.length - 1].push(lines[i].trim()); i++; }
+          else if (lines[i].trim() && /^\s{2,}\S/.test(lines[i]) && !/^\s*```/.test(lines[i]) && items.length) { items[items.length - 1].push(lines[i].trim()); i++; }
           else break;
         }
         out.push({t: ordered ? 'ol' : 'ul', start, items: items.map((parts) => inline(parts.join(' ')))});
