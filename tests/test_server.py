@@ -40,7 +40,7 @@ class ServerTests(unittest.TestCase):
         self.assertNotEqual(self.server.server_port, self.occupied.getsockname()[1])
         status, body, headers = self.request()
         self.assertEqual(status, 200)
-        self.assertIn("Ближе к идеям", body.decode("utf-8"))
+        self.assertIn("Начать разговор", body.decode("utf-8"))
         self.assertEqual(headers["Cache-Control"], "no-store")
         self.assertIn("HttpOnly", headers["Set-Cookie"])
         self.assertIn("SameSite=Strict", headers["Set-Cookie"])

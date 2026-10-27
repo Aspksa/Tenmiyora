@@ -120,9 +120,10 @@
   for (const element of [chat, settings]) element.addEventListener('pointerdown', () => front(element));
   function route() {
     const requested = location.hash.slice(1);
-    const view = ['home', 'brain', 'disk', 'settings'].includes(requested) ? requested : 'home';
-    for (const name of ['home', 'brain', 'disk', 'settings']) $(name + '-view').hidden = view !== name;
-    $('page-title').textContent = ({home: 'Главная', brain: 'Мозг Tenmiyora', disk: 'Диск Tenmiyora', settings: 'Настройки'})[view];
+    if (requested === 'settings') { history.replaceState(null, '', '#home'); openSettings(); }
+    const view = ['home', 'brain', 'disk'].includes(requested) ? requested : 'home';
+    for (const name of ['home', 'brain', 'disk']) $(name + '-view').hidden = view !== name;
+    document.title = ({home: 'Tenmiyora', brain: 'Мозг · Tenmiyora', disk: 'Диск · Tenmiyora'})[view];
     document.querySelectorAll('[data-nav]').forEach((item) => { item.classList.toggle('active', item.dataset.nav === view); if (item.dataset.nav === view) item.setAttribute('aria-current', 'page'); else item.removeAttribute('aria-current'); });
     window.TenmiyoraModules?.show(view);
   }
@@ -179,8 +180,8 @@
     if (!state.messages.length && !extra) {
       const empty = document.createElement('div'); empty.className = 'chat-empty';
       const star = document.createElement('div'); star.className = 'empty-star'; star.textContent = '✧';
-      const title = document.createElement('h3'); title.textContent = 'Я здесь. Расскажите.';
-      const hint = document.createElement('p'); hint.textContent = 'Идея, вопрос или просто мысль — начните с того, что сейчас важно.';
+      const title = document.createElement('h3'); title.textContent = 'О чём поговорим?';
+      const hint = document.createElement('p'); hint.textContent = 'Задайте вопрос или поделитесь идеей.';
       const suggestions = document.createElement('div'); suggestions.className = 'chat-suggestions';
       for (const [label, text] of [['Есть идея', 'Помоги мне развить идею: '], ['Нужен план', 'Помоги составить план: ']]) { const button = document.createElement('button'); button.type = 'button'; button.textContent = label; button.addEventListener('click', () => { $('chat-input').value = text; $('chat-input').focus(); }); suggestions.append(button); }
       empty.append(star, title, hint, suggestions); log.append(empty);
@@ -197,7 +198,7 @@
     log.scrollTop = log.scrollHeight;
     const count = state.messages.length, ending = count % 10, teens = count % 100;
     const noun = ending === 1 && teens !== 11 ? 'сообщение' : ending >= 2 && ending <= 4 && (teens < 12 || teens > 14) ? 'сообщения' : 'сообщений';
-    $('conversation-summary').textContent = count ? count + ' ' + noun + ' · история сохранена' : 'Ваш первый разговор ждёт вас';
+    $('conversation-summary').textContent = count ? count + ' ' + noun + ' в истории' : 'Ваш первый разговор ждёт вас';
   }
   async function sendMessage(event) {
     event.preventDefault(); const content = $('chat-input').value.trim();
