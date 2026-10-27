@@ -491,7 +491,7 @@ class Workspace:
                 if not model or not self.data["connection"]["key"]:
                     raise AppError("Подключите модель в настройках Tenmiyora.", 409)
                 user_message = {"role": "user", "content": content.strip(), "time": datetime.now(timezone.utc).isoformat()}
-                self.chat_journal.append("user", content, user_message["time"])
+                journal_entry = self.chat_journal.append("user", content, user_message["time"])
                 self.data["messages"].append(user_message)
                 before_soul = deepcopy(self.data["soul"])
                 before_experience = deepcopy(self.data["experience"])
@@ -514,7 +514,7 @@ class Workspace:
             memory_allowed = local_model or os.environ.get(
                 "TENMIYORA_MEMORY_EXTERNAL_ENABLED", "0").strip().lower() in ("1", "true", "yes", "on")
             # Historical private text never goes to external models without existing opt-in.
-            historical = recall_chat(self.chat_journal, content) if memory_allowed else []
+            historical = recall_chat(self.chat_journal, content, exclude_turn_id=journal_entry["id"]) if memory_allowed else []
             if historical:
                 context.insert(0, {"role":"system","content":recall_context(historical)})
             found = self.knowledge.retrieve(content, origin="chat") if memory_allowed else []
