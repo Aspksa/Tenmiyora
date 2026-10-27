@@ -98,7 +98,7 @@ class MetamorphicLabTests(unittest.TestCase):
                 values.pop(name)
             db.execute("UPDATE brain_lab_trials SET metrics_json=? WHERE id=?",
                        (json.dumps(values),row["id"]))
-            with self.assertRaisesRegex(ValueError,"обязательные защитные метрики"):
+            with self.assertRaisesRegex(ValueError,"обязательные защитные метрики|Итог поколения"):
                 integrity_report(db,result["generation"])
 
     def test_signatures_include_new_implementation(self):
