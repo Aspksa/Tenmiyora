@@ -70,7 +70,8 @@
             children.push(lines[i++]);
           }
           const cut = children.reduce((min, row) => row.trim() ? Math.min(min, indentOf(row)) : min, Infinity);
-          items.push({c: inline(next[2]), children: depth >= MAX_DEPTH || !children.length ? [] : blocks(children.map((row) => row.slice(Math.min(cut, indentOf(row)))).join('\n'), depth + 1)});
+          const body = children.map((row) => row.slice(Math.min(cut, indentOf(row)))).join('\n');
+          items.push({c: inline(next[2]), children: !children.length ? [] : depth >= MAX_DEPTH ? [{t: 'codeblock', lang: '', v: body}] : blocks(body, depth + 1)});
         }
         out.push({t: ordered ? 'ol' : 'ul', start, items});
         continue;

@@ -65,3 +65,8 @@ test('whitespace-heavy input stays fast and tables still parse', () => {
   assert.equal(parse('| a | b |\n| :-- | --: |\n| 1 | 2 |')[0].t, 'table');
   assert.equal(parse('a | b\n--|--\n1 | 2')[0].t, 'table');
 });
+test('content below the nesting limit is kept as literal text', () => {
+  const deep = Array.from({length: 9}, (_, level) => ' '.repeat(level * 2) + '- уровень ' + (level + 1)).join('\n');
+  const flat = JSON.stringify(parse(deep));
+  for (let level = 1; level <= 9; level++) assert.ok(flat.includes('уровень ' + level), 'level ' + level);
+});
