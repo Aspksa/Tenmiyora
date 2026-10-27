@@ -260,10 +260,10 @@ body[data-view="brain"] #avatar,body[data-view="brain"] #avatar-restore{display:
 .map-leaf{fill:#ecca7c;opacity:.75}
 .map-aura{fill:none;stroke:#ffe2a0;stroke-width:1.5;opacity:.6;animation:map-pulse 2.4s ease-out infinite}
 .map-count{font:600 11px var(--font);fill:#17130b;text-anchor:middle;pointer-events:none}
-.map-label{font:12px var(--font);fill:var(--muted);paint-order:stroke;stroke:#0d0c0a;stroke-width:4px;stroke-linejoin:round;pointer-events:none}
-.map-label.root{font:15px var(--serif);fill:var(--gold-bright)}
+.map-label{font:11px var(--font);fill:var(--muted);paint-order:stroke;stroke:#0d0c0a;stroke-width:3px;stroke-linejoin:round;pointer-events:none;letter-spacing:.01em}
+.map-label.root{font:13px var(--serif);fill:var(--gold-bright);letter-spacing:.02em}
 .map-node.small .map-label{opacity:.85}
-.map-fresh{font:600 10px var(--font);fill:#ffe2a0;paint-order:stroke;stroke:#0d0c0a;stroke-width:3px;pointer-events:none}
+.map-fresh{font:600 9px var(--font);fill:#ffe2a0;paint-order:stroke;stroke:#0d0c0a;stroke-width:3px;pointer-events:none}
 .map-core-ring,.map-aura,.map-leaves,.map-halo,.map-dot,.map-node-body{transform-box:fill-box;transform-origin:center}
 .map-core-ring{fill:none;stroke:#ecca7c;stroke-width:1;opacity:0;animation:map-ripple 3.6s ease-out infinite}
 .map-core-ring.late{animation-delay:1.8s}
@@ -276,7 +276,7 @@ body[data-view="brain"] #avatar,body[data-view="brain"] #avatar-restore{display:
 .growing .map-link{stroke-dasharray:600;stroke-dashoffset:600;animation:map-draw .9s ease-out forwards;animation-delay:calc(var(--o) * 90ms)}
 .growing .map-node-body{animation:map-sprout .7s cubic-bezier(.3,1.6,.5,1) both;animation-delay:calc(var(--o) * 90ms + 250ms)}
 .growing .map-flows{animation:map-fade 1s both;animation-delay:calc(var(--count) * 90ms + 600ms)}
-.brain-map.narrow .map-label{font-size:17px}.brain-map.narrow .map-label.root{font-size:21px}.brain-map.narrow .map-core-label{font-size:16px}
+.brain-map.narrow .map-label{font-size:15px}.brain-map.narrow .map-label.root{font-size:18px}.brain-map.narrow .map-core-label{font-size:14px}
 .brain-map-empty{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);margin:0;width:min(420px,90%);text-align:center;font-size:13px;color:var(--muted)}
 .brain-map-legend{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:12px;font-size:12px;color:var(--faint)}
 .brain-map-legend span{display:inline-flex;align-items:center;gap:7px}
@@ -294,6 +294,43 @@ body[data-view="brain"] #avatar,body[data-view="brain"] #avatar-restore{display:
 .map-card .brain-fact-text{font-size:13px}
 .map-card .brain-subbranches{justify-content:flex-start;padding:8px 0 4px}
 .map-card-more{width:100%;margin:8px 0 4px}
+/* Синапсы, импульсы, рождение, увядание и сон. */
+.map-synapse{fill:none;stroke:#cfa75a;stroke-opacity:.16;stroke-width:var(--w);stroke-dasharray:3 5;stroke-linecap:round;transition:stroke-opacity .2s}
+.map-synapse.used{stroke-opacity:.3;stroke-dasharray:none}
+.map-synapse.lit{stroke-opacity:.75}
+.brain-map.focusing .map-synapse:not(.lit){stroke-opacity:.06}
+.map-syn-spark{fill:#ffe9b8;opacity:.7}
+.map-impulse{fill:#fffaf0;filter:url(#map-glow)}
+.map-node.firing .map-dot{animation:map-fire 1.3s ease-out}
+.map-node.firing .map-node-body{opacity:1!important;filter:none!important}
+.map-core-ball{transform-box:fill-box;transform-origin:center}
+.map-core.firing .map-core-ball{animation:map-core-fire 1.3s ease-out}
+.map-birth{fill:none;stroke:#fff3cf;stroke-width:2;opacity:0;animation:map-pulse 1.6s ease-out 3}
+.map-node.born .map-node-body{animation:map-sprout 1.1s cubic-bezier(.3,1.6,.5,1) .6s both}
+.map-link.born{stroke:#fff3cf;stroke-opacity:.8;stroke-dasharray:600;stroke-dashoffset:600;animation:map-draw 1.2s ease-out forwards}
+.map-node.resting .map-node-body{opacity:.62;filter:saturate(.45)}
+.map-node.dormant .map-node-body{opacity:.38;filter:saturate(.15)}
+.map-node.resting .map-leaves,.map-node.dormant .map-leaves{animation-play-state:paused}
+.map-link.resting{stroke-opacity:.18}.map-link.dormant{stroke-opacity:.09}
+.map-node.resting:hover .map-node-body,.map-node.dormant:hover .map-node-body,.map-node.open .map-node-body{opacity:1;filter:none}
+.map-node-body{transition:opacity .8s,filter .8s}
+.map-wave{fill:none;stroke:#8fa6d8;stroke-width:1.2;opacity:0;transform-box:fill-box;transform-origin:center}
+.brain-map.sleeping{background:radial-gradient(ellipse at center,#141520 0%,#0b0b0e 66%)}
+.brain-map.sleeping .map-wave{animation:map-wave 7.2s ease-out infinite}
+.brain-map.sleeping .map-halo{animation-duration:12s}
+.brain-map.sleeping .map-node:not(.firing):not(:hover) .map-node-body{opacity:.55}
+.brain-map.sleeping .map-flows{opacity:.35}
+.brain-map.sleeping .map-leaves{animation-duration:calc(var(--spin) * 3)}
+.brain-map-sleep{position:absolute;left:14px;top:10px;margin:0;font-size:12px;letter-spacing:.04em;color:#a9b6d8;pointer-events:none;animation:map-fade 1.2s both}
+#brain-map-sleep[aria-pressed="true"]{color:#a9b6d8;border-color:#5f6d93}
+.map-card-rest{margin:0 0 6px;padding:8px 10px;border-radius:8px;background:var(--surface-3);font-size:12px;color:var(--muted)}
+.map-card-links{align-items:center;padding:2px 0 6px}
+.map-card-links-title{font-size:12px;color:var(--faint);margin-right:2px}
+.lg-synapse{width:16px;height:0;border-radius:0!important;border-top:1.5px dashed #cfa75a}
+.lg-rest{width:10px;height:10px;background:#7a6a4f;opacity:.55}
+@keyframes map-fire{0%{filter:brightness(2.4) drop-shadow(0 0 8px #fff3cf);transform:scale(1.35)}100%{filter:none;transform:scale(1)}}
+@keyframes map-core-fire{0%{transform:scale(1.25)}100%{transform:scale(1)}}
+@keyframes map-wave{from{opacity:.4;transform:scale(.35)}to{opacity:0;transform:scale(2.3)}}
 @keyframes map-spin{to{transform:rotate(360deg)}}
 @keyframes map-twinkle{50%{opacity:.7}}
 @keyframes map-breathe{50%{transform:scale(1.08);opacity:.75}}
@@ -308,3 +345,46 @@ body[data-view="brain"] #avatar,body[data-view="brain"] #avatar-restore{display:
 .level-bar{animation:level-fill 1s cubic-bezier(.2,.8,.3,1) both;animation-delay:calc(var(--i,0) * 80ms)}
 @keyframes level-fill{from{background-size:0 100%,auto}}
 @media(max-width:760px){.brain-map-panel .panel-head{flex-direction:column}.brain-map-actions{align-self:stretch;justify-content:space-between}.brain-map-svg{max-height:none}.map-card{left:4%!important;right:4%;width:auto;top:auto!important;bottom:8px;max-height:70%}}
+/* Самостоятельный рост. */
+.brain-idle-state{margin:4px 0 0;font-size:13px;color:var(--muted);display:flex;align-items:center;gap:8px}
+.brain-idle-state:before{content:"";width:8px;height:8px;border-radius:50%;background:var(--faint);flex-shrink:0}
+.brain-idle-state[data-state="waiting"]:before{background:var(--gold)}
+.brain-idle-state[data-state="working"]:before{background:#ffe2a0;box-shadow:0 0 8px #ffe2a0;animation:map-twinkle 1.2s ease-in-out infinite}
+.brain-idle-state[data-state="resting"]:before{background:#8fa6d8}
+.brain-idle-settings{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 24px;margin-top:14px}
+.brain-switch{display:flex;align-items:center;gap:10px;position:relative;cursor:pointer;font-size:14px;min-height:36px}
+.brain-switch input{position:absolute;left:0;width:34px;height:22px;margin:0;opacity:0;cursor:pointer}
+.brain-switch-track{display:block;width:34px;height:20px;border-radius:12px;background:var(--surface-3);border:1px solid var(--line-strong);position:relative;flex-shrink:0;pointer-events:none}
+.brain-switch-track:after{content:"";width:14px;height:14px;position:absolute;left:2px;top:2px;background:var(--muted);border-radius:50%;transition:transform .2s,background .2s}
+.brain-switch input:checked+.brain-switch-track{background:var(--gold-deep);border-color:var(--gold)}
+.brain-switch input:checked+.brain-switch-track:after{transform:translateX(14px);background:var(--gold-bright)}
+.brain-switch input:focus-visible+.brain-switch-track{outline:2px solid var(--gold);outline-offset:3px}
+.brain-switch input:disabled~span{opacity:.5}
+.brain-idle-field{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);min-height:36px;flex-wrap:wrap}
+.brain-idle-field select{background:var(--surface-2);color:var(--text);border:1px solid var(--line-strong);border-radius:6px;padding:5px 8px}
+.brain-idle-field select:disabled{opacity:.5}
+.brain-idle-note{margin:10px 0 0;font-size:12px}
+.brain-idle-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px;margin-top:18px}
+.brain-idle-columns h3,#brain-idle-insights h3{font:17px var(--serif);color:var(--gold-bright);margin:0 0 8px}
+.brain-idle-list{display:grid;gap:10px}
+.brain-idle-question,.brain-idle-insight{padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2)}
+.brain-idle-question p,.brain-idle-insight p{margin:0;font-size:14px;line-height:1.5}
+.brain-idle-actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.brain-idle-actions button,.brain-idle-reply button{min-height:34px;padding:7px 14px;font-size:13px;gap:8px}
+.brain-idle-reply{display:grid;gap:8px;margin-top:10px}
+.brain-idle-reply textarea{resize:vertical;width:100%;background:var(--surface);color:var(--text);border:1px solid var(--line-strong);border-radius:8px;padding:8px 10px;font-size:14px}
+.brain-idle-reply button{justify-self:start}
+.brain-idle-entry{padding:8px 0;border-bottom:1px solid var(--line)}
+.brain-idle-entry:last-child{border-bottom:0}
+.brain-idle-entry-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;font-size:13px}
+.brain-idle-entry-head strong{color:var(--gold-bright);font-weight:500}
+.brain-idle-entry p{margin:4px 0 0;font-size:13px;color:var(--muted)}
+.brain-idle-cloud{font-size:11px;color:#a9b6d8;border:1px solid #5f6d93;border-radius:10px;padding:0 7px}
+#brain-idle-insights{display:grid;gap:10px;margin-top:18px}
+#brain-idle-insights:empty{display:none}
+#brain-idle-insights>p{margin:-6px 0 0}
+.brain-idle-insight blockquote{margin:8px 0 6px;padding-left:10px;border-left:2px solid var(--gold-deep);font-size:13px;color:var(--muted)}
+.brain-idle-insight>span{font-size:12px}
+@media(max-width:760px){.brain-idle-settings,.brain-idle-columns{grid-template-columns:1fr}.brain-idle-panel .panel-head{flex-direction:column;align-items:stretch}}
+.brain-idle-field select{width:auto;flex:0 0 auto;min-height:0}
+@media(prefers-reduced-motion:reduce){.map-link.born{stroke-dasharray:none;stroke-dashoffset:0}}

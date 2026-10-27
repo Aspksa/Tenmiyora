@@ -842,7 +842,8 @@
       $('brain-files-count').textContent = stats.files ?? 0;
       $('brain-chat-count').textContent = stats.chat ?? 0;
       renderEvents();
-      await Promise.all([loadLab(), loadGrowth()]);
+      await Promise.all([loadLab(), loadGrowth(), loadActivity(), loadIdle()]);
+      mapBorn = newBranches(brainData.branches.map(row => row.id));
       renderMap();
     } catch (error) { message(error.message); }
     finally { brainLoading = false; refresh.classList.remove('spinning'); refresh.disabled = false; }
@@ -851,6 +852,28 @@
   const SVG_NS = 'http://www.w3.org/2000/svg';
   const MAP = {width: 1000, height: 640, rx: 1.5};
   let mapNodes = new Map(), mapFresh = {}, mapPlayed = false, openNodeId = null, mapTotal = 0, growthRun = 0;
+  let mapActivity = {synapses: [], alive: {}}, mapSynapses = [], mapBorn = new Set(), pulseSeen = null, sleepMode = null;
+  const KNOWN_KEY = 'tenmiyora.brain.known', DAY = 864e5;
+  async function loadActivity() {
+    try {
+      mapActivity = await request('brain/activity');
+      if (pulseSeen === null) pulseSeen = mapActivity.last_pulse || 0;
+    } catch { mapActivity = {synapses: [], alive: {}}; }
+  }
+  // Новые с прошлого визита ветки «рождаются» на карте. Первый визит — без рождений.
+  function newBranches(ids) {
+    let known = null;
+    try { known = JSON.parse(localStorage.getItem(KNOWN_KEY)); } catch { known = null; }
+    try { localStorage.setItem(KNOWN_KEY, JSON.stringify(ids)); } catch { /* без памяти браузера просто без рождений */ }
+    if (!Array.isArray(known)) return mapBorn;
+    const seen = new Set(known);
+    return new Set([...mapBorn, ...ids.filter(id => !seen.has(id))]);
+  }
+  // Когда ветку в последний раз пополняли или спрашивали: своё время или подветок.
+  function lastAlive(item) {
+    const own = Date.parse(mapActivity.alive?.[item.node.id] || '') || 0;
+    return Math.max(own, ...item.children.map(lastAlive));
+  }
   const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
   function svg(tag, attrs, className) {
     const node = document.createElementNS(SVG_NS, tag);
@@ -900,33 +923,57 @@
     const bend = polar(to.angle, ([0, 70, 165, 235, 285][Math.min(to.depth, 4)]));
     return `M${cx.toFixed(1)},${cy.toFixed(1)} Q${bend[0].toFixed(1)},${bend[1].toFixed(1)} ${to.x.toFixed(1)},${to.y.toFixed(1)}`;
   }
-  // Подпись не должна вылезать за край карты: ветку у края подписываем внутрь
-// и укорачиваем имя под оставшееся место (ширина символа — грубая оценка).
-function placeLabel(label, item) {
-  const root = item.depth === 1, font = MAP.narrow ? (root ? 21 : 17) : (root ? 15 : 12);
-  const char = font * .58, pad = 6, name = item.node.name;
-  const fit = space => {
-    const max = Math.max(4, Math.min(26, Math.floor(space / char)));
-    return name.length > max ? name.slice(0, max - 1) + '…' : name;
-  };
-  if (root) {
-    const text = fit(MAP.width - pad * 2), half = text.length * char / 2;
-    const shift = Math.max(pad + half - item.x, Math.min(0, MAP.width - pad - half - item.x));
-    label.setAttribute('x', shift.toFixed(1));
-    label.setAttribute('text-anchor', 'middle');
-    label.textContent = text;
-    return;
+  // Подпись ветки: короткая, в одну-две строки, и не вылезает за край карты.
+  // Длинное название переносится по словам; полное — во всплывающей подсказке и карточке.
+  const LABEL = {font: [13, 11], narrow: [18, 15], line: 1.2, perLine: 16};
+  function wrapName(name, perLine) {
+    const lines = [];
+    let line = '';
+    for (const word of name.split(/\s+/)) {
+      if (!line) line = word;
+      else if ((line + ' ' + word).length <= perLine) line += ' ' + word;
+      else { lines.push(line); line = word; }
+    }
+    if (line) lines.push(line);
+    if (lines.length > 2) lines.splice(1, lines.length, lines.slice(1).join(' '));
+    // Обрезаем по границе слова, чтобы не было «персоналом и ка…».
+    return lines.map(text => {
+      if (text.length <= perLine) return text;
+      const cut = text.slice(0, perLine - 1), space = cut.lastIndexOf(' ');
+      return (space > perLine / 3 ? cut.slice(0, space) : cut).trimEnd() + '…';
+    });
   }
-  const gap = item.size + 9, right = MAP.width - item.x - gap - pad, left = item.x - gap - pad;
-  let outward = Math.cos(item.angle) >= 0;
-  const wanted = Math.min(name.length, 26) * char;
-  if ((outward ? right : left) < wanted && (outward ? left : right) > (outward ? right : left)) outward = !outward;
-  label.setAttribute('x', (outward ? gap : -gap).toFixed(1));
-  label.setAttribute('text-anchor', outward ? 'start' : 'end');
-  label.textContent = fit(outward ? right : left);
-}
+  function placeLabel(label, item) {
+    const root = item.depth === 1, font = (MAP.narrow ? LABEL.narrow : LABEL.font)[root ? 0 : 1];
+    const char = font * .56, pad = 6, name = item.node.name;
+    const gap = item.size + 7, right = MAP.width - item.x - gap - pad, left = item.x - gap - pad;
+    let outward = Math.cos(item.angle) >= 0;
+    if (!root) {
+      const wanted = Math.min(name.length, LABEL.perLine) * char;
+      if ((outward ? right : left) < wanted && (outward ? left : right) > (outward ? right : left)) outward = !outward;
+    }
+    const room = root ? MAP.width - pad * 2 : (outward ? right : left);
+    const lines = wrapName(name, Math.max(5, Math.min(LABEL.perLine, Math.floor(room / char))));
+    const step = font * LABEL.line;
+    // Корень подписан над узлом (строки растут вверх), ветка — сбоку, по центру.
+    const first = root ? -item.size - 6 - (lines.length - 1) * step : 4 - (lines.length - 1) * step / 2;
+    let x = 0, anchor = 'middle';
+    if (root) {
+      const half = Math.max(...lines.map(text => text.length)) * char / 2;
+      x = Math.max(pad + half - item.x, Math.min(0, MAP.width - pad - half - item.x));
+    } else {
+      x = outward ? gap : -gap;
+      anchor = outward ? 'start' : 'end';
+    }
+    label.setAttribute('text-anchor', anchor);
+    label.replaceChildren(...lines.map((text, i) => {
+      const span = svg('tspan', {x: x.toFixed(1), y: (first + i * step).toFixed(1)});
+      span.textContent = text;
+      return span;
+    }));
+  }
 
-function renderMap() {
+  function renderMap() {
     const box = $('brain-map');
     closeMapCard();
     const narrow = box.clientWidth > 0 && box.clientWidth < 640;
@@ -955,13 +1002,27 @@ function renderMap() {
     const halo = svg('circle', {cx: MAP.width / 2, cy: MAP.height / 2, r: 150}, 'map-halo');
     halo.style.transformOrigin = `${MAP.width / 2}px ${MAP.height / 2}px`;
     root.append(sky, halo);
-    const links = svg('g', {}, 'map-links'), flows = svg('g', {}, 'map-flows'), nodes = svg('g', {}, 'map-nodes');
-    root.append(links, flows, nodes);
+    // Волны сна расходятся от ядра, когда Мозг «спит» и перебирает знания.
+    const waves = svg('g', {}, 'map-waves');
+    for (let i = 0; i < 3; i++) {
+      const wave = svg('ellipse', {cx: MAP.width / 2, cy: MAP.height / 2, rx: 120 * MAP.rx, ry: 120}, 'map-wave');
+      wave.style.animationDelay = i * 2.4 + 's';
+      waves.append(wave);
+    }
+    const synapses = svg('g', {}, 'map-synapses'), links = svg('g', {}, 'map-links'), flows = svg('g', {}, 'map-flows');
+    const nodes = svg('g', {}, 'map-nodes'), impulses = svg('g', {}, 'map-impulses');
+    root.append(waves, synapses, links, flows, impulses, nodes);
+    mapSynapses = [];
     const order = [...placed].sort((a, b) => String(a.node.created).localeCompare(String(b.node.created)) || a.depth - b.depth);
     order.forEach((item, index) => { item.order = index; });
+    const now = Date.now();
     placed.forEach((item, index) => {
-      const fresh = mapFresh[item.node.id] || 0;
-      const path = svg('path', {d: linkPath(item.parent, item), id: 'map-link-' + index}, 'map-link depth-' + item.depth + (fresh ? ' fresh' : ''));
+      const fresh = mapFresh[item.node.id] || 0, born = mapBorn.has(item.node.id);
+      // Давно не пополнялась и не понадобилась — ветка тускнеет; вопрос о ней снова её зажжёт.
+      const alive = lastAlive(item), idle = alive ? (now - alive) / DAY : 0;
+      item.idleDays = Math.floor(idle);
+      const rest = fresh || born ? '' : idle > 45 ? ' dormant' : idle > 14 ? ' resting' : '';
+      const path = svg('path', {d: linkPath(item.parent, item), id: 'map-link-' + index}, 'map-link depth-' + item.depth + (fresh ? ' fresh' : '') + (born ? ' born' : '') + rest);
       path.style.setProperty('--w', Math.max(.8, Math.min(4, Math.sqrt(item.total) * (item.depth === 1 ? .9 : .5))));
       path.style.setProperty('--o', item.order);
       links.append(path);
@@ -980,10 +1041,15 @@ function renderMap() {
       }
       const group = svg('g', {transform: `translate(${item.x.toFixed(1)} ${item.y.toFixed(1)})`, tabindex: 0, role: 'button',
         'aria-label': item.node.name + ': ' + knowledgeCount(item.total) + (fresh ? ', +' + fresh + ' за неделю' : '')},
-        'map-node depth-' + item.depth + (fresh ? ' fresh' : '') + (item.depth > 1 ? ' small' : ''));
+        'map-node depth-' + item.depth + (fresh ? ' fresh' : '') + (item.depth > 1 ? ' small' : '') + (born ? ' born' : '') + rest);
       group.style.setProperty('--o', item.order);
       const inner = svg('g', {}, 'map-node-body');
       if (fresh) inner.append(svg('circle', {r: item.size + 9}, 'map-aura'));
+      if (born) for (let ring = 0; ring < 2; ring++) {
+        const burst = svg('circle', {r: item.size + 6}, 'map-birth');
+        burst.style.animationDelay = (1 + ring * .5) + 's';
+        inner.append(burst);
+      }
       // Листья-знания вращаются вокруг ветки.
       const orbit = svg('g', {}, 'map-leaves');
       orbit.style.setProperty('--spin', (18 + (index % 5) * 6) + 's');
@@ -998,12 +1064,15 @@ function renderMap() {
         count.textContent = item.total;
         inner.append(count);
       }
-      const label = svg('text', {y: item.depth === 1 ? -item.size - 6 : 4}, 'map-label' + (item.depth === 1 ? ' root' : ''));
+      const tip = svg('title');
+      tip.textContent = item.node.name;
+      group.append(tip);
+      const label = svg('text', {}, 'map-label' + (item.depth === 1 ? ' root' : ''));
       placeLabel(label, item);
       inner.append(label);
-      if (fresh) {
+      if (fresh || born) {
         const badge = svg('text', {x: 0, y: item.size + (item.depth === 1 ? 16 : 13), 'text-anchor': 'middle'}, 'map-fresh');
-        badge.textContent = '+' + fresh;
+        badge.textContent = born ? 'новая' : '+' + fresh;
         inner.append(badge);
       }
       group.append(inner);
@@ -1015,9 +1084,30 @@ function renderMap() {
       nodes.append(group);
       mapNodes.set(item.node.id, {item, group, path});
     });
+    // Синапсы: дуги между темами с общими источниками или вместе нужными в ответах.
+    (mapActivity.synapses || []).forEach((link, index) => {
+      const a = mapNodes.get(link.a)?.item, b = mapNodes.get(link.b)?.item;
+      if (!a || !b) return;
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      const qx = mx + (MAP.width / 2 - mx) * .45, qy = my + (MAP.height / 2 - my) * .45;
+      const path = svg('path', {d: `M${a.x.toFixed(1)},${a.y.toFixed(1)} Q${qx.toFixed(1)},${qy.toFixed(1)} ${b.x.toFixed(1)},${b.y.toFixed(1)}`, id: 'map-syn-' + index},
+        'map-synapse' + (link.used ? ' used' : ''));
+      path.style.setProperty('--w', Math.min(3, .6 + Math.log2(1 + link.weight) * .45).toFixed(2));
+      synapses.append(path);
+      if (link.used && !calm()) {
+        const spark = svg('circle', {r: 1.6}, 'map-syn-spark');
+        const motion = svg('animateMotion', {dur: (6 + index % 5) + 's', begin: (index * .9).toFixed(1) + 's', repeatCount: 'indefinite', keyPoints: index % 2 ? '1;0' : '0;1', keyTimes: '0;1', calcMode: 'linear'});
+        const ref = svg('mpath');
+        ref.setAttribute('href', '#map-syn-' + index);
+        motion.append(ref);
+        spark.append(motion);
+        synapses.append(spark);
+      }
+      mapSynapses.push({a: link.a, b: link.b, path});
+    });
     // Ядро поверх всего: общий объём памяти.
     const core = svg('g', {transform: `translate(${MAP.width / 2} ${MAP.height / 2})`}, 'map-core');
-    core.append(svg('circle', {r: 52}, 'map-core-ring'), svg('circle', {r: 52}, 'map-core-ring late'), svg('circle', {r: 34, fill: 'url(#map-core)', filter: 'url(#map-glow)'}));
+    core.append(svg('circle', {r: 52}, 'map-core-ring'), svg('circle', {r: 52}, 'map-core-ring late'), svg('circle', {r: 34, fill: 'url(#map-core)', filter: 'url(#map-glow)'}, 'map-core-ball'));
     const coreCount = svg('text', {y: 6}, 'map-core-count');
     coreCount.textContent = total;
     const coreLabel = svg('text', {y: 52 + 20}, 'map-core-label');
@@ -1027,6 +1117,7 @@ function renderMap() {
     box.append(root);
     root.style.setProperty('--count', placed.length || 1);
     if (!placed.length) box.append(element('p', 'brain-map-empty', 'Загрузите документ на Диск или расскажите что-нибудь в чате — здесь вырастут первые ветки.'));
+    updateSleep();
     if (!mapPlayed && placed.length) { mapPlayed = true; playGrowth(); }
   }
   function highlightChain(item, on) {
@@ -1037,7 +1128,210 @@ function renderMap() {
       entry?.group.classList.toggle('lit', on);
       entry?.path.classList.toggle('lit', on);
     }
+    for (const link of mapSynapses) {
+      if (link.a === item.node.id || link.b === item.node.id) link.path.classList.toggle('lit', on);
+    }
   }
+  // Импульс вопроса: искра бежит от ядра по цепочке веток, ветки вспыхивают и просыпаются.
+  function flash(group) {
+    if (!group.isConnected) return;
+    group.classList.remove('firing', 'resting', 'dormant');
+    void group.getBoundingClientRect();
+    group.classList.add('firing');
+    setTimeout(() => group.classList.remove('firing'), 1400);
+  }
+  function firePulse(ids) {
+    const svgRoot = $('brain-map').querySelector('svg');
+    if (!svgRoot) return;
+    const layer = svgRoot.querySelector('.map-impulses'), core = svgRoot.querySelector('.map-core');
+    flash(core);
+    const step = calm() ? 0 : 420, lit = new Set();
+    for (const id of ids) {
+      const entry = mapNodes.get(id);
+      if (!entry) continue;
+      const chain = [];
+      for (let cur = entry.item; cur; cur = cur.parent) chain.unshift(cur);
+      chain.forEach((item, depth) => {
+        const target = mapNodes.get(item.node.id);
+        if (!calm()) setTimeout(() => {
+          if (!layer.isConnected) return;
+          const spark = svg('circle', {r: 3.4}, 'map-impulse');
+          const motion = svg('animateMotion', {dur: (step / 1000) + 's', begin: 'indefinite', fill: 'freeze'});
+          const ref = svg('mpath');
+          ref.setAttribute('href', '#' + target.path.id);
+          motion.append(ref);
+          spark.append(motion);
+          layer.append(spark);
+          motion.beginElement();
+          setTimeout(() => spark.remove(), step + 300);
+        }, depth * step);
+        if (!lit.has(item.node.id)) {
+          lit.add(item.node.id);
+          setTimeout(() => { flash(target.group); target.path.classList.remove('resting', 'dormant'); }, (depth + 1) * step);
+        }
+      });
+    }
+  }
+  async function pollPulses() {
+    if ($('brain-view').hidden || document.hidden || pulseSeen === null) return;
+    try {
+      const data = await request('brain/pulses?since=' + pulseSeen);
+      // База могла смениться (восстановление копии): начинаем отсчёт заново.
+      pulseSeen = data.last < pulseSeen ? data.last : Math.max(pulseSeen, ...data.pulses.map(p => p.id));
+      data.pulses.slice(-5).forEach((pulse, i) => setTimeout(() => firePulse(pulse.branches), i * 1100));
+    } catch { /* следующий опрос попробует снова */ }
+  }
+  setInterval(pollPulses, 4000);
+  // Ночью (23:00–7:00) Мозг «спит»: карта темнеет, по ней идут медленные волны.
+  function updateSleep() {
+    const box = $('brain-map'), hour = new Date().getHours();
+    // sleepMode — ручной выбор кнопкой с луной; null — по часам.
+    const asleep = sleepMode ?? (hour >= 23 || hour < 7 || idleState === 'working' || idleState === 'resting');
+    box.classList.toggle('sleeping', asleep);
+    let badge = box.querySelector('.brain-map-sleep');
+    if (asleep && !badge) {
+      badge = element('p', 'brain-map-sleep');
+      box.append(badge);
+    }
+    if (badge) badge.textContent = idleState === 'working' && idleTask ? 'Мозг спит и работает: ' + idleTask.toLowerCase() : 'Мозг спит и перебирает знания';
+    if (!asleep) badge?.remove();
+    const toggle = $('brain-map-sleep');
+    toggle.setAttribute('aria-pressed', String(asleep));
+  }
+  setInterval(updateSleep, 60000);
+
+  // Самостоятельный рост: настройки, состояние, вопросы к пользователю и журнал.
+  let idleState = null, idleTask = '', idleData = null, idleSaving = false;
+  const IDLE_TASKS = {exam: 'Самоэкзамен', gaps: 'Поиск пробелов', tidy: 'Порядок в темах', documents: 'Разбор документа моделью'};
+  async function loadIdle() {
+    try {
+      const data = await request('brain/idle');
+      if (!idleSaving) renderIdle(data);  // Не перебиваем ещё не сохранённый выбор.
+    }
+    catch (error) { $('brain-idle-state').textContent = error.message; }
+  }
+  function idleLine(data) {
+    const s = data.settings;
+    if (data.state === 'off') return 'Выключено. Мозг растёт только когда вы загружаете документы и пишете в чат.';
+    if (data.state === 'working') return 'Работает: ' + (IDLE_TASKS[data.task] || 'задача').toLowerCase() + '…';
+    if (data.state === 'resting') return 'Вы отдыхаете, Мозг тоже: текущие задачи сделаны, скоро проверит снова.';
+    const left = Math.max(1, Math.ceil((s.idle_minutes * 60 - data.idle_seconds) / 60));
+    return 'Ждёт тишины: начнёт через ' + left + ' мин после вашего последнего действия.';
+  }
+  function renderIdle(data) {
+    idleData = data;
+    const previous = idleState;
+    idleState = data.state; idleTask = IDLE_TASKS[data.task] || '';
+    if (previous !== idleState) updateSleep();
+    const s = data.settings;
+    $('brain-idle-state').textContent = idleLine(data);
+    $('brain-idle-state').dataset.state = data.state;
+    $('brain-idle-enabled').checked = s.enabled;
+    $('brain-idle-cloud').checked = s.cloud;
+    $('brain-idle-minutes').value = String(s.idle_minutes);
+    $('brain-idle-daily').value = String(s.cloud_daily);
+    $('brain-idle-run').disabled = !s.enabled || data.state === 'working';
+    for (const id of ['brain-idle-minutes', 'brain-idle-cloud']) $(id).disabled = !s.enabled;
+    $('brain-idle-daily').disabled = !s.enabled || !s.cloud;
+    $('brain-idle-note').textContent = !s.cloud ? 'Без модели Мозг сам себя экзаменует, ищет пробелы и наводит порядок в темах. Всё на компьютере, бесплатно.' :
+      !data.model_connected ? 'Чтобы разбирать документы, подключите модель: правый щелчок по аватару → Cloud.ru и модели.' :
+      'Сегодня запросов к модели: ' + data.cloud_used_today + ' из ' + s.cloud_daily + '. Тексты документов уходят в Cloud.ru только в этих пределах.';
+    // Тот же набор вопросов не перерисовываем: иначе опрос стирал бы недописанный ответ.
+    const questions = $('brain-idle-questions'), key = data.questions.map(q => q.id).join(',');
+    if (questions.dataset.key !== key || !questions.childElementCount) {
+      questions.dataset.key = key;
+      questions.replaceChildren();
+      if (!data.questions.length) questions.append(element('p', 'module-muted', 'Вопросов пока нет. Они появятся, когда Мозг найдёт пробелы.'));
+      for (const q of data.questions) questions.append(idleQuestion(q));
+    }
+    const log = $('brain-idle-log');
+    log.replaceChildren();
+    if (!data.log.length) log.append(element('p', 'module-muted', 'Здесь появится отчёт: что Мозг сделал, пока вас не было.'));
+    for (const item of data.log.slice(0, 8)) {
+      const row = element('div', 'brain-idle-entry');
+      const head = element('div', 'brain-idle-entry-head');
+      head.append(element('strong', '', item.task_name), element('span', 'module-muted', dayLabel(item.time) + ', ' + clock(item.time)));
+      if (item.cloud) head.append(element('span', 'brain-idle-cloud', 'Cloud.ru'));
+      row.append(head, element('p', '', item.summary));
+      log.append(row);
+    }
+    const insights = $('brain-idle-insights');
+    insights.replaceChildren();
+    if (data.insights.length) {
+      insights.append(element('h3', '', 'Выводы модели по документам'),
+        element('p', 'module-muted brain-idle-note', 'Это толкования модели, а не проверенные факты. Цитата сверена с документом.'));
+      for (const item of data.insights.slice(0, 6)) {
+        const card = element('div', 'brain-idle-insight');
+        card.append(element('p', '', item.text), element('blockquote', '', item.quote),
+          element('span', 'module-muted', item.file + (item.locator ? ' · ' + item.locator : '')));
+        insights.append(card);
+      }
+    }
+  }
+  async function idleAnswer(q, action, text) {
+    try {
+      const result = await request('brain/idle/question', {id: q.id, action, ...(text ? {text} : {})});
+      message(action === 'merge' ? 'Темы объединены в «' + result.merged_into + '».' : action === 'answer' ? 'Спасибо, Мозг запомнил ответ.' : 'Вопрос скрыт.');
+      if (action === 'dismiss') await loadIdle(); else await loadBrain();
+    } catch (error) { message(error.message); }
+  }
+  function idleQuestion(q) {
+    const card = element('div', 'brain-idle-question');
+    card.append(element('p', '', q.text));
+    const actions = element('div', 'brain-idle-actions');
+    if (q.kind === 'merge') {
+      actions.append(button('Объединить', () => idleAnswer(q, 'merge'), 'primary-button'),
+        button('Не надо', () => idleAnswer(q, 'dismiss'), 'secondary-button'));
+    } else {
+      actions.append(button('Ответить', () => {
+        actions.hidden = true;
+        const form = element('form', 'brain-idle-reply');
+        const area = element('textarea');
+        area.rows = 3; area.maxLength = 4000; area.minLength = 70;
+        area.setAttribute('aria-label', 'Ваш ответ');
+        area.placeholder = 'Напишите своими словами, хотя бы пару предложений: Мозг запомнит это как сообщение из чата.';
+        const send = element('button', 'primary-button', 'Запомнить');
+        send.type = 'submit';
+        form.append(area, send);
+        form.addEventListener('submit', event => { event.preventDefault(); idleAnswer(q, 'answer', area.value.trim()); });
+        card.append(form);
+        area.focus();
+      }, 'primary-button'), button('Скрыть', () => idleAnswer(q, 'dismiss'), 'secondary-button'));
+    }
+    card.append(actions);
+    return card;
+  }
+  // Изменения во время сохранения не теряются: копятся и уходят следующим запросом.
+  let idlePending = null;
+  async function saveIdle(change) {
+    idlePending = {...idlePending, ...change};
+    if (idleSaving) return;
+    idleSaving = true;
+    try {
+      while (idlePending) {
+        const next = idlePending;
+        idlePending = null;
+        try { idleData = await request('brain/idle/settings', next); }
+        catch (error) { message(error.message); }
+      }
+    } finally {
+      idleSaving = false;
+      if (idleData) renderIdle(idleData);
+    }
+  }
+  $('brain-idle-enabled').addEventListener('change', event => saveIdle({enabled: event.target.checked}));
+  $('brain-idle-minutes').addEventListener('change', event => saveIdle({idle_minutes: Number(event.target.value)}));
+  $('brain-idle-daily').addEventListener('change', event => saveIdle({cloud_daily: Number(event.target.value)}));
+  $('brain-idle-cloud').addEventListener('change', event => {
+    if (event.target.checked && !confirm('В режиме ожидания Мозг будет отправлять тексты документов с Диска в Cloud.ru, чтобы модель разобрала их. ' +
+      'Это может стоить денег по тарифу Cloud.ru. Число запросов ограничено дневным лимитом. Включить?')) { event.target.checked = false; return; }
+    saveIdle({cloud: event.target.checked});
+  });
+  $('brain-idle-run').addEventListener('click', async () => {
+    try { await request('brain/idle/run', {}); message('Мозг начал работу.'); setTimeout(loadIdle, 1500); }
+    catch (error) { message(error.message); }
+  });
+  setInterval(() => { if (!$('brain-view').hidden && !document.hidden) loadIdle(); }, 15000);
   // Повтор роста: ветки появляются в порядке, в котором их узнал Мозг.
   function playGrowth() {
     const svgRoot = $('brain-map').querySelector('svg');
@@ -1081,7 +1375,18 @@ function renderMap() {
     const stats = element('p', 'map-card-stats', knowledgeCount(item.total) + (item.children.length ? ' · ' + item.children.length + ' ' + plural(item.children.length, 'подветка', 'подветки', 'подветок') : '') + (fresh ? ' · +' + fresh + ' за неделю' : ''));
     const list = element('div', 'map-card-list');
     list.append(element('div', 'brain-skeleton tall'));
-    card.append(head, stats, list);
+    card.append(head, stats);
+    if (item.idleDays > 14 && !fresh) card.append(element('p', 'map-card-rest',
+      'Не пополнялась и не была нужна ' + item.idleDays + ' ' + plural(item.idleDays, 'день', 'дня', 'дней') + '. Спросите о ней в чате, и ветка снова загорится.'));
+    const linked = mapSynapses.filter(link => link.a === item.node.id || link.b === item.node.id)
+      .map(link => mapNodes.get(link.a === item.node.id ? link.b : link.a)?.item).filter(Boolean);
+    if (linked.length) {
+      const row = element('div', 'brain-subbranches map-card-links');
+      row.append(element('span', 'map-card-links-title', 'Связана с:'));
+      linked.slice(0, 6).forEach(other => row.append(button(other.node.name, () => openMapCard(other), 'brain-chip')));
+      card.append(row);
+    }
+    card.append(list);
     if (item.children.length) {
       const chips = element('div', 'brain-subbranches');
       item.children.forEach(child => chips.append(button(child.node.name, () => openMapCard(child), 'brain-chip')));
@@ -1135,6 +1440,7 @@ function renderMap() {
     if (openNodeId !== null && !inside) closeMapCard();
   });
   $('brain-map-replay').addEventListener('click', playGrowth);
+  $('brain-map-sleep').addEventListener('click', () => { sleepMode = !$('brain-map').classList.contains('sleeping'); updateSleep(); });
   let mapResize;
   addEventListener('resize', () => {
     clearTimeout(mapResize);
@@ -1166,6 +1472,7 @@ function renderMap() {
       if (!data.results.length) panel.append(element('p', 'module-muted',
         'В Мозге нет знаний, достаточно точно подходящих под запрос «' + query + '». Попробуйте другие слова или загрузите документ на Диск.'));
       for (const item of data.results) panel.append(knowledgeCard(item, item.branch, item.branch_id));
+      pollPulses();
     } catch (error) {
       if (ticket === searchRequest) panel.replaceChildren(emptyState(error.message, 'search'));
     }
