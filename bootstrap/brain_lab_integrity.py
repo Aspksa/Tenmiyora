@@ -77,8 +77,10 @@ def integrity_report(db,generation,expected_trials=None):
                "guardrail_negative_abstention","guardrail_source_revocation",
                "guardrail_duplicate_resistance","guardrail_counterargument")
     comparison=[k for k in fields if k.startswith("lab8_")]
-    required=[*mandatory,*comparison]
-    if len(comparison)!=8 or any(key not in minima for key in required):
+    attacks=[k for k in fields if k.startswith("attack_")]
+    required=[*mandatory,*comparison,*attacks]
+    if len(comparison)!=8 or len(attacks)!=5 or any(
+            key not in minima for key in required):
         raise ValueError("Протокол не включает обязательные защитные метрики.")
     score=min(minima[key] for key in required)
     if not isinstance(record["quality_score"],(int,float)) or (
