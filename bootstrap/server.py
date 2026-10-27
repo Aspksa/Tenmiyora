@@ -25,6 +25,7 @@ import urllib.request
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from knowledge import KnowledgeStore, MAX_UPLOAD
 from semantic import make_messages, parse_topics, samples_from_text
+from chat_journal import ChatJournal
 from soul_engine import DEFAULT_SOUL, validate_soul, evolve, persona_guidance
 from soul_maturation import maturation_guidance
 from soul_romance import DEFAULT_ROMANCE, validate as validate_romance, progress as romance_progress, guidance as romance_guidance, evolve_from_feedback as romance_evolve
@@ -158,6 +159,7 @@ class Workspace:
         self.directory = Path(directory) if directory else None
         self._temporary_knowledge = tempfile.TemporaryDirectory() if directory is None else None
         self.knowledge = KnowledgeStore(self.directory if self.directory else self._temporary_knowledge.name)
+        self.chat_journal = ChatJournal(self.directory if self.directory else self._temporary_knowledge.name)
         self.document_lock = threading.Lock()
         self.semantic_queue = queue.Queue(maxsize=12)
         self.semantic_guard = threading.Lock()
@@ -488,6 +490,7 @@ class Workspace:
                 if not model or not self.data["connection"]["key"]:
                     raise AppError("Подключите модель в настройках Tenmiyora.", 409)
                 user_message = {"role": "user", "content": content.strip(), "time": datetime.now(timezone.utc).isoformat()}
+                self.chat_journal.append("user", content, user_message["time"])
                 self.data["messages"].append(user_message)
                 before_soul = deepcopy(self.data["soul"])
                 before_experience = deepcopy(self.data["experience"])
@@ -573,6 +576,7 @@ class Workspace:
             except (KeyError, IndexError, TypeError, ValueError):
                 raise AppError("Модель вернула пустой или неподдерживаемый ответ. Попробуйте другую текстовую модель.", 502) from None
             with self.lock:
+                self.chat_journal.append("assistant", answer, datetime.now(timezone.utc).isoformat())
                 self.data["messages"].append({"role": "assistant", "content": answer, "time": datetime.now(timezone.utc).isoformat(),
                                                 "finish_reason": result["choices"][0].get("finish_reason")})
                 self.save()
@@ -673,6 +677,7 @@ class Workspace:
             raise AppError("Дождитесь завершения ответа перед очисткой.", 409)
         try:
             with self.lock:
+                self.chat_journal.clear()
                 self.data["messages"] = []
                 self.save()
             return {"ok": True}

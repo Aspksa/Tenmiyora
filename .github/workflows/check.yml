@@ -155,6 +155,9 @@ jobs:
       - name: Проверить единый цикл Мозг Логика Эволюция
         run: python bootstrap/ci_timed.py --label 'Brain Logic Evolution' -- python -m unittest discover -s tests -p 'test_brain_logic_evolution.py' -v
 
+      - name: Проверить точное сохранение и разбор чата
+        run: python bootstrap/ci_timed.py --label 'Chat verbatim' -- python -m unittest discover -s tests -p 'test_chat_journal.py' -v
+
       - name: Проверить шесть инвариантов Лаборатории
         run: python bootstrap/ci_timed.py --label 'Метаморфные проверки' -- python bootstrap/brain_lab_metamorphic.py --check --output .runtime/quality-reports/brain-lab-metamorphic.json
       - name: Проверить блокировки принятия и SHA-пломбу инвариантов
