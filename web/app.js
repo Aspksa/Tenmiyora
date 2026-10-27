@@ -248,7 +248,7 @@
       let el;
       if (block.t === 'p') { el = document.createElement('p'); renderInline(block.c, el); }
       else if (block.t === 'heading') { el = document.createElement('h' + Math.min(6, block.level + 2)); renderInline(block.c, el); }
-      else if (block.t === 'ul' || block.t === 'ol') { el = document.createElement(block.t); if (block.t === 'ol' && block.start !== 1) el.start = block.start; for (const item of block.items) { const li = document.createElement('li'); renderInline(item, li); el.append(li); } }
+      else if (block.t === 'ul' || block.t === 'ol') { el = document.createElement(block.t); if (block.t === 'ol' && block.start !== 1) el.start = block.start; for (const item of block.items) { const li = document.createElement('li'); renderInline(item.c, li); renderBlocks(item.children, li); el.append(li); } }
       else if (block.t === 'quote') { el = document.createElement('blockquote'); renderBlocks(block.c, el); }
       else if (block.t === 'rule') el = document.createElement('hr');
       else if (block.t === 'table') {

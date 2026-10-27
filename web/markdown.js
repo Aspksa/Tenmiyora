@@ -25,7 +25,8 @@
   };
   const isRule = (line) => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(line) && line.includes('-');
   const LIST = /^\s*([-*+]|\d{1,3}[.)])\s+(.*)$/;
-  function blocks(source) {
+  const MAX_DEPTH = 6, indentOf = (line) => line.match(/^ */)[0].length;
+  function blocks(source, depth = 0) {
     const lines = String(source).replace(/\r\n?/g, '\n').split('\n'), out = [];
     let i = 0;
     while (i < lines.length) {
@@ -51,19 +52,27 @@
       if (/^\s*>/.test(line)) {
         const quote = [];
         while (i < lines.length && /^\s*>/.test(lines[i])) quote.push(lines[i++].replace(/^\s*>\s?/, ''));
-        out.push({t: 'quote', c: blocks(quote.join('\n'))});
+        out.push(depth >= MAX_DEPTH ? {t: 'p', c: inline(quote.join('\n'))} : {t: 'quote', c: blocks(quote.join('\n'), depth + 1)});
         continue;
       }
       const item = line.match(LIST);
       if (item) {
-        const ordered = /\d/.test(item[1]), start = ordered ? parseInt(item[1], 10) : 1, items = [];
+        const ordered = /\d/.test(item[1]), start = ordered ? parseInt(item[1], 10) : 1, base = indentOf(line), items = [];
         while (i < lines.length) {
           const next = lines[i].match(LIST);
-          if (next && /\d/.test(next[1]) === ordered) { items.push([next[2]]); i++; }
-          else if (lines[i].trim() && /^\s{2,}\S/.test(lines[i]) && !/^\s*```/.test(lines[i]) && items.length) { items[items.length - 1].push(lines[i].trim()); i++; }
-          else break;
+          if (!next || indentOf(lines[i]) !== base || /\d/.test(next[1]) !== ordered) break;
+          const children = []; i++;
+          while (i < lines.length) {
+            let j = i;
+            while (j < lines.length && !lines[j].trim()) j++;
+            if (j >= lines.length || indentOf(lines[j]) <= base) break;
+            while (i < j) children.push(lines[i++]);
+            children.push(lines[i++]);
+          }
+          const cut = children.reduce((min, row) => row.trim() ? Math.min(min, indentOf(row)) : min, Infinity);
+          items.push({c: inline(next[2]), children: depth >= MAX_DEPTH || !children.length ? [] : blocks(children.map((row) => row.slice(Math.min(cut, indentOf(row)))).join('\n'), depth + 1)});
         }
-        out.push({t: ordered ? 'ol' : 'ul', start, items: items.map((parts) => inline(parts.join(' ')))});
+        out.push({t: ordered ? 'ol' : 'ul', start, items});
         continue;
       }
       const paragraph = [];
