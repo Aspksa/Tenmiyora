@@ -550,19 +550,6 @@ class KnowledgeStore:
         with self.lock, self.db() as conn:
             return growth(conn, days, offset_minutes)
 
-    def brain_insight(self, offset_minutes=0):
-        """Досье, деньги и предчувствия. Пересчёт только когда Мозг что-то прочитал или наступил новый день."""
-        from brain_insight import insight, signature, local_today
-        today = local_today(offset_minutes)
-        with self.lock, self.db() as conn:
-            key = (signature(conn), today)
-            cached = getattr(self, "_insight_cache", None)
-            if cached and cached[0] == key:
-                return cached[1]
-            result = insight(conn, today=today)
-        self._insight_cache = (key, result)
-        return result
-
     def search_brain(self, question, limit=12):
         """Поиск по Мозгу для интерфейса: те же строгие правила, что и для чата."""
         if not isinstance(question, str) or len(question.strip()) < 2:
