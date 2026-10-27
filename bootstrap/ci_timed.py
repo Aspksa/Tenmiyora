@@ -36,6 +36,7 @@ def main(argv=None):
         safe_label = args.label.replace("|", "/").replace("\n", " ")
         try:
             with Path(summary).open("a", encoding="utf-8") as output:
+                output.write("| Этап | Секунды | Результат |\n|---|---:|---|\n")
                 output.write(f"| {safe_label} | {elapsed:.2f} | {status} |\n")
         except OSError as exc:
             print(f"Warning: could not write CI timing summary: {exc}", file=sys.stderr)
