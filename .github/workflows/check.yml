@@ -51,7 +51,7 @@ jobs:
       - name: Установить зависимости защитных регрессий
         run: python bootstrap/ci_timed.py --label 'Установка pypdf' -- python -m pip install -r requirements-ci.txt
       - name: Проверить целостность Лаборатории развития
-        run: python bootstrap/ci_timed.py --label 'Целостность лаборатории' -- python -m unittest discover -s tests -p 'test_brain_lab_integrity.py' -v
+        run: python bootstrap/ci_timed.py --label 'Целостность лаборатории' -- python bootstrap/ci_unittest_profile.py --pattern test_brain_lab_integrity.py
       - name: Проверить негативные сценарии Лаборатории
         run: python bootstrap/ci_timed.py --label 'Негативные сценарии' -- python -m unittest discover -s tests -p 'test_brain_lab_adversarial.py' -v
 
@@ -76,7 +76,7 @@ jobs:
           cache: 'pip'
           cache-dependency-path: requirements-ci.txt
       - name: Проверить PowerShell 5.1
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && matrix.shard == 0
         shell: powershell
         run: |
           foreach ($script in Get-ChildItem bootstrap,tests -Filter *.ps1) {
