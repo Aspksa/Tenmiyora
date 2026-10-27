@@ -6,7 +6,7 @@ outcomes, reasons and preferred approaches. Never mine third-party documents for
 from copy import deepcopy
 import re
 
-DEFAULT_EXPERIENCE={"version":1,"episodes":[],"habits":{},"revision":0}
+DEFAULT_EXPERIENCE={"version":1,"episodes":[],"habits":{},"revision":0,"verified":{"disk_saved":0,"document_reviewed":0}}
 KINDS={"успех":"success","ошибка":"error","урок":"lesson"}
 APPROACHES={"сначала план","сразу результат","сначала проверка","короткий ответ","подробный ответ"}
 MAX_EPISODES=80
@@ -33,7 +33,14 @@ def validate_experience(raw):
     revision=raw.get("revision",0)
     if type(revision) is not int or not 0<=revision<=1000000:
         revision=0
-    return {"version":1,"episodes":valid,"habits":clean,"revision":revision}
+    raw_verified=raw.get("verified",{})
+    if not isinstance(raw_verified,dict):
+        raw_verified={}
+    verified={key: value if type(value) is int and 0<=value<=100000 else 0
+              for key,value in (("disk_saved",raw_verified.get("disk_saved")),
+                                ("document_reviewed",raw_verified.get("document_reviewed")))}
+    return {"version":1,"episodes":valid,"habits":clean,"revision":revision,
+            "verified":verified}
 
 
 def observe(current,message):
@@ -42,7 +49,7 @@ def observe(current,message):
         return data
     text=message.strip().casefold()
     if text=="очисти память опыта":
-        return {"version":1,"episodes":[],"habits":{},"revision":data["revision"]+1}
+        return {"version":1,"episodes":[],"habits":{},"revision":data["revision"]+1,"verified":{"disk_saved":0,"document_reviewed":0}}
     match=PATTERN.fullmatch(text)
     if not match:
         return data
@@ -60,6 +67,16 @@ def observe(current,message):
     return data
 
 
+def verified_outcome(current, operation):
+    """Only backend-confirmed operations, never model or user claims."""
+    state=validate_experience(current)
+    if operation not in ("disk_saved","document_reviewed"):
+        return state
+    state["verified"][operation]=min(100000,state["verified"][operation]+1)
+    state["revision"]=min(1000000,state["revision"]+1)
+    return state
+
+
 def reflect(data):
     """Factual summary of explicit observations, not invented introspection."""
     state=validate_experience(data)
@@ -68,7 +85,8 @@ def reflect(data):
                 key=lambda x:(-x[1],x[0]))
     return {"episodes":len(state["episodes"]),"successes":counts["success"],
             "errors":counts["error"],"lessons":counts["lesson"],
-            "supported_habits":[k for k,_ in best],"revision":state["revision"]}
+            "supported_habits":[k for k,_ in best],"revision":state["revision"],
+            "verified":state["verified"].copy()}
 
 
 def examine(before,after):
@@ -85,10 +103,14 @@ def examine(before,after):
 def guidance(data):
     state=validate_experience(data)
     report=reflect(state)
-    if not state["episodes"]:
+    if not state["episodes"] and not any(state["verified"].values()):
         return ""
     habits=", ".join(report["supported_habits"][:3]) or "пока нет устойчиво подтверждённых"
-    return ("Локально подтверждённый опыт общения: успешных эпизодов "
+    return ("Фактически подтверждённые операции приложения: сохранено файлов "
+            +str(report["verified"]["disk_saved"])+", завершено проверенных анализов документов "
+            +str(report["verified"]["document_reviewed"])+". "
+            "Эти счётчики не доказывают полезность результата для пользователя. "
+            "Локально подтверждённый опыт общения: успешных эпизодов "
             +str(report["successes"])+", ошибок "+str(report["errors"])
             +", уроков "+str(report["lessons"])
             +". Подтверждённые предпочтительные подходы: "+habits
