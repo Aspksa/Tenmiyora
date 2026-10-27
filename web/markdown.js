@@ -23,7 +23,7 @@
     cells.push(cell.trim());
     return cells.map((value) => value.replace(/\\\|/g, '|'));
   };
-  const isRule = (line) => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(line) && line.includes('-');
+  const isRule = (line) => line.includes('-') && line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').every((cell) => /^:?-{2,}:?$/.test(cell.trim()));
   const LIST = /^\s*([-*+]|\d{1,3}[.)])\s+(.*)$/;
   const MAX_DEPTH = 6, indentOf = (line) => line.match(/^ */)[0].length;
   function blocks(source, depth = 0) {

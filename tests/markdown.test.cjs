@@ -57,3 +57,11 @@ test('nested lists, long quote runs and blank lines inside list code', () => {
   assert.equal(tree[0].items.length, 2);
   assert.equal(tree[0].items[0].children[0].v, 'a\n\nb');
 });
+test('whitespace-heavy input stays fast and tables still parse', () => {
+  const started = Date.now();
+  const gap = ' '.repeat(40000);
+  for (const text of ['| header |\n' + gap + 'x', '- ' + gap + 'x', gap + '- a', '- - ' + gap + 'x', '> ' + gap, '1.' + gap + 'x']) parse(text);
+  assert.ok(Date.now() - started < 1500);
+  assert.equal(parse('| a | b |\n| :-- | --: |\n| 1 | 2 |')[0].t, 'table');
+  assert.equal(parse('a | b\n--|--\n1 | 2')[0].t, 'table');
+});
