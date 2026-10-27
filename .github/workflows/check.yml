@@ -53,6 +53,11 @@ jobs:
       - name: Проверить обе независимые защитные регрессии параллельно
         run: python bootstrap/ci_timed.py --label 'Защитные регрессии параллельно' -- python bootstrap/ci_parallel_quick.py
 
+      - name: Проверить шесть инвариантов Лаборатории
+        run: python bootstrap/ci_timed.py --label 'Метаморфные проверки' -- python bootstrap/brain_lab_metamorphic.py --check --output .runtime/quality-reports/brain-lab-metamorphic.json
+      - name: Проверить блокировки принятия и SHA-пломбу инвариантов
+        run: python bootstrap/ci_timed.py --label 'Контроль регрессий лаборатории' -- python -m unittest discover -s tests -p 'test_brain_lab_metamorphic.py' -v
+
       - name: Три самых медленных этапа
         if: always()
         run: python bootstrap/ci_timed.py --report
@@ -114,6 +119,8 @@ jobs:
         run: python bootstrap/ci_timed.py --label '8 экзаменов' -- python bootstrap/brain_lab_eight.py --check --output .runtime/quality-reports/brain-lab-eight.json
       - name: Проверить 5 негативных экзаменов
         run: python bootstrap/ci_timed.py --label '5 негативных экзаменов' -- python bootstrap/brain_lab_adversarial.py --check --output .runtime/quality-reports/brain-lab-adversarial.json
+      - name: Проверить шесть метаморфных испытаний
+        run: python bootstrap/ci_timed.py --label '6 инвариантов' -- python bootstrap/brain_lab_metamorphic.py --check --output .runtime/quality-reports/brain-lab-metamorphic.json
       - name: Проверить 12 внутренних аудитов
         run: python bootstrap/ci_timed.py --label '12 аудитов' -- python bootstrap/brain_lab_audit.py --check --output .runtime/quality-reports/brain-lab-audit.json
 
