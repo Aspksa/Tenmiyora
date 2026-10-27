@@ -689,7 +689,7 @@
   // Живая карта знаний: ядро, ветки по кругу, знания-листья, потоки и рост.
   const SVG_NS = 'http://www.w3.org/2000/svg';
   const MAP = {width: 1000, height: 640, rx: 1.5};
-  let mapNodes = new Map(), mapFresh = {}, mapPlayed = false, openNodeId = null;
+  let mapNodes = new Map(), mapFresh = {}, mapPlayed = false, openNodeId = null, mapTotal = 0, growthRun = 0;
   const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
   function svg(tag, attrs, className) {
     const node = document.createElementNS(SVG_NS, tag);
@@ -748,7 +748,7 @@
     box.replaceChildren();
     mapNodes = new Map();
     const placed = layoutMap();
-    const total = brainData.branches.reduce((sum, item) => sum + item.facts, 0);
+    const total = mapTotal = brainData.branches.reduce((sum, item) => sum + item.facts, 0);
     $('brain-map-count').textContent = brainData.branches.length ? brainData.branches.length + ' ' + plural(brainData.branches.length, 'ветка', 'ветки', 'веток') : '';
     const root = svg('svg', {viewBox: `0 0 ${MAP.width} ${MAP.height}`, role: 'group', 'aria-label': 'Карта знаний Мозга'}, 'brain-map-svg');
     const defs = svg('defs');
@@ -862,8 +862,9 @@
     void svgRoot.getBoundingClientRect();
     svgRoot.classList.add('growing');
     const counter = svgRoot.querySelector('.map-core-count');
-    const target = Number(counter.textContent) || 0, started = performance.now(), duration = 600 + mapNodes.size * 90;
+    const run = ++growthRun, target = mapTotal, started = performance.now(), duration = 600 + mapNodes.size * 90;
     const tick = now => {
+      if (run !== growthRun) return;
       const t = Math.min(1, (now - started) / duration);
       counter.textContent = Math.round(target * (1 - Math.pow(1 - t, 3)));
       if (t < 1) requestAnimationFrame(tick);
@@ -883,9 +884,8 @@
     const card = element('div', 'map-card');
     card.setAttribute('role', 'dialog');
     card.setAttribute('aria-label', item.node.name);
-    const left = item.x / MAP.width * 100, top = item.y / MAP.height * 100;
+    const left = item.x / MAP.width * 100;
     card.style.left = Math.min(70, Math.max(2, left > 50 ? left - 34 : left + 3)) + '%';
-    card.style.top = Math.min(54, Math.max(2, top - 18)) + '%';
     const head = element('div', 'map-card-head');
     const titles = element('div');
     const chain = ancestors(item.node);
@@ -906,6 +906,7 @@
       card.append(chips);
     }
     box.append(card);
+    positionMapCard(card, item);
     card.addEventListener('keydown', event => { if (event.key === 'Escape') { closeMapCard(); mapNodes.get(item.node.id)?.group.focus(); } });
     close.focus({preventScroll: true});
     const ticket = ++factsRequest;
@@ -920,12 +921,21 @@
         const more = button('Показать все (' + (facts.length >= 100 ? '100+' : facts.length) + ')', () => {
           more.remove();
           facts.slice(3).forEach(fact => list.append(knowledgeCard(fact)));
+          positionMapCard(card, item);
         }, 'secondary-button map-card-more');
         list.append(more);
       }
+      positionMapCard(card, item);
     } catch (error) {
       if (ticket === factsRequest) list.replaceChildren(emptyState(error.message));
     }
+  }
+  // Карточка целиком внутри карты: рядом с веткой, но не ниже нижнего края.
+  function positionMapCard(card, item) {
+    if (MAP.narrow) return;
+    const box = $('brain-map'), height = box.clientHeight, gap = 8;
+    const wanted = item.y / MAP.height * height - 60;
+    card.style.top = Math.max(gap, Math.min(wanted, height - card.offsetHeight - gap)) + 'px';
   }
   function openBranch(id) {
     const entry = mapNodes.get(id);
@@ -934,7 +944,9 @@
     openMapCard(entry.item);
   }
   document.addEventListener('click', event => {
-    if (openNodeId !== null && !event.target.closest('.map-card,.map-node,.brain-chip,.level-name')) closeMapCard();
+    // composedPath видит и элементы, удалённые обработчиком этого же клика.
+    const inside = event.composedPath().some(node => node instanceof Element && node.matches('.map-card,.map-node,.brain-chip,.level-name'));
+    if (openNodeId !== null && !inside) closeMapCard();
   });
   $('brain-map-replay').addEventListener('click', playGrowth);
   let mapResize;

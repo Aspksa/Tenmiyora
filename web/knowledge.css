@@ -249,7 +249,7 @@ body[data-view="brain"] #avatar,body[data-view="brain"] #avatar-restore{display:
 .lg-branch{width:10px;height:10px;background:radial-gradient(#ecca7c,#7a5e2c);border:1px solid #ecca7c}
 .lg-leaf{width:5px;height:5px;background:#ecca7c}
 .lg-fresh{width:10px;height:10px;border:1.5px solid #ffe2a0;box-shadow:0 0 8px #ffe2a0}
-.map-card{position:absolute;width:min(340px,92%);max-height:78%;overflow:auto;padding:14px 16px 10px;background:#1d1a14f2;border:1px solid var(--gold-deep);border-radius:12px;box-shadow:var(--shadow);backdrop-filter:blur(6px);animation:brain-rise .2s ease-out;z-index:3}
+.map-card{position:absolute;top:8px;width:min(340px,92%);max-height:calc(100% - 16px);overflow:auto;padding:14px 16px 10px;background:#1d1a14f2;border:1px solid var(--gold-deep);border-radius:12px;box-shadow:var(--shadow);backdrop-filter:blur(6px);animation:brain-rise .2s ease-out;z-index:3}
 .map-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
 .map-card-head h3{font:19px var(--serif);color:var(--gold-bright);margin:0}
 .map-card-path{display:block;font-size:11px;color:var(--faint);margin-bottom:2px}
