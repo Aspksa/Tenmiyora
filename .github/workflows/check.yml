@@ -43,11 +43,12 @@ jobs:
         run: |
           node --check web/app.js
           node --check web/layout.js
+          node --check web/markdown.js
           node --check web/knowledge.js
       - name: Проверить базовые регрессии тестового разделения
         run: python bootstrap/ci_timed.py --label 'Разделение тестов' -- python -m unittest discover -s tests -p 'test_test_shard.py' -v
       - name: Проверить веб-макет
-        run: python bootstrap/ci_timed.py --label 'Веб-макет' -- node --test tests/layout.test.cjs
+        run: python bootstrap/ci_timed.py --label 'Веб-макет' -- node --test tests/layout.test.cjs tests/markdown.test.cjs
       - name: Установить зависимости защитных регрессий
         run: python bootstrap/ci_timed.py --label 'Установка pypdf' -- python -m pip install -r requirements-ci.txt
       - name: Проверить обе независимые защитные регрессии параллельно

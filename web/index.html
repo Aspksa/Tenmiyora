@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/knowledge.css">
   <script src="/layout.js" defer></script>
+  <script src="/markdown.js" defer></script>
   <script src="/app.js" defer></script>
   <script src="/knowledge.js" defer></script>
 </head>
@@ -37,6 +38,7 @@
   <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
   <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h1M3 12h1M3 18h1"/></symbol>
   <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></symbol>
   <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
 </svg>
 <div class="app-shell">
@@ -57,7 +59,6 @@
           <div class="hero-copy"><h1>Tenmiyora</h1><p>Разговор, память и файлы — на вашем компьютере.</p><button class="primary-button" data-action="chat">Начать разговор<svg><use href="#i-arrow"/></svg></button><span class="hero-status" id="conversation-summary">Ваш первый разговор ждёт вас</span></div>
           <div class="hero-art" aria-hidden="true"><div class="orbit orbit-outer"></div><div class="orbit orbit-inner"></div></div>
         </div>
-        <p class="gesture-guide"><span class="guide-mark">✦</span>Щелчок по аватару — чат, правый щелчок — настройки. Аватар можно перетаскивать.</p>
       </section>
       <section id="brain-view" class="view knowledge-view brain-view" hidden>
         <section class="brain-stage" aria-labelledby="brain-title">
@@ -151,7 +152,14 @@
     </main>
   </div>
 </div>
-<button id="avatar" class="avatar" aria-label="Tenmiyora: левый щелчок — чат, правый — настройки. Можно перетаскивать." aria-haspopup="dialog" title="Чат — левый щелчок · Настройки — правый"><img src="/assets/tenmiyora-avatar.png" alt="Tenmiyora — бело-золотая многохвостая лисица" draggable="false"><span class="avatar-label"><span class="live-dot"></span>Tenmiyora<span class="avatar-grip">⠿</span></span></button>
+<button id="avatar" class="avatar" data-state="idle" aria-label="Tenmiyora. Щелчок — чат, правый щелчок — меню. Можно перетаскивать." aria-haspopup="menu"><span class="avatar-aura" aria-hidden="true"></span><img src="/assets/tenmiyora-avatar.png" alt="Tenmiyora — бело-золотая многохвостая лисица" draggable="false"><span class="avatar-sparks" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span></button>
+<div id="avatar-menu" class="avatar-menu" role="menu" aria-label="Меню Tenmiyora" hidden>
+  <button type="button" role="menuitem" data-menu="chat" aria-label="Чат" title="Чат"><svg><use href="#i-chat"/></svg></button>
+  <button type="button" role="menuitem" data-menu="ask" aria-label="Спросить Мозг" title="Спросить Мозг"><svg><use href="#i-search"/></svg></button>
+  <button type="button" role="menuitem" data-menu="disk" aria-label="Диск" title="Диск"><svg><use href="#i-disk"/></svg></button>
+  <button type="button" role="menuitem" data-menu="hide" aria-label="Скрыть аватар" title="Скрыть аватар"><svg><use href="#i-minus"/></svg></button>
+  <button type="button" role="menuitem" data-menu="settings" aria-label="Настройки" title="Настройки"><svg><use href="#i-settings"/></svg></button>
+</div>
 <button id="avatar-restore" class="avatar-restore" hidden aria-label="Показать аватар Tenmiyora"><svg><use href="#i-spark"/></svg><span>Tenmiyora</span></button>
 <section id="chat-window" class="floating-window chat-window" role="dialog" aria-label="Разговор с Tenmiyora" hidden>
   <header id="chat-handle" class="window-header"><div class="window-identity"><div class="mini-portrait"><img src="/assets/tenmiyora-avatar.png" alt="" draggable="false"></div><div><strong>Tenmiyora</strong><small id="chat-model-status">Модель ещё не подключена</small></div></div><div class="window-actions"><button class="text-button" id="clear-chat">Очистить</button><button class="icon-button" data-action="connection" aria-label="Подключение модели"><svg><use href="#i-settings"/></svg></button><button class="icon-button" id="chat-close" aria-label="Свернуть чат"><svg><use href="#i-minus"/></svg></button></div></header>

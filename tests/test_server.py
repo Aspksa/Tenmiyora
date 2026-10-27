@@ -49,7 +49,7 @@ class ServerTests(unittest.TestCase):
         return {"Cookie": f"{self.server.cookie_name}={self.server.token}", "X-Tenmiyora-Client": "web", "Content-Type": "application/json"}
 
     def test_assets_are_whitelisted_and_api_requires_browser_session(self):
-        for path in ("/styles.css", "/app.js", "/layout.js", "/assets/tenmiyora-avatar.png", "/assets/mark.svg"):
+        for path in ("/styles.css", "/app.js", "/layout.js", "/markdown.js", "/assets/tenmiyora-avatar.png", "/assets/mark.svg"):
             with self.subTest(path=path):
                 self.assertEqual(self.request(path)[0], 200)
         self.assertEqual(self.request("/api/state")[0], 403)
