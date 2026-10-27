@@ -59,6 +59,9 @@ jobs:
       - name: Сравнить точность до и после роста памяти
         run: python bootstrap/ci_timed.py --label 'Рост качества знаний' -- python bootstrap/knowledge_growth_exam.py --check --output .runtime/quality-reports/knowledge-growth.json
 
+      - name: Проверить надёжное чтение PDF
+        run: python bootstrap/ci_timed.py --label 'Устойчивость PDF' -- python -m unittest discover -s tests -p 'test_pdf_robust.py' -v
+
       - name: Проверить шесть инвариантов Лаборатории
         run: python bootstrap/ci_timed.py --label 'Метаморфные проверки' -- python bootstrap/brain_lab_metamorphic.py --check --output .runtime/quality-reports/brain-lab-metamorphic.json
       - name: Проверить блокировки принятия и SHA-пломбу инвариантов
