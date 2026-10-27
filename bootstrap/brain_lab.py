@@ -22,6 +22,7 @@ CORE_FILES=(
     # Включаем саму лабораторию: изменение логики экзамена/принятия
     # недопустимо скрывать от цифровой подписи алгоритма.
     "brain_lab.py","brain_lab_audit.py","brain_lab_eight.py",
+    "brain_lab_integrity.py",
     "knowledge.py","memory_engine.py","topic_router.py","topic_discovery.py",
     "topic_aliases.py","semantic.py","natural_relations.py","knowledge_relations.py",
     "knowledge_paths.py","document_understanding.py","document_deep_analysis.py",
@@ -118,6 +119,9 @@ def init_schema(db):
     for name in ("algorithm_signature","suite_signature"):
         if name not in columns:
             db.execute(f"ALTER TABLE brain_lab_generations ADD COLUMN {name} TEXT")
+    experiments={r["name"] for r in db.execute("PRAGMA table_info(brain_lab_experiments)")}
+    if "integrity_sha256" not in experiments:
+        db.execute("ALTER TABLE brain_lab_experiments ADD COLUMN integrity_sha256 TEXT")
 
 
 def signature(db):
@@ -139,6 +143,12 @@ def signature(db):
            FROM knowledge_edges ORDER BY left_id,right_id,relation,source_type,source_id"""),
         "coverage":("document_coverage","""SELECT file_id,file_sha,is_complete,notes
            FROM document_coverage ORDER BY file_id"""),
+        "segments":("document_segments","""SELECT file_id,file_sha,ordinal,kind,locator,section,excerpt
+           FROM document_segments ORDER BY file_id,ordinal"""),
+        "facts":("facts","""SELECT branch,source_type,source_id,excerpt,locator
+           FROM facts ORDER BY branch,source_type,source_id,excerpt,locator"""),
+        "borrowings":("file_borrowing","""SELECT left_id,right_id,overlap,method
+           FROM file_borrowing ORDER BY left_id,right_id"""),
         "suggestions":("relation_suggestions","""SELECT file_id,file_sha,subject,predicate,object,status
               FROM relation_suggestions ORDER BY id"""),
         "provenance":("file_provenance","""SELECT file_id,file_sha,declared_author,declared_origin
@@ -379,6 +389,9 @@ def run_experiment(db,trials=3):
       (generation_id,baseline_id,created,verdict,regressions_json,differences_json)
       VALUES(?,?,?,?,?,?)""",(new,baseline["id"] if baseline else None,when,
                               verdict,stable_json(regressions),stable_json(differences)))
+    from brain_lab_integrity import seal_experiment,integrity_report
+    seal_experiment(db,new)
+    integrity_report(db,new,expected_trials=trials)
     return {"generation":new,"trials":trials,"baseline":baseline["id"] if baseline else None,
             "verdict":verdict,"minimum_metrics":worst,"score":score,
             "regressions":regressions,"quality_gate_failures":sorted({
@@ -401,6 +414,8 @@ def accept(db,generation):
       WHERE g.id=?""",(generation,)).fetchone()
     if not item or item["status"]!="evaluated":
         raise ValueError("Поколение отсутствует или уже обработано.")
+    from brain_lab_integrity import integrity_report
+    integrity_report(db,generation)
     if item["verdict"] not in ("first_baseline","candidate_for_manual_review",
                                "baseline_requalification"):
         raise ValueError("Нельзя принять результат с регрессией либо без нового эксперимента.")
