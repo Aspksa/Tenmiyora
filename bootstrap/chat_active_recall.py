@@ -10,6 +10,9 @@ from chat_semantic import validate_claim, private
 STOP={"мне","тебе","нравится","предпочитаю","люблю","какой","какая","какие","что","мой","моя","это","было","есть","раньше","сейчас","помнишь","помни","пожалуйста","вопрос","про","для","свой","из","или","мне","теперь","раньше","по","тому","всё","все","хочу","планирую","делаю","была","были"}
 WORDS=re.compile(r"[a-zа-яё0-9]{3,}",re.I)
 LIMIT=4
+MAX_CANDIDATES_SCAN=800
+MIN_QUERY_TOKEN_LENGTH=4
+SHORT_TOPICS={"чай","кот","сон","рис","код","дом"}
 
 # Conservative endings for Russian topic matching, not unrestricted stemming.
 ENDINGS=("иями","ями","ами","ого","ему","ыми","ими","иях","ах","ях","ов","ев","ей","ой","ий","ый","ая","ое","ые","ам","ям","ом","ем","у","ю","а","я","ы","и","е")
@@ -23,7 +26,8 @@ def normalize(word):
     return word
 
 def tokens(text):
-    return {normalize(x) for x in (w.casefold() for w in WORDS.findall(text)) if x not in STOP}
+    return {normalize(x) for x in (w.casefold() for w in WORDS.findall(text))
+            if x not in STOP and (len(normalize(x))>=MIN_QUERY_TOKEN_LENGTH or normalize(x) in SHORT_TOPICS)}
 
 def recall(journal,question,*,limit=LIMIT,exclude_turn_id=None):
     if not isinstance(question,str) or not 0<len(question)<=5000 or private(question):
@@ -35,8 +39,10 @@ def recall(journal,question,*,limit=LIMIT,exclude_turn_id=None):
         rows=db.execute(
             "SELECT c.turn_id,c.kind,c.start,c.end,c.fingerprint,c.polarity,c.status,"
             "t.text,t.digest,t.role FROM candidates c JOIN turns t ON t.id=c.turn_id "
-            "ORDER BY c.turn_id DESC,c.start DESC LIMIT 800").fetchall()
+            "ORDER BY c.turn_id DESC,c.start DESC LIMIT ?",(MAX_CANDIDATES_SCAN,)).fetchall()
     scored=[]
+    # A shared commonplace word alone is not evidence of the same subject.
+    # Source integrity and exact candidate matching remain mandatory.
     for turn,kind,start,end,key,polarity,status,original,digest,role in rows:
         claim={"kind":kind,"start":start,"end":end,"key":key,"polarity":polarity,"status":status}
         if role!="user" or status!="unverified" or turn==exclude_turn_id:
@@ -49,11 +55,13 @@ def recall(journal,question,*,limit=LIMIT,exclude_turn_id=None):
         matches=tokens(excerpt)&terms
         if not matches:
             continue
-        scored.append((len(matches),turn,{"turn_id":turn,"kind":kind,
+        exact=len({w.casefold() for w in WORDS.findall(excerpt)} &
+                  {w.casefold() for w in WORDS.findall(question)})
+        scored.append((len(matches),exact,turn,{"turn_id":turn,"kind":kind,
                        "excerpt":excerpt,"certainty":"unverified_user_statement",
                        "polarity":polarity}))
-    scored.sort(key=lambda x:(-x[0],-x[1]))
-    return [row for _,_,row in scored[:max(0,min(LIMIT,int(limit)))]]
+    scored.sort(key=lambda x:(-x[0],-x[1],-x[2]))
+    return [row for _,_,_,row in scored[:max(0,min(LIMIT,int(limit)))]]
 
 def prompt_context(rows):
     if not rows:
