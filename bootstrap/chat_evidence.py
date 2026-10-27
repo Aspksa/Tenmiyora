@@ -8,11 +8,11 @@ import hashlib
 import re
 
 PATTERNS=(
- ("preference",re.compile(r"^я предпочитаю (.{4,180})[.!]?$",re.I)),
- ("preference",re.compile(r"^мне нравится (.{4,180})[.!]?$",re.I)),
- ("preference",re.compile(r"^мне не нравится (.{4,180})[.!]?$",re.I)),
- ("plan",re.compile(r"^я планирую (.{4,180})[.!]?$",re.I)),
- ("uncertainty",re.compile(r"^я не знаю (.{4,180})[.!?]?$",re.I)),
+ ("preference",re.compile(r"^я предпочитаю (.{2,180})[.!]?$",re.I)),
+ ("preference",re.compile(r"^мне нравится (.{2,180})[.!]?$",re.I)),
+ ("preference",re.compile(r"^мне не нравится (.{2,180})[.!]?$",re.I)),
+ ("plan",re.compile(r"^я планирую (.{2,180})[.!]?$",re.I)),
+ ("uncertainty",re.compile(r"^я не знаю (.{2,180})[.!?]?$",re.I)),
 )
 MAX_CANDIDATES=200
 
