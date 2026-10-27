@@ -173,6 +173,9 @@ jobs:
         run: python bootstrap/windows_release_smoke.py
       - name: Проверить 16 сценариев обновления на Windows
         run: python -m unittest discover -s tests -p 'test_release_sixteen_gates.py' -v
+      - name: Реальное обновление работающей Tenmiyora на Windows
+        shell: powershell
+        run: '& tests/windows-project-update-smoke.ps1'
       - name: Реальный запуск BAT и проверка сервера Windows
         shell: powershell
         run: '& tests/windows-real-launch-smoke.ps1'
