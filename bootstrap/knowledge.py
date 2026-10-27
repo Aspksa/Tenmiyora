@@ -472,6 +472,11 @@ class KnowledgeStore:
             FROM effective""").fetchone()
         return {"facts": row["facts"], "files": row["files"], "chat": row["chat"] or 0}
 
+    def brain_growth(self, days=30, offset_minutes=0):
+        from brain_growth import growth
+        with self.lock, self.db() as conn:
+            return growth(conn, days, offset_minutes)
+
     def search_brain(self, question, limit=12):
         """Поиск по Мозгу для интерфейса: те же строгие правила, что и для чата."""
         if not isinstance(question, str) or len(question.strip()) < 2:

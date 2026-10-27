@@ -555,7 +555,7 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/state":
             if self.authorized(browser=True):
                 self.json_reply(200, self.server.workspace.public())
-        elif path in ("/api/brain", "/api/brain/facts", "/api/brain/search", "/api/brain/lab", "/api/disk", "/api/disk/download", "/api/document"):
+        elif path in ("/api/brain", "/api/brain/facts", "/api/brain/search", "/api/brain/growth", "/api/brain/lab", "/api/disk", "/api/disk/download", "/api/document"):
             if not self.authorized(browser=True):
                 return
             try:
@@ -567,6 +567,8 @@ class Handler(BaseHTTPRequestHandler):
                     self.json_reply(200, store.branches())
                 elif path == "/api/brain/facts":
                     self.json_reply(200, store.facts(int(value("branch"))))
+                elif path == "/api/brain/growth":
+                    self.json_reply(200, store.brain_growth(value("days") or 30, value("offset") or 0))
                 elif path == "/api/brain/search":
                     self.json_reply(200, store.search_brain(value("q")))
                 elif path == "/api/brain/lab":

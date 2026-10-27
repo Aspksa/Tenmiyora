@@ -580,12 +580,149 @@
         ? ('Поколение №'+result.generation+' · '+result.verdict+' · '
           +result.trials+' испытания; без изменения весов и кода.')
         : 'Локальная проверка пробелов завершена.';
-      await loadLab();
+      await Promise.all([loadLab(), loadGrowth()]);
     } catch(error) { $('brain-lab-status').textContent=error.message; }
     finally {brainLabBusy=false;scan.disabled=false;exam.disabled=false;$('brain-lab-status').classList.remove('busy');}
   }
   $('brain-lab-scan').addEventListener('click',()=>runLab('scan'));
   $('brain-lab-exam').addEventListener('click',()=>runLab('experiment'));
+
+  // Рост Мозга: график по дням, дневник недели и уровни тем.
+  function shortDay(value, withMonth) {
+    const day = new Date(value + 'T12:00:00');
+    return day.toLocaleDateString('ru-RU', withMonth ? {day: 'numeric', month: 'short'} : {day: 'numeric'});
+  }
+  function niceMax(value) {
+    if (value <= 4) return 4;
+    const step = Math.pow(10, Math.floor(Math.log10(value)));
+    for (const k of [1, 2, 2.5, 5, 10]) if (k * step >= value) return k * step;
+    return value;
+  }
+  function renderGrowthChart(series) {
+    const box = $('brain-growth-chart');
+    box.replaceChildren();
+    const added = series.reduce((sum, day) => sum + day.added, 0);
+    const total = series.length ? series[series.length - 1].total : 0;
+    $('brain-growth-summary').textContent = added ?
+      'Всего ' + knowledgeCount(total) + ', за 30 дней +' + added + '. Столбец показывает новые знания за день.' :
+      'За 30 дней новых знаний не появилось. Загрузите документ на Диск или расскажите что-нибудь в чате.';
+    const top = niceMax(Math.max(...series.map(day => day.added), 1));
+    const plot = element('div', 'growth-plot');
+    const grid = element('div', 'growth-grid');
+    for (const value of [top, top / 2, 0]) {
+      const line = element('div', 'growth-gridline');
+      line.append(element('span', '', Number.isInteger(value) ? value : value.toFixed(1)));
+      grid.append(line);
+    }
+    const bars = element('div', 'growth-bars');
+    bars.setAttribute('role', 'img');
+    bars.setAttribute('aria-label', 'Новые знания по дням за 30 дней: всего ' + added);
+    const tip = element('div', 'growth-tip');
+    tip.hidden = true;
+    const today = series.length ? series[series.length - 1].date : '';
+    series.forEach((day, index) => {
+      const col = element('div', 'growth-col' + (day.date === today ? ' today' : ''));
+      col.tabIndex = 0;
+      const bar = element('span', 'growth-bar' + (day.added ? '' : ' empty'));
+      bar.style.height = (day.added ? Math.max(2, day.added / top * 100) : 0) + '%';
+      col.append(bar);
+      const show = () => {
+        tip.replaceChildren(element('strong', '', shortDay(day.date, true)),
+          element('span', '', '+' + day.added + ' · всего ' + day.total),
+          ...(day.quality != null ? [element('span', '', 'экзамен ' + (day.quality * 100).toFixed(1) + '%')] : []));
+        tip.hidden = false;
+        const left = (index + .5) / series.length * 100;
+        tip.style.left = Math.min(88, Math.max(12, left)) + '%';
+      };
+      col.addEventListener('mouseenter', show);
+      col.addEventListener('focus', show);
+      col.addEventListener('mouseleave', () => { tip.hidden = true; });
+      col.addEventListener('blur', () => { tip.hidden = true; });
+      bars.append(col);
+    });
+    plot.append(grid, bars, tip);
+    const axis = element('div', 'growth-axis');
+    for (const index of [0, Math.floor(series.length / 2), series.length - 1]) {
+      if (series[index]) axis.append(element('span', '', index === series.length - 1 ? 'сегодня' : shortDay(series[index].date, true)));
+    }
+    const table = element('table', 'sr-only');
+    const head = element('tr');
+    head.append(element('th', '', 'День'), element('th', '', 'Новых знаний'), element('th', '', 'Всего'));
+    table.append(head);
+    for (const day of series) {
+      const row = element('tr');
+      row.append(element('td', '', day.date), element('td', '', day.added), element('td', '', day.total));
+      table.append(row);
+    }
+    box.append(plot, axis, table);
+  }
+  function diaryLine(iconName, strong, rest) {
+    const line = element('li', 'diary-line');
+    const mark = element('span', 'diary-icon');
+    mark.append(svgIcon(iconName));
+    const text = element('p');
+    text.append(element('strong', '', strong));
+    if (rest) text.append(document.createTextNode(' ' + rest));
+    line.append(mark, text);
+    return line;
+  }
+  function renderDiary(diary) {
+    const box = $('brain-diary');
+    box.replaceChildren();
+    $('brain-diary-range').textContent = shortDay(diary.since, true) + ' – ' + shortDay(diary.until, true);
+    const list = element('ul', 'diary-list');
+    if (diary.knowledge) list.append(diaryLine('spark', '+' + knowledgeCount(diary.knowledge),
+      diary.from_chat ? '(из них ' + diary.from_chat + ' из чата)' : ''));
+    if (diary.documents) list.append(diaryLine('file', diary.documents + ' ' + plural(diary.documents, 'новый документ', 'новых документа', 'новых документов') + ':',
+      diary.document_names.join(', ') + (diary.documents > diary.document_names.length ? ' и другие' : '')));
+    if (diary.branches) list.append(diaryLine('brain', plural(diary.branches, 'Новая ветка:', 'Новые ветки:', 'Новые ветки:'),
+      diary.branch_names.join(', ') + (diary.branches > diary.branch_names.length ? ' и другие' : '')));
+    if (diary.top_topics.length) list.append(diaryLine('arrow', 'Быстрее всего росли:',
+      diary.top_topics.map(topic => topic.name + ' (+' + topic.week + ')').join(', ')));
+    if (diary.exams) list.append(diaryLine('check', diary.exams + ' ' + plural(diary.exams, 'экзамен', 'экзамена', 'экзаменов') + ',',
+      'лучший результат ' + (diary.best_quality * 100).toFixed(1) + '%'));
+    if (diary.gaps) list.append(diaryLine('search', 'Найдено пробелов: ' + diary.gaps, '— их можно посмотреть в Лаборатории'));
+    for (const skill of diary.skills) list.append(diaryLine('settings', 'Навык «' + skill.name + '»',
+      skill.status === 'approved' ? 'одобрен' : skill.status === 'proposed' ? 'предложен' : 'отключён'));
+    if (!list.children.length) box.append(emptyState('За эту неделю Мозг ничего нового не узнал. Новые документы и сообщения в чате появятся здесь.', 'spark'));
+    else box.append(list);
+  }
+  function renderLevels(topics) {
+    const box = $('brain-levels');
+    box.replaceChildren();
+    if (!topics.length) { box.append(emptyState('Темы появятся, когда в Мозге будут знания.')); return; }
+    const largest = Math.max(...topics.map(topic => topic.count), 1);
+    for (const topic of topics) {
+      const row = element('div', 'level-row');
+      const head = element('div', 'level-head');
+      const name = button(topic.name, () => openBranch(topic.id), 'level-name');
+      name.title = 'Открыть ветку «' + topic.name + '»';
+      const badge = element('span', 'level-badge level-' + topic.level);
+      const dots = element('span', 'level-dots');
+      dots.setAttribute('aria-hidden', 'true');
+      for (let i = 1; i <= 4; i++) dots.append(element('i', i <= topic.level ? 'on' : ''));
+      badge.append(dots, document.createTextNode(topic.level_name));
+      head.append(name, badge);
+      const bar = element('span', 'level-bar');
+      bar.style.setProperty('--fill', Math.max(3, Math.round(topic.count / largest * 100)) + '%');
+      const meta = element('small', 'level-meta', knowledgeCount(topic.count) + ' · ' + topic.sources + ' ' +
+        plural(topic.sources, 'источник', 'источника', 'источников') + (topic.week ? ' · +' + topic.week + ' за неделю' : ''));
+      row.append(head, bar, meta);
+      box.append(row);
+    }
+    box.append(element('p', 'module-muted level-note',
+      'Уровень растёт с объёмом знаний и числом независимых источников: Начальный, Растущий, Уверенный, Глубокий. Это мера покрытия, а не проверка истинности.'));
+  }
+  async function loadGrowth() {
+    try {
+      const data = await request('brain/growth?' + new URLSearchParams({days: 30, offset: -new Date().getTimezoneOffset()}));
+      renderGrowthChart(data.series);
+      renderDiary(data.diary);
+      renderLevels(data.topics);
+    } catch (error) {
+      $('brain-growth-chart').replaceChildren(emptyState(error.message, 'spark'));
+    }
+  }
 
   async function loadBrain() {
     if (brainLoading) return;
@@ -605,7 +742,7 @@
       if (selectedBranch !== null && !brainData.branches.some(item => item.id === selectedBranch)) resetDetail();
       renderTree();
       renderEvents();
-      await loadLab();
+      await Promise.all([loadLab(), loadGrowth()]);
     } catch (error) { message(error.message); }
     finally { brainLoading = false; refresh.classList.remove('spinning'); refresh.disabled = false; }
   }

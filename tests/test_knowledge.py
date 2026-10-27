@@ -141,6 +141,13 @@ class KnowledgeApiTests(unittest.TestCase):
         self.assertEqual(results[0]["source_id"], file_id)
         status, body, _ = self.call("GET", "/api/brain/search?q=")
         self.assertEqual(status, 400)
+        status, body, _ = self.call("GET", "/api/brain/growth?days=7&offset=180")
+        self.assertEqual(status, 200, body)
+        growth = json.loads(body)
+        self.assertEqual(len(growth["series"]), 7)
+        self.assertEqual(growth["series"][-1]["total"], brain["stats"]["facts"])
+        status, _, _ = self.call("GET", "/api/brain/growth?days=abc")
+        self.assertEqual(status, 400)
     def test_chat_uses_context_from_disk(self):
         store = self.host.workspace
         store.knowledge.upload("python.txt", "Python можно тестировать с использованием библиотеки unittest и простого SQLite.".encode())
