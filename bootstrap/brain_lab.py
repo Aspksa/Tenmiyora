@@ -351,9 +351,22 @@ def run_experiment(db,trials=3):
         algorithm_signature,suite_signature FROM brain_lab_generations
         WHERE status='accepted' ORDER BY id DESC LIMIT 1""").fetchone()
     comparable=bool(baseline and baseline["suite_signature"]==suite)
-    reference=json.loads(baseline["metrics_json"]) if comparable else None
+    reference=None
+    if comparable:
+        try:
+            candidate=json.loads(baseline["metrics_json"])
+        except (ValueError,TypeError):
+            candidate=None
+        # Never silently compare against only the subset of surviving
+        # metrics: removing a failed metric could appear as an improvement.
+        if (not isinstance(candidate,dict) or set(candidate)!=set(worst)
+                or any(type(v) not in (int,float) or not math.isfinite(v)
+                       or not 0<=v<=1 for v in candidate.values())):
+            comparable=False
+        else:
+            reference=candidate
     differences={key:round(value-reference[key],6) for key,value in worst.items()
-                 if reference is not None and key in reference}
+                 if reference is not None}
     regressions=sorted(key for key,delta in differences.items() if delta< -1e-8)
     if all_failures:
         verdict="failed_quality_gate"
