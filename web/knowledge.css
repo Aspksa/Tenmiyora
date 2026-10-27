@@ -309,3 +309,46 @@ body[data-view="brain"] #avatar,body[data-view="brain"] #avatar-restore{display:
 .level-bar{animation:level-fill 1s cubic-bezier(.2,.8,.3,1) both;animation-delay:calc(var(--i,0) * 80ms)}
 @keyframes level-fill{from{background-size:0 100%,auto}}
 @media(max-width:760px){.brain-map-panel .panel-head{flex-direction:column}.brain-map-actions{align-self:stretch;justify-content:space-between}.brain-map-svg{max-height:none}.map-card{left:4%!important;right:4%;width:auto;top:auto!important;bottom:8px;max-height:70%}}
+/* Самостоятельный рост. */
+.brain-idle-state{margin:4px 0 0;font-size:13px;color:var(--muted);display:flex;align-items:center;gap:8px}
+.brain-idle-state:before{content:"";width:8px;height:8px;border-radius:50%;background:var(--faint);flex-shrink:0}
+.brain-idle-state[data-state="waiting"]:before{background:var(--gold)}
+.brain-idle-state[data-state="working"]:before{background:#ffe2a0;box-shadow:0 0 8px #ffe2a0;animation:map-twinkle 1.2s ease-in-out infinite}
+.brain-idle-state[data-state="resting"]:before{background:#8fa6d8}
+.brain-idle-settings{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 24px;margin-top:14px}
+.brain-switch{display:flex;align-items:center;gap:10px;position:relative;cursor:pointer;font-size:14px;min-height:36px}
+.brain-switch input{position:absolute;left:0;width:34px;height:22px;margin:0;opacity:0;cursor:pointer}
+.brain-switch-track{display:block;width:34px;height:20px;border-radius:12px;background:var(--surface-3);border:1px solid var(--line-strong);position:relative;flex-shrink:0;pointer-events:none}
+.brain-switch-track:after{content:"";width:14px;height:14px;position:absolute;left:2px;top:2px;background:var(--muted);border-radius:50%;transition:transform .2s,background .2s}
+.brain-switch input:checked+.brain-switch-track{background:var(--gold-deep);border-color:var(--gold)}
+.brain-switch input:checked+.brain-switch-track:after{transform:translateX(14px);background:var(--gold-bright)}
+.brain-switch input:focus-visible+.brain-switch-track{outline:2px solid var(--gold);outline-offset:3px}
+.brain-switch input:disabled~span{opacity:.5}
+.brain-idle-field{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);min-height:36px;flex-wrap:wrap}
+.brain-idle-field select{background:var(--surface-2);color:var(--text);border:1px solid var(--line-strong);border-radius:6px;padding:5px 8px}
+.brain-idle-field select:disabled{opacity:.5}
+.brain-idle-note{margin:10px 0 0;font-size:12px}
+.brain-idle-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px;margin-top:18px}
+.brain-idle-columns h3,#brain-idle-insights h3{font:17px var(--serif);color:var(--gold-bright);margin:0 0 8px}
+.brain-idle-list{display:grid;gap:10px}
+.brain-idle-question,.brain-idle-insight{padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2)}
+.brain-idle-question p,.brain-idle-insight p{margin:0;font-size:14px;line-height:1.5}
+.brain-idle-actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.brain-idle-actions button,.brain-idle-reply button{min-height:34px;padding:7px 14px;font-size:13px;gap:8px}
+.brain-idle-reply{display:grid;gap:8px;margin-top:10px}
+.brain-idle-reply textarea{resize:vertical;width:100%;background:var(--surface);color:var(--text);border:1px solid var(--line-strong);border-radius:8px;padding:8px 10px;font-size:14px}
+.brain-idle-reply button{justify-self:start}
+.brain-idle-entry{padding:8px 0;border-bottom:1px solid var(--line)}
+.brain-idle-entry:last-child{border-bottom:0}
+.brain-idle-entry-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;font-size:13px}
+.brain-idle-entry-head strong{color:var(--gold-bright);font-weight:500}
+.brain-idle-entry p{margin:4px 0 0;font-size:13px;color:var(--muted)}
+.brain-idle-cloud{font-size:11px;color:#a9b6d8;border:1px solid #5f6d93;border-radius:10px;padding:0 7px}
+#brain-idle-insights{display:grid;gap:10px;margin-top:18px}
+#brain-idle-insights:empty{display:none}
+#brain-idle-insights>p{margin:-6px 0 0}
+.brain-idle-insight blockquote{margin:8px 0 6px;padding-left:10px;border-left:2px solid var(--gold-deep);font-size:13px;color:var(--muted)}
+.brain-idle-insight>span{font-size:12px}
+@media(max-width:760px){.brain-idle-settings,.brain-idle-columns{grid-template-columns:1fr}.brain-idle-panel .panel-head{flex-direction:column;align-items:stretch}}
+.brain-idle-field select{width:auto;flex:0 0 auto;min-height:0}
+@media(prefers-reduced-motion:reduce){.map-link.born{stroke-dasharray:none;stroke-dashoffset:0}}

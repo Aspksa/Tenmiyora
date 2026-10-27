@@ -68,6 +68,18 @@ class BrainPulseTests(unittest.TestCase):
         self.assertEqual(link["used"], 2)
         self.assertGreaterEqual(link["weight"], 4)
 
+    def test_forgotten_branch_loses_activity(self):
+        from brain_pulse import forget_branch, record
+        self.store.upload("python.txt", "Python позволяет тестировать код с помощью unittest и pytest.".encode())
+        self.store.upload("contract.txt", "Договор поставки: поставщик передаёт товар покупателю после оплаты.".encode())
+        a, b = sorted(row["id"] for row in self.store.branches()["branches"] if row["parent"] is None)[:2]
+        with self.store.db() as db:
+            record(db, [a, b], "chat", "2026-01-01T00:00:00+00:00")
+            forget_branch(db, b)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM brain_synapses").fetchone()[0], 0)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM brain_usage WHERE branch_id=?", (b,)).fetchone()[0], 0)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM brain_usage WHERE branch_id=?", (a,)).fetchone()[0], 1)
+
     def test_old_pulses_are_pruned(self):
         from brain_pulse import record, KEEP_PULSES
         self.store.upload("python.txt", "Python позволяет тестировать код с помощью unittest и pytest.".encode())

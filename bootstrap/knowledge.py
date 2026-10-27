@@ -202,10 +202,12 @@ class KnowledgeStore:
         from document_understanding import init_schema as document_schema
         from brain_lab import init_schema as brain_lab_schema
         from brain_pulse import init_schema as pulse_schema
+        from brain_idle import init_schema as idle_schema
         with self.lock, self.db() as conn:
             document_schema(conn)
             brain_lab_schema(conn)
             pulse_schema(conn)
+            idle_schema(conn)
 
     @contextmanager
     def db(self):

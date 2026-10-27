@@ -25,6 +25,12 @@ def init_schema(db):
     """)
 
 
+def forget_branch(db, branch_id):
+    """Удалённая ветка забирает с собой свою историю использования и связи."""
+    db.execute("DELETE FROM brain_usage WHERE branch_id=?", (branch_id,))
+    db.execute("DELETE FROM brain_synapses WHERE a=? OR b=?", (branch_id, branch_id))
+
+
 def record(db, branch_ids, origin, clock):
     """Отметить, что знания этих веток только что понадобились."""
     mapping = projection(db)

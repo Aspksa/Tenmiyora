@@ -71,6 +71,21 @@
           <div id="brain-map" class="brain-map"></div>
           <div class="brain-map-legend" aria-hidden="true"><span><i class="lg-core"></i>ядро</span><span><i class="lg-branch"></i>ветка темы</span><span><i class="lg-leaf"></i>знания</span><span><i class="lg-fresh"></i>рост за неделю</span><span><i class="lg-synapse"></i>связь тем</span><span><i class="lg-rest"></i>давно без дела</span></div>
         </section>
+        <section class="module-panel brain-idle-panel" aria-labelledby="brain-idle-title">
+          <div class="panel-head"><div><h2 id="brain-idle-title">Сам растёт, пока вы отдыхаете</h2><p id="brain-idle-state" class="brain-idle-state" aria-live="polite">Загрузка…</p></div><button type="button" id="brain-idle-run" class="secondary-button"><svg><use href="#i-spark"/></svg>Запустить сейчас</button></div>
+          <div class="brain-idle-settings">
+            <label class="brain-switch"><input type="checkbox" id="brain-idle-enabled"><span class="brain-switch-track" aria-hidden="true"></span><span>Расти, когда я не работаю</span></label>
+            <label class="brain-idle-field">Начинать через <select id="brain-idle-minutes"><option value="5">5</option><option value="10">10</option><option value="15">15</option><option value="30">30</option><option value="60">60</option></select> мин тишины</label>
+            <label class="brain-switch"><input type="checkbox" id="brain-idle-cloud"><span class="brain-switch-track" aria-hidden="true"></span><span>Разбирать документы моделью Cloud.ru</span></label>
+            <label class="brain-idle-field">Не больше <select id="brain-idle-daily"><option value="5">5</option><option value="10">10</option><option value="20">20</option><option value="30">30</option><option value="50">50</option></select> запросов в день</label>
+          </div>
+          <p id="brain-idle-note" class="module-muted brain-idle-note"></p>
+          <div class="brain-idle-columns">
+            <div><h3>Вопросы к вам</h3><div id="brain-idle-questions" class="brain-idle-list"></div></div>
+            <div><h3>Что сделано</h3><div id="brain-idle-log" class="brain-idle-list"></div></div>
+          </div>
+          <div id="brain-idle-insights"></div>
+        </section>
         <section class="module-panel brain-growth-panel" aria-labelledby="brain-growth-title">
           <div class="panel-head"><div><h2 id="brain-growth-title">Мозг растёт</h2><p id="brain-growth-summary" class="module-muted brain-growth-summary"></p></div><span class="brain-pill">30 дней</span></div>
           <div id="brain-growth-chart" class="brain-growth-chart"></div>

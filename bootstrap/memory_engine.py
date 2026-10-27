@@ -15,6 +15,7 @@ from knowledge import CATEGORIES, CHILDREN, SECRET_RE, categorize, chunks, now
 from semantic import normalize_label
 from topic_router import classify, choose_child
 from topic_discovery import discover
+from brain_pulse import forget_branch
 from topic_aliases import init_schema as init_alias_schema, learn as learn_aliases, remove_source as remove_alias_source, resolve as resolve_alias
 from knowledge_relations import init_schema as init_relation_schema, ingest as ingest_relations, remove_source as remove_relations, query as query_relations, for_question as relations_for_question
 from knowledge_paths import trace_paths, for_question as paths_for_question
@@ -372,6 +373,8 @@ class MemoryEngine:
         for node in stale:
             db.execute("DELETE FROM discovered_topics WHERE branch_id=?", (node["branch_id"],))
             db.execute("DELETE FROM branches WHERE id=?", (node["branch_id"],))
+            # Номер ветки может достаться новой теме: её жизнь начинается с нуля.
+            forget_branch(db, node["branch_id"])
         self.audit(db,"удаление индексированных знаний",source_type,source_id,
                    f"снято {len(old)} записей")
 

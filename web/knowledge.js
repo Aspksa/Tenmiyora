@@ -681,7 +681,7 @@
       $('brain-files-count').textContent = stats.files ?? 0;
       $('brain-chat-count').textContent = stats.chat ?? 0;
       renderEvents();
-      await Promise.all([loadLab(), loadGrowth(), loadActivity()]);
+      await Promise.all([loadLab(), loadGrowth(), loadActivity(), loadIdle()]);
       mapBorn = newBranches(brainData.branches.map(row => row.id));
       renderMap();
     } catch (error) { message(error.message); }
@@ -998,18 +998,134 @@
   function updateSleep() {
     const box = $('brain-map'), hour = new Date().getHours();
     // sleepMode — ручной выбор кнопкой с луной; null — по часам.
-    const asleep = sleepMode ?? (hour >= 23 || hour < 7);
+    const asleep = sleepMode ?? (hour >= 23 || hour < 7 || idleState === 'working' || idleState === 'resting');
     box.classList.toggle('sleeping', asleep);
     let badge = box.querySelector('.brain-map-sleep');
     if (asleep && !badge) {
-      badge = element('p', 'brain-map-sleep', 'Мозг спит и перебирает знания');
+      badge = element('p', 'brain-map-sleep');
       box.append(badge);
     }
+    if (badge) badge.textContent = idleState === 'working' && idleTask ? 'Мозг спит и работает: ' + idleTask.toLowerCase() : 'Мозг спит и перебирает знания';
     if (!asleep) badge?.remove();
     const toggle = $('brain-map-sleep');
     toggle.setAttribute('aria-pressed', String(asleep));
   }
   setInterval(updateSleep, 60000);
+
+  // Самостоятельный рост: настройки, состояние, вопросы к пользователю и журнал.
+  let idleState = null, idleTask = '', idleData = null, idleSaving = false;
+  const IDLE_TASKS = {exam: 'Самоэкзамен', gaps: 'Поиск пробелов', tidy: 'Порядок в темах', documents: 'Разбор документа моделью'};
+  async function loadIdle() {
+    try { renderIdle(await request('brain/idle')); }
+    catch (error) { $('brain-idle-state').textContent = error.message; }
+  }
+  function idleLine(data) {
+    const s = data.settings;
+    if (data.state === 'off') return 'Выключено. Мозг растёт только когда вы загружаете документы и пишете в чат.';
+    if (data.state === 'working') return 'Работает: ' + (IDLE_TASKS[data.task] || 'задача').toLowerCase() + '…';
+    if (data.state === 'resting') return 'Вы отдыхаете, Мозг тоже: текущие задачи сделаны, скоро проверит снова.';
+    const left = Math.max(1, Math.ceil((s.idle_minutes * 60 - data.idle_seconds) / 60));
+    return 'Ждёт тишины: начнёт через ' + left + ' мин после вашего последнего действия.';
+  }
+  function renderIdle(data) {
+    idleData = data;
+    const previous = idleState;
+    idleState = data.state; idleTask = IDLE_TASKS[data.task] || '';
+    if (previous !== idleState) updateSleep();
+    const s = data.settings;
+    $('brain-idle-state').textContent = idleLine(data);
+    $('brain-idle-state').dataset.state = data.state;
+    $('brain-idle-enabled').checked = s.enabled;
+    $('brain-idle-cloud').checked = s.cloud;
+    $('brain-idle-minutes').value = String(s.idle_minutes);
+    $('brain-idle-daily').value = String(s.cloud_daily);
+    $('brain-idle-run').disabled = !s.enabled || data.state === 'working';
+    for (const id of ['brain-idle-minutes', 'brain-idle-cloud']) $(id).disabled = !s.enabled;
+    $('brain-idle-daily').disabled = !s.enabled || !s.cloud;
+    $('brain-idle-note').textContent = !s.cloud ? 'Без модели Мозг сам себя экзаменует, ищет пробелы и наводит порядок в темах. Всё на компьютере, бесплатно.' :
+      !data.model_connected ? 'Чтобы разбирать документы, подключите модель: правый щелчок по аватару → Cloud.ru и модели.' :
+      'Сегодня запросов к модели: ' + data.cloud_used_today + ' из ' + s.cloud_daily + '. Тексты документов уходят в Cloud.ru только в этих пределах.';
+    const questions = $('brain-idle-questions');
+    questions.replaceChildren();
+    if (!data.questions.length) questions.append(element('p', 'module-muted', 'Вопросов пока нет. Они появятся, когда Мозг найдёт пробелы.'));
+    for (const q of data.questions) questions.append(idleQuestion(q));
+    const log = $('brain-idle-log');
+    log.replaceChildren();
+    if (!data.log.length) log.append(element('p', 'module-muted', 'Здесь появится отчёт: что Мозг сделал, пока вас не было.'));
+    for (const item of data.log.slice(0, 8)) {
+      const row = element('div', 'brain-idle-entry');
+      const head = element('div', 'brain-idle-entry-head');
+      head.append(element('strong', '', item.task_name), element('span', 'module-muted', dayLabel(item.time) + ', ' + clock(item.time)));
+      if (item.cloud) head.append(element('span', 'brain-idle-cloud', 'Cloud.ru'));
+      row.append(head, element('p', '', item.summary));
+      log.append(row);
+    }
+    const insights = $('brain-idle-insights');
+    insights.replaceChildren();
+    if (data.insights.length) {
+      insights.append(element('h3', '', 'Выводы модели по документам'),
+        element('p', 'module-muted brain-idle-note', 'Это толкования модели, а не проверенные факты. Цитата сверена с документом.'));
+      for (const item of data.insights.slice(0, 6)) {
+        const card = element('div', 'brain-idle-insight');
+        card.append(element('p', '', item.text), element('blockquote', '', item.quote),
+          element('span', 'module-muted', item.file + (item.locator ? ' · ' + item.locator : '')));
+        insights.append(card);
+      }
+    }
+  }
+  async function idleAnswer(q, action, text) {
+    try {
+      const result = await request('brain/idle/question', {id: q.id, action, ...(text ? {text} : {})});
+      message(action === 'merge' ? 'Темы объединены в «' + result.merged_into + '».' : action === 'answer' ? 'Спасибо, Мозг запомнил ответ.' : 'Вопрос скрыт.');
+      if (action === 'dismiss') await loadIdle(); else await loadBrain();
+    } catch (error) { message(error.message); }
+  }
+  function idleQuestion(q) {
+    const card = element('div', 'brain-idle-question');
+    card.append(element('p', '', q.text));
+    const actions = element('div', 'brain-idle-actions');
+    if (q.kind === 'merge') {
+      actions.append(button('Объединить', () => idleAnswer(q, 'merge'), 'primary-button'),
+        button('Не надо', () => idleAnswer(q, 'dismiss'), 'secondary-button'));
+    } else {
+      actions.append(button('Ответить', () => {
+        actions.hidden = true;
+        const form = element('form', 'brain-idle-reply');
+        const area = element('textarea');
+        area.rows = 3; area.maxLength = 4000;
+        area.setAttribute('aria-label', 'Ваш ответ');
+        area.placeholder = 'Напишите своими словами: Мозг запомнит это как сообщение из чата.';
+        const send = element('button', 'primary-button', 'Запомнить');
+        send.type = 'submit';
+        form.append(area, send);
+        form.addEventListener('submit', event => { event.preventDefault(); idleAnswer(q, 'answer', area.value.trim()); });
+        card.append(form);
+        area.focus();
+      }, 'primary-button'), button('Скрыть', () => idleAnswer(q, 'dismiss'), 'secondary-button'));
+    }
+    card.append(actions);
+    return card;
+  }
+  async function saveIdle(change) {
+    if (idleSaving) return;
+    idleSaving = true;
+    try { renderIdle(await request('brain/idle/settings', change)); }
+    catch (error) { message(error.message); if (idleData) renderIdle(idleData); }
+    finally { idleSaving = false; }
+  }
+  $('brain-idle-enabled').addEventListener('change', event => saveIdle({enabled: event.target.checked}));
+  $('brain-idle-minutes').addEventListener('change', event => saveIdle({idle_minutes: Number(event.target.value)}));
+  $('brain-idle-daily').addEventListener('change', event => saveIdle({cloud_daily: Number(event.target.value)}));
+  $('brain-idle-cloud').addEventListener('change', event => {
+    if (event.target.checked && !confirm('В режиме ожидания Мозг будет отправлять тексты документов с Диска в Cloud.ru, чтобы модель разобрала их. ' +
+      'Это может стоить денег по тарифу Cloud.ru. Число запросов ограничено дневным лимитом. Включить?')) { event.target.checked = false; return; }
+    saveIdle({cloud: event.target.checked});
+  });
+  $('brain-idle-run').addEventListener('click', async () => {
+    try { await request('brain/idle/run', {}); message('Мозг начал работу.'); setTimeout(loadIdle, 1500); }
+    catch (error) { message(error.message); }
+  });
+  setInterval(() => { if (!$('brain-view').hidden && !document.hidden) loadIdle(); }, 15000);
   // Повтор роста: ветки появляются в порядке, в котором их узнал Мозг.
   function playGrowth() {
     const svgRoot = $('brain-map').querySelector('svg');

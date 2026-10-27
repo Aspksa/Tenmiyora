@@ -17,6 +17,7 @@ import secrets
 import sys
 import tempfile
 import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -39,11 +40,13 @@ STATIC = {
     "/assets/mark.svg": ("assets/mark.svg", "image/svg+xml"),
     "/assets/tenmiyora-avatar.png": ("assets/tenmiyora-avatar.png", "image/png"),
 }
+PASSIVE = {"/api/brain/pulses", "/api/brain/idle", "/api/brain/activity"}
 DEFAULT = {
     "appearance": {"size": 340, "opacity": 100, "visible": True, "pinned": False, "motion": True},
     "layout": {}, "messages": [],
     "connection": {"url": CLOUDRU_URL, "model": "", "key": "", "verified_at": None},
     "model_cache": {"url": "", "models": [], "details": [], "loaded_at": None},
+    "growth": {"enabled": True, "cloud": False, "idle_minutes": 15, "cloud_daily": 10},
 }
 
 
@@ -75,6 +78,22 @@ def validate_preferences(payload):
         if any(type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 1 for value in point.values()):
             raise AppError("Координаты за пределами экрана.")
     return deepcopy(appearance), deepcopy(layout)
+
+
+def validate_growth(payload):
+    """Настройки самостоятельного роста; Cloud.ru выключен, пока пользователь не включит."""
+    if payload is None:
+        return deepcopy(DEFAULT["growth"])
+    if not isinstance(payload, dict):
+        raise AppError("Неверные настройки роста.")
+    result = dict(DEFAULT["growth"], **{key: payload[key] for key in DEFAULT["growth"] if key in payload})
+    if type(result["enabled"]) is not bool or type(result["cloud"]) is not bool:
+        raise AppError("Неверные настройки роста.")
+    if type(result["idle_minutes"]) is not int or not 5 <= result["idle_minutes"] <= 240:
+        raise AppError("Время ожидания — от 5 до 240 минут.")
+    if type(result["cloud_daily"]) is not int or not 1 <= result["cloud_daily"] <= 50:
+        raise AppError("Лимит запросов к модели — от 1 до 50 в день.")
+    return result
 
 
 def validate_url(value):
@@ -124,6 +143,9 @@ class Workspace:
         self.semantic_queue = queue.Queue(maxsize=12)
         self.semantic_guard = threading.Lock()
         self.semantic_thread = None
+        self.last_active = time.monotonic()
+        from brain_idle import Grower
+        self.grower = Grower(self)
         self.data = deepcopy(DEFAULT)
         if self.directory:
             self.directory.mkdir(parents=True, exist_ok=True)
@@ -138,7 +160,8 @@ class Workspace:
                         raise ValueError
                     self.data = {"appearance": appearance, "layout": layout, "messages": stored["messages"],
                                  "connection": dict(DEFAULT["connection"], **connection),
-                                 "model_cache": stored.get("model_cache", deepcopy(DEFAULT["model_cache"]))}
+                                 "model_cache": stored.get("model_cache", deepcopy(DEFAULT["model_cache"])),
+                                 "growth": validate_growth(stored.get("growth"))}
                 except (ValueError, KeyError, TypeError, AppError):
                     raise AppError("Файл .runtime/workspace.json повреждён. Сохраните его копию и уберите из рабочей папки для нового запуска.", 500) from None
 
@@ -307,6 +330,102 @@ class Workspace:
                 self.semantic_thread.start()
         return True
 
+    def semantic_once(self, fid, connection):
+        """Один смысловой разбор файла моделью. Число новых записей или None при сбое."""
+        checksum = None
+        try:
+            source = self.knowledge.semantic_source(fid)
+            if source is None:
+                self.knowledge.mark_semantic(fid, "готово; нет подходящего текста для анализа")
+                return 0
+            name, text, existing, checksum = source
+            samples = samples_from_text(text)
+            if not samples:
+                self.knowledge.mark_semantic(fid, "готово; недостаточно текста для смыслового анализа")
+                return 0
+            messages = make_messages(samples, existing)
+            result = self.provider(
+                "/chat/completions",
+                {"model": connection["model"], "messages": messages, "stream": False},
+                connection=connection, timeout=40, max_bytes=65_536)
+            answer = result["choices"][0]["message"]["content"]
+            proposals = parse_topics(answer, samples)
+            relation_candidates = validate_candidates(answer, samples)
+            return self.knowledge.integrate_semantic(
+                fid, proposals, samples, expected_sha=checksum,
+                relation_candidates=relation_candidates)
+        except (AppError, ValueError, IndexError, KeyError, TypeError, OSError):
+            logging.error("Смысловая классификация не удалась для файла %s", fid)
+        except Exception:
+            logging.error("Неожиданная ошибка смысловой классификации файла %s", fid)
+        self.knowledge.mark_semantic(fid, "готово; смысловой анализ не выполнен", expected_sha=checksum)
+        return None
+
+    # Самостоятельный рост: пользователь активен, пока шлёт запросы (кроме опросов карты).
+    def touch(self):
+        self.last_active = time.monotonic()
+
+    def idle_seconds(self):
+        return time.monotonic() - self.last_active
+
+    def growth_settings(self):
+        with self.lock:
+            return dict(self.data["growth"])
+
+    def growth_cloud(self):
+        """Подключение для роста через модель — только если пользователь это разрешил."""
+        with self.lock:
+            if not self.data["growth"]["cloud"]:
+                return None
+            connection = deepcopy(self.data["connection"])
+        return connection if connection["key"] and connection["model"] else None
+
+    def growth_update(self, payload):
+        with self.lock:
+            self.data["growth"] = validate_growth(dict(self.data["growth"], **payload))
+            self.save()
+        return self.growth_status()
+
+    def growth_status(self):
+        from brain_idle import report
+        settings = self.growth_settings()
+        idle = self.idle_seconds()
+        with self.lock:
+            connected = bool(self.data["connection"]["key"] and self.data["connection"]["model"])
+        current = self.grower.current
+        if not settings["enabled"]:
+            state = "off"
+        elif current:
+            state = "working"
+        elif idle >= settings["idle_minutes"] * 60:
+            state = "resting"
+        else:
+            state = "waiting"
+        result = report(self.knowledge)
+        day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        with self.knowledge.db() as conn:
+            used = conn.execute("SELECT used FROM semantic_budget WHERE day=?", (day,)).fetchone()
+        result.update({"settings": settings, "state": state, "task": current, "model_connected": connected,
+                       "idle_seconds": int(idle), "cloud_used_today": used["used"] if used else 0,
+                       "running": bool(self.grower.thread and self.grower.thread.is_alive())})
+        return result
+
+    def growth_run(self):
+        if not self.growth_settings()["enabled"]:
+            raise AppError("Сначала включите самостоятельный рост.", 409)
+        self.grower.run_now()
+        return {"ok": True}
+
+    def growth_question(self, payload):
+        from brain_idle import answer_question
+        qid = payload.get("id")
+        if type(qid) is not int:
+            raise AppError("Неверный вопрос.")
+        try:
+            return answer_question(self.knowledge, qid, payload.get("action"), payload.get("text", ""))
+        except (ValueError, KeyError) as error:
+            raise AppError(str(error) or "Не удалось ответить на вопрос.", 409) from None
+
     def _semantic_worker(self):
         while True:
             try:
@@ -318,35 +437,7 @@ class Workspace:
                         return
                 continue
             try:
-                checksum = None
-                source = self.knowledge.semantic_source(fid)
-                if source is None:
-                    self.knowledge.mark_semantic(fid, "готово; нет подходящего текста для анализа")
-                    continue
-                name, text, existing, checksum = source
-                samples = samples_from_text(text)
-                if not samples:
-                    self.knowledge.mark_semantic(fid, "готово; недостаточно текста для смыслового анализа")
-                    continue
-                messages = make_messages(samples, existing)
-                result = self.provider(
-                    "/chat/completions",
-                    {"model": connection["model"], "messages": messages, "stream": False},
-                    connection=connection, timeout=40, max_bytes=65_536)
-                answer = result["choices"][0]["message"]["content"]
-                proposals = parse_topics(answer, samples)
-                relation_candidates = validate_candidates(answer, samples)
-                self.knowledge.integrate_semantic(
-                    fid, proposals, samples, expected_sha=checksum,
-                    relation_candidates=relation_candidates)
-            except (AppError, ValueError, IndexError, KeyError, TypeError, OSError):
-                logging.error("Смысловая классификация не удалась для файла %s", fid)
-                self.knowledge.mark_semantic(fid, "готово; смысловой анализ не выполнен",
-                                             expected_sha=checksum if 'checksum' in locals() else None)
-            except Exception:
-                logging.error("Неожиданная ошибка смысловой классификации файла %s", fid)
-                self.knowledge.mark_semantic(fid, "готово; смысловой анализ не выполнен",
-                                             expected_sha=checksum if 'checksum' in locals() else None)
+                self.semantic_once(fid, connection)
             finally:
                 self.semantic_queue.task_done()
 
@@ -537,6 +628,9 @@ class Handler(BaseHTTPRequestHandler):
         if not hmac.compare_digest(supplied.encode("utf-8"), self.server.token.encode("ascii")):
             self.json_reply(403, {"error": "Сеанс завершён. Откройте страницу из трея Tenmiyora."})
             return False
+        # Фоновые опросы открытой карты не считаются работой пользователя.
+        if browser and urllib.parse.urlsplit(self.path).path not in PASSIVE:
+            self.server.workspace.touch()
         return True
 
     def do_GET(self):
@@ -555,7 +649,7 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/state":
             if self.authorized(browser=True):
                 self.json_reply(200, self.server.workspace.public())
-        elif path in ("/api/brain", "/api/brain/facts", "/api/brain/search", "/api/brain/growth", "/api/brain/activity", "/api/brain/pulses", "/api/brain/lab", "/api/disk", "/api/disk/download", "/api/document"):
+        elif path in ("/api/brain", "/api/brain/facts", "/api/brain/search", "/api/brain/growth", "/api/brain/activity", "/api/brain/pulses", "/api/brain/idle", "/api/brain/lab", "/api/disk", "/api/disk/download", "/api/document"):
             if not self.authorized(browser=True):
                 return
             try:
@@ -569,6 +663,8 @@ class Handler(BaseHTTPRequestHandler):
                     self.json_reply(200, store.facts(int(value("branch"))))
                 elif path == "/api/brain/growth":
                     self.json_reply(200, store.brain_growth(value("days") or 30, value("offset") or 0))
+                elif path == "/api/brain/idle":
+                    self.json_reply(200, self.server.workspace.growth_status())
                 elif path == "/api/brain/activity":
                     self.json_reply(200, store.brain_activity())
                 elif path == "/api/brain/pulses":
@@ -625,6 +721,9 @@ class Handler(BaseHTTPRequestHandler):
         store = self.server.workspace.knowledge
         actions = {
                    "/api/brain/lab/scan": lambda p: store.brain_lab_scan(),
+                   "/api/brain/idle/settings": self.server.workspace.growth_update,
+                   "/api/brain/idle/run": lambda p: self.server.workspace.growth_run(),
+                   "/api/brain/idle/question": self.server.workspace.growth_question,
                    "/api/brain/lab/experiment": lambda p: store.brain_lab_experiment(p.get("trials",3)),
                    "/api/brain/lab/accept": lambda p: store.brain_lab_accept(p.get("generation")),
                    "/api/brain/lab/revert": lambda p: store.brain_lab_revert(p.get("generation")),
@@ -709,6 +808,7 @@ def main():
         temp.replace(state_path)
         parent_pid = int(os.environ["TENMIYORA_PARENT_PID"])
         threading.Thread(target=watch_parent, args=(server, parent_pid, done), daemon=True).start()
+        server.workspace.grower.start()
         logging.info("Сервер готов: %s", server.url)
         server.serve_forever(poll_interval=0.2)
     finally:
