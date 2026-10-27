@@ -54,5 +54,6 @@ class StrictExam(unittest.TestCase):
             self.assertEqual(result["verified_facts"],0)
             journal.clear()
             self.assertEqual(reconstruct(journal)["topics"],[])
-\nif __name__=="__main__":
+
+if __name__=="__main__":
     unittest.main()
