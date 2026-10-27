@@ -850,6 +850,8 @@
     return brainData.branches.filter(item => item.parent === id);
   }
   function subtreeTotal(node) {
+    // Сообщение из двух тем лежит в обеих ветках, поэтому у корня «Разговоры» свой счёт.
+    if (node.messages != null) return node.messages;
     return childrenOf(node.id).reduce((sum, child) => sum + subtreeTotal(child), node.facts);
   }
   function ancestors(node) {
@@ -1745,10 +1747,9 @@
   const CHAT_ROOT = 'chat';
   function chatBranches(chat) {
     if (!chat.topics.length) return [];
-    const first = chat.topics.reduce((min, topic) => topic.first < min ? topic.first : min, chat.topics[0].first);
-    const last = chat.topics.reduce((max, topic) => topic.last > max ? topic.last : max, chat.topics[0].last);
-    const root = {id: CHAT_ROOT, parent: null, name: 'Разговоры', facts: 0, created: first, chat: true, last,
-      week: chat.topics.reduce((sum, topic) => sum + topic.week, 0), messages: chat.messages};
+    // Счёт корня приходит с сервера по самим сообщениям, а не складывается из тем.
+    const root = {id: CHAT_ROOT, parent: null, name: 'Разговоры', facts: 0, chat: true,
+      created: chat.first, last: chat.last, week: chat.week, messages: chat.messages, spark: chat.spark};
     return [root, ...chat.topics.map(topic => ({id: 'chat:' + topic.name, parent: CHAT_ROOT, name: topic.name,
       facts: topic.messages, created: topic.first, last: topic.last, week: topic.week, chat: true, topic}))];
   }
@@ -2197,7 +2198,7 @@
   const IDLE_TASKS = {exam: 'Самоэкзамен', gaps: 'Поиск пробелов', tidy: 'Порядок в темах', documents: 'Разбор документа моделью'};
   async function loadIdle() {
     try {
-      const data = await request('brain/idle');
+      const data = await request('brain/idle?' + new URLSearchParams({offset: -new Date().getTimezoneOffset()}));
       if (!idleSaving) renderIdle(data);  // Не перебиваем ещё не сохранённый выбор.
     }
     catch (error) { $('brain-idle-state').textContent = error.message; }
@@ -2240,8 +2241,7 @@
   function renderIdleStats(data) {
     const box = $('brain-idle-stats');
     box.replaceChildren();
-    const today = new Date().toDateString();
-    const done = data.log.filter(item => new Date(item.time).toDateString() === today).length;
+    const done = data.done_today ?? 0;
     const tile = (value, label, iconName) => {
       const cell = element('div', 'idle-stat');
       const mark = element('span', 'idle-stat-icon');
@@ -2656,14 +2656,14 @@
     head.append(titles, close);
     const scroll = element('div', 'drawer-scroll');
     const topics = item.parent ? [item.node.topic] : brainData.chat.topics;
+    const spark = item.parent ? item.node.topic.spark : brainData.chat.spark;
     const tiles = element('div', 'drawer-tiles');
     const tile = (value, label) => { const cell = element('div', 'drawer-tile'); cell.append(element('strong', '', value), element('span', '', label)); tiles.append(cell); };
     tile(item.total, plural(item.total, 'сообщение', 'сообщения', 'сообщений'));
     tile(item.node.week ? '+' + item.node.week : '0', 'за неделю');
-    if (!item.parent) tile(topics.length, plural(topics.length, 'тема', 'темы', 'тем'));
+    if (!item.parent) tile(item.children.length, plural(item.children.length, 'тема', 'темы', 'тем'));
     tile(shortDate(item.node.created), 'впервые');
     scroll.append(tiles);
-    const spark = topics.reduce((sum, topic) => sum.map((value, i) => value + (topic.spark[i] || 0)), new Array(14).fill(0));
     if (spark.some(Boolean)) {
       const pulse = element('div', 'drawer-pulse');
       pulse.append(sparkline(spark, 'drawer-spark'), element('p', '', 'Разговоры за 14 дней · последний ' + shortDate(item.node.last)));

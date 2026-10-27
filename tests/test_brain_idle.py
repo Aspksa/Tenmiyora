@@ -36,6 +36,18 @@ class BrainIdleTests(unittest.TestCase):
         self.assertEqual(status["questions"], [])
         self.assertEqual(status["state"], "waiting")
 
+    def test_daily_task_count_does_not_depend_on_the_short_log(self):
+        from brain_idle import clock
+        with self.store.db() as db:
+            for index in range(25):
+                db.execute("INSERT INTO brain_idle_log(time,task,summary,cloud) VALUES(?,?,?,0)",
+                           (clock(), "exam", f"Проверка {index}"))
+            db.execute("INSERT INTO brain_idle_log(time,task,summary,cloud) VALUES(?,?,?,0)",
+                       ("2020-01-01T10:00:00+00:00", "exam", "Старая проверка"))
+        status = self.work.growth_status()
+        self.assertEqual(len(status["log"]), 20)
+        self.assertEqual(status["done_today"], 25)
+
     def test_exam_gaps_and_tidy_run_once_until_due(self):
         self.store.upload("python.txt", PYTHON.encode())
         self.store.upload("contract.txt", CONTRACT.encode())

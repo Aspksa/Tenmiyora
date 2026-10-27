@@ -91,6 +91,24 @@ class ChatBranchesTest(unittest.TestCase):
         self.assertEqual(topic["samples"][0]["text"], "Водитель сдал путевой лист диспетчеру.")
         self.assertLessEqual(max(len(sample["text"]) for sample in topic["samples"]), 160)
 
+    def test_message_with_two_topics_is_counted_once_in_the_total(self):
+        both = ("Водитель получил путевой лист, одометр и ГСМ отмечены, автомобиль проверен. "
+                "Договор поставки с покупателем и акт сверки подписаны, неустойка за просрочку поставки начислена.")
+        data = build([message(both)])
+        self.assertEqual(len(data["topics"]), 2)
+        self.assertEqual(sum(topic["messages"] for topic in data["topics"]), 2)
+        # Сводка считает само сообщение, а не его темы.
+        self.assertEqual(data["messages"], 1)
+        self.assertEqual(data["week"], 1)
+        self.assertEqual(sum(data["spark"]), 1)
+
+    def test_message_dated_in_the_future_does_not_break_the_sparkline(self):
+        data = build([message("Водитель получил путевой лист и проверил автомобиль.", -1)])
+        self.assertEqual(data["messages"], 1)
+        self.assertEqual(sum(data["spark"]), 0)
+        self.assertEqual(sum(topic["messages"] for topic in data["topics"]), 1)
+        self.assertEqual(sum(sum(topic["spark"]) for topic in data["topics"]), 0)
+
     def test_offset_moves_day_boundary(self):
         late = {"role": "user", "content": "Водитель получил путевой лист и проверил автомобиль.",
                 "time": "2026-10-26T23:30:00+00:00"}

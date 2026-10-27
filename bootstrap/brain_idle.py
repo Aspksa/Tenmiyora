@@ -315,9 +315,13 @@ def answer_question(store, qid, action, text=""):
     return result
 
 
-def report(store):
+def report(store, offset_minutes=0):
+    shift = f"{max(-840, min(840, int(offset_minutes))):+d} minutes"
     with store.lock, store.db() as db:
         log = [dict(r) for r in db.execute("SELECT time,task,summary,cloud FROM brain_idle_log ORDER BY id DESC LIMIT 20")]
+        # Отдельный счёт за день: лента отдаёт только последние 20 записей.
+        done_today = db.execute("""SELECT COUNT(*) AS n FROM brain_idle_log
+            WHERE date(time,?)=date('now',?)""", (shift, shift)).fetchone()["n"]
         questions = []
         for r in db.execute("SELECT id,kind,topic,text,payload,created FROM brain_idle_questions WHERE status='open' ORDER BY id DESC"):
             payload = json.loads(r["payload"] or "{}")
@@ -331,7 +335,8 @@ def report(store):
         exam_state = _state(db, "exam")
     for item in log:
         item["task_name"] = TASK_NAMES.get(item["task"], item["task"])
-    return {"log": log, "questions": questions, "insights": insights, "exam": exam_state}
+    return {"log": log, "done_today": done_today, "questions": questions,
+            "insights": insights, "exam": exam_state}
 
 
 class Grower:

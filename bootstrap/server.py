@@ -424,7 +424,7 @@ class Workspace:
             self.save()
         return self.growth_status()
 
-    def growth_status(self):
+    def growth_status(self, offset_minutes=0):
         from brain_idle import report
         settings = self.growth_settings()
         idle = self.idle_seconds()
@@ -439,7 +439,7 @@ class Workspace:
             state = "resting"
         else:
             state = "waiting"
-        result = report(self.knowledge)
+        result = report(self.knowledge, offset_minutes)
         day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         with self.knowledge.db() as conn:
             used = conn.execute("SELECT used FROM semantic_budget WHERE day=?", (day,)).fetchone()
@@ -805,7 +805,7 @@ class Handler(BaseHTTPRequestHandler):
                 elif path == "/api/brain/growth":
                     self.json_reply(200, store.brain_growth(value("days") or 30, value("offset") or 0))
                 elif path == "/api/brain/idle":
-                    self.json_reply(200, self.server.workspace.growth_status())
+                    self.json_reply(200, self.server.workspace.growth_status(value("offset") or 0))
                 elif path == "/api/brain/activity":
                     self.json_reply(200, store.brain_activity())
                 elif path == "/api/brain/pulses":

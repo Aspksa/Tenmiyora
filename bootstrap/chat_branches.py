@@ -66,8 +66,9 @@ def _label(counts):
     if plain:
         return max(plain, key=lambda form: (counts[form], -len(form))).capitalize()
     form = max(counts, key=lambda form: (counts[form], -len(form)))
-    if form.endswith("у") or form.endswith("ю"):
-        form = form[:-1] + ("а" if form.endswith("у") else "я")
+    # «рыбалку» → «рыбалка»; «ю» не трогаем, чтобы «люблю» не стало «любля».
+    if form.endswith("у"):
+        form = form[:-1] + "а"
     return form.capitalize()
 
 
@@ -134,8 +135,10 @@ def chat_branches(records, offset_minutes=0, days=30, today=None):
             item["last"] = max(item["last"], time)
             if day >= week:
                 item["week"] += 1
-            if day >= spark_from:
-                item["spark"][(day - spark_from).days] += 1
+            # Сообщение «из будущего» (часы перевели назад) не должно рушить разбор.
+            index = (day - spark_from).days
+            if 0 <= index < SPARK_DAYS:
+                item["spark"][index] += 1
             item["samples"].append({"time": time, "text": _sample(text)})
     ordered = sorted(branches.values(), key=lambda item: (item["name"] == OTHER, -item["messages"], item["name"]))
     if len(ordered) > MAX_TOPICS:
@@ -160,5 +163,14 @@ def chat_branches(records, offset_minutes=0, days=30, today=None):
         item["samples"] = sorted(item["samples"], key=lambda sample: sample["time"], reverse=True)[:MAX_SAMPLES]
     series = [{"date": (first + timedelta(days=i)).isoformat(), "messages": per_day.get(first + timedelta(days=i), 0)}
               for i in range(days)]
-    return {"topics": ordered, "messages": sum(per_day.values()), "series": series}
+    # Сводка по самим сообщениям: сообщение из двух тем считается один раз.
+    spark = [0] * SPARK_DAYS
+    for day, _, _, _ in labelled:
+        index = (day - spark_from).days
+        if 0 <= index < SPARK_DAYS:
+            spark[index] += 1
+    times = [time for _, time, _, _ in labelled]
+    total = {"messages": sum(per_day.values()), "week": sum(1 for day, *_ in labelled if day >= week),
+             "spark": spark, "first": min(times) if times else "", "last": max(times) if times else ""}
+    return {"topics": ordered, "series": series, "total": total, **total}
 
