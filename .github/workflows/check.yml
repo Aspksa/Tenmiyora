@@ -168,6 +168,9 @@ jobs:
           if ($errors.Count) { $errors | Format-List; exit 1 }
       - name: Сквозная офлайн-установка и откат в Windows
         run: python bootstrap/windows_release_smoke.py
+      - name: Реальный запуск BAT и проверка сервера Windows
+        shell: powershell
+        run: '& tests/windows-real-launch-smoke.ps1'
 
   check:
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'release' || github.event_name == 'schedule'
