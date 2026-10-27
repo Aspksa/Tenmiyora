@@ -128,6 +128,9 @@ jobs:
       - name: Проверить ручной оператор установки и отката
         run: python bootstrap/ci_timed.py --label 'Release operator' -- python -m unittest discover -s tests -p 'test_release_operator.py' -v
 
+      - name: Проверить безопасный допуск обновления Windows
+        run: python bootstrap/ci_timed.py --label 'Windows update preflight' -- python -m unittest discover -s tests -p 'test_windows_update_preflight.py' -v
+
       - name: Проверить шесть инвариантов Лаборатории
         run: python bootstrap/ci_timed.py --label 'Метаморфные проверки' -- python bootstrap/brain_lab_metamorphic.py --check --output .runtime/quality-reports/brain-lab-metamorphic.json
       - name: Проверить блокировки принятия и SHA-пломбу инвариантов
