@@ -201,7 +201,7 @@ def _pdf(raw,items):
             continue
         # Split long single-block pages so the question matcher can find facts
         # in the middle and end, not just at the beginning of a page.
-        blocks=re.split(r"\\n\\s*\\n",text)
+        blocks=re.split(r"\n\s*\n",text)
         refined=[]
         for block in blocks:
             lines=[line.strip() for line in block.splitlines() if line.strip()]
