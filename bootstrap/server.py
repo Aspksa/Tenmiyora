@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from knowledge import KnowledgeStore, MAX_UPLOAD
 from semantic import make_messages, parse_topics, samples_from_text
 from chat_journal import ChatJournal
+from chat_active_recall import recall as recall_chat, prompt_context as recall_context
 from soul_engine import DEFAULT_SOUL, validate_soul, evolve, persona_guidance
 from soul_maturation import maturation_guidance
 from soul_romance import DEFAULT_ROMANCE, validate as validate_romance, progress as romance_progress, guidance as romance_guidance, evolve_from_feedback as romance_evolve
@@ -512,6 +513,10 @@ class Workspace:
             local_model = api_host in ("127.0.0.1", "localhost", "::1")
             memory_allowed = local_model or os.environ.get(
                 "TENMIYORA_MEMORY_EXTERNAL_ENABLED", "0").strip().lower() in ("1", "true", "yes", "on")
+            # Historical private text never goes to external models without existing opt-in.
+            historical = recall_chat(self.chat_journal, content) if memory_allowed else []
+            if historical:
+                context.insert(0, {"role":"system","content":recall_context(historical)})
             found = self.knowledge.retrieve(content, origin="chat") if memory_allowed else []
             if found:
                 references = "\n".join(
