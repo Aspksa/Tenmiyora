@@ -197,7 +197,18 @@ def _pdf(raw,items):
             continue
         # Split long single-block pages so the question matcher can find facts
         # in the middle and end, not just at the beginning of a page.
-        blocks=re.split(r"\n\s*\n",text)
+        blocks=re.split(r"\\n\\s*\\n",text)
+        refined=[]
+        for block in blocks:
+            lines=[line.strip() for line in block.splitlines() if line.strip()]
+            # Individual complete statements must not be conflated into a
+            # single cited claim (especially separate monetary/term rows).
+            if len(lines)>1 and all(
+                    len(line)>=12 and re.search(r"[.!?;:]$",line) for line in lines):
+                refined.extend(lines)
+            else:
+                refined.append(block)
+        blocks=refined
         number=0
         for block in blocks:
             block=block.strip()
