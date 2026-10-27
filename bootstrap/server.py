@@ -27,6 +27,7 @@ from knowledge import KnowledgeStore, MAX_UPLOAD
 from semantic import make_messages, parse_topics, samples_from_text
 from soul_engine import DEFAULT_SOUL, validate_soul, evolve, persona_guidance
 from soul_maturation import maturation_guidance
+from soul_reflection import DEFAULT_REFLECTION, validate as validate_reflection, reflect as soul_reflect, guidance as reflection_guidance
 from soul_continuity import DEFAULT_CONTINUITY, validate as validate_continuity, observe as observe_continuity
 from soul_quality import quality_guidance
 from soul_failures import DEFAULT_FAILURES, validate_failures, record_failure, guidance as failure_guidance
@@ -59,7 +60,7 @@ STATIC = {
 PASSIVE = {"/api/brain/pulses", "/api/brain/idle", "/api/brain/activity"}
 DEFAULT = {
     "appearance": {"size": 340, "opacity": 100, "visible": True, "pinned": False, "motion": True},
-    "layout": {}, "messages": [], "soul": DEFAULT_SOUL, "relationship": DEFAULT_RELATIONSHIP, "experience": DEFAULT_EXPERIENCE, "soul_continuity": DEFAULT_CONTINUITY, "failures": DEFAULT_FAILURES, "recovery": DEFAULT_RECOVERY, "operation_audit": DEFAULT_AUDIT, "evolution_ledger": DEFAULT_LEDGER, "improvements": DEFAULT_IMPROVEMENTS, "improvement_gate": DEFAULT_GATE,
+    "layout": {}, "messages": [], "soul": DEFAULT_SOUL, "relationship": DEFAULT_RELATIONSHIP, "experience": DEFAULT_EXPERIENCE, "soul_reflection": DEFAULT_REFLECTION, "soul_continuity": DEFAULT_CONTINUITY, "failures": DEFAULT_FAILURES, "recovery": DEFAULT_RECOVERY, "operation_audit": DEFAULT_AUDIT, "evolution_ledger": DEFAULT_LEDGER, "improvements": DEFAULT_IMPROVEMENTS, "improvement_gate": DEFAULT_GATE,
     "connection": {"url": CLOUDRU_URL, "model": "", "key": "", "verified_at": None},
     "model_cache": {"url": "", "models": [], "details": [], "loaded_at": None},
     "growth": {"enabled": True, "cloud": False, "idle_minutes": 15, "cloud_daily": 10},
@@ -181,6 +182,7 @@ class Workspace:
                                  "soul": validate_soul(stored.get("soul", DEFAULT_SOUL)),
                                  "relationship": validate_relationship(stored.get("relationship", DEFAULT_RELATIONSHIP)),
                                  "experience": validate_experience(stored.get("experience", DEFAULT_EXPERIENCE)),
+                                 "soul_reflection": validate_reflection(stored.get("soul_reflection", DEFAULT_REFLECTION)),
                                  "soul_continuity": validate_continuity(stored.get("soul_continuity", DEFAULT_CONTINUITY)),
                                  "failures": validate_failures(stored.get("failures", DEFAULT_FAILURES)),
                                  "recovery": validate_recovery(stored.get("recovery", DEFAULT_RECOVERY)),
@@ -488,6 +490,7 @@ class Workspace:
                 self.data["soul"] = evolve(self.data["soul"], content)
                 self.data["relationship"] = remember(self.data["relationship"], content)
                 self.data["experience"] = observe(self.data["experience"], content)
+                self.data["soul_reflection"] = soul_reflect(self.data["soul_reflection"], self.data["experience"])
                 self.data["soul_continuity"] = observe_continuity(
                     self.data["soul_continuity"], before_soul, before_experience,
                     self.data["soul"], self.data["experience"])
@@ -546,6 +549,7 @@ class Workspace:
             context[0]["content"] += " " + experience_guidance(self.data["experience"])
             context[0]["content"] += " " + maturation_guidance(self.data["soul"], self.data["experience"])
             context[0]["content"] += " " + quality_guidance(self.data["experience"])
+            context[0]["content"] += " " + reflection_guidance(self.data["soul_reflection"])
             context[0]["content"] += " " + failure_guidance(self.data["failures"])
             context[0]["content"] += " " + recovery_guidance(self.data["recovery"])
             context[0]["content"] += " " + coaching(run_exam(self.data))
