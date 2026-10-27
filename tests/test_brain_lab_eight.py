@@ -43,8 +43,10 @@ class EightBehaviorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             store=KnowledgeStore(root)
             real=brain_lab_eight.evaluate()
+            checks=[{**row,"passed":False} if row["id"]=="safe_aliases" else row
+                    for row in real["checks"]]
             bad=dict(real,metrics={**real["metrics"],"lab8_safe_aliases":0.0},
-                     passed=False)
+                     checks=checks,passed=False)
             with patch("brain_lab_eight.evaluate",return_value=bad):
                 experiment=store.brain_lab_experiment(1)
             self.assertEqual(experiment["verdict"],"failed_quality_gate")
