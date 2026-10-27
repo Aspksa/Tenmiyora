@@ -35,6 +35,7 @@ from evolution_ledger import DEFAULT_LEDGER, validate_ledger, begin as ledger_be
 from unified_evolution_exam import run_exam, coaching
 from lab_personality_bridge import assess as assess_lab_personality
 from improvement_pipeline import DEFAULT_IMPROVEMENTS, validate as validate_improvements, report as improvement_report
+from improvement_benchmark import DEFAULT_GATE, validate_gate
 from relationship_memory import DEFAULT_RELATIONSHIP, validate_relationship, remember, guidance
 from soul_experience import DEFAULT_EXPERIENCE, validate_experience, observe, guidance as experience_guidance, verified_outcome
 from relation_suggestions import validate_candidates
@@ -56,7 +57,7 @@ STATIC = {
 PASSIVE = {"/api/brain/pulses", "/api/brain/idle", "/api/brain/activity"}
 DEFAULT = {
     "appearance": {"size": 340, "opacity": 100, "visible": True, "pinned": False, "motion": True},
-    "layout": {}, "messages": [], "soul": DEFAULT_SOUL, "relationship": DEFAULT_RELATIONSHIP, "experience": DEFAULT_EXPERIENCE, "failures": DEFAULT_FAILURES, "recovery": DEFAULT_RECOVERY, "operation_audit": DEFAULT_AUDIT, "evolution_ledger": DEFAULT_LEDGER, "improvements": DEFAULT_IMPROVEMENTS,
+    "layout": {}, "messages": [], "soul": DEFAULT_SOUL, "relationship": DEFAULT_RELATIONSHIP, "experience": DEFAULT_EXPERIENCE, "failures": DEFAULT_FAILURES, "recovery": DEFAULT_RECOVERY, "operation_audit": DEFAULT_AUDIT, "evolution_ledger": DEFAULT_LEDGER, "improvements": DEFAULT_IMPROVEMENTS, "improvement_gate": DEFAULT_GATE,
     "connection": {"url": CLOUDRU_URL, "model": "", "key": "", "verified_at": None},
     "model_cache": {"url": "", "models": [], "details": [], "loaded_at": None},
     "growth": {"enabled": True, "cloud": False, "idle_minutes": 15, "cloud_daily": 10},
@@ -182,7 +183,8 @@ class Workspace:
                                  "recovery": validate_recovery(stored.get("recovery", DEFAULT_RECOVERY)),
                                  "operation_audit": validate_audit(stored.get("operation_audit", DEFAULT_AUDIT)),
                                  "evolution_ledger": validate_ledger(stored.get("evolution_ledger", DEFAULT_LEDGER)),
-                                 "improvements": validate_improvements(stored.get("improvements", DEFAULT_IMPROVEMENTS))}
+                                 "improvements": validate_improvements(stored.get("improvements", DEFAULT_IMPROVEMENTS)),
+                                 "improvement_gate": validate_gate(stored.get("improvement_gate", DEFAULT_GATE))}
                 except (ValueError, KeyError, TypeError, AppError):
                     raise AppError("Файл .runtime/workspace.json повреждён. Сохраните его копию и уберите из рабочей папки для нового запуска.", 500) from None
 
