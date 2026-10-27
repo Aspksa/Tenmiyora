@@ -32,6 +32,7 @@ from soul_failures import DEFAULT_FAILURES, validate_failures, record_failure, g
 from soul_recovery import DEFAULT_RECOVERY, validate_recovery, record as recovery_record, guidance as recovery_guidance
 from soul_operation_audit import DEFAULT_AUDIT, validate_audit, observe_operation
 from evolution_ledger import DEFAULT_LEDGER, validate_ledger, begin as ledger_begin, finish as ledger_finish
+from unified_evolution_exam import run_exam, coaching
 from relationship_memory import DEFAULT_RELATIONSHIP, validate_relationship, remember, guidance
 from soul_experience import DEFAULT_EXPERIENCE, validate_experience, observe, guidance as experience_guidance, verified_outcome
 from relation_suggestions import validate_candidates
@@ -203,6 +204,7 @@ class Workspace:
             result["connection"]["has_key"] = bool(result["connection"].pop("key", ""))
             result["connection"]["provider"] = "cloudru" if result["connection"]["url"] == CLOUDRU_URL else "custom"
             result["version"] = VERSION
+            result["evolution_exam"] = run_exam(result)
             return result
 
     def preferences(self, payload):
@@ -532,6 +534,7 @@ class Workspace:
             context[0]["content"] += " " + quality_guidance(self.data["experience"])
             context[0]["content"] += " " + failure_guidance(self.data["failures"])
             context[0]["content"] += " " + recovery_guidance(self.data["recovery"])
+            context[0]["content"] += " " + coaching(run_exam(self.data))
             result = self.provider("/chat/completions", {"model": model, "messages": context, "stream": False}, connection=connection)
             try:
                 answer = result["choices"][0]["message"]["content"]
