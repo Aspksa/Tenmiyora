@@ -347,10 +347,12 @@ def run_experiment(db,trials=3):
         "guardrail_negative_abstention","guardrail_source_revocation",
         "guardrail_duplicate_resistance","guardrail_counterargument",
         *eight_metrics.keys()))
-    baseline=db.execute("""SELECT id,metrics_json,data_signature,
+    baseline=db.execute("""SELECT id,metrics_json,data_signature,trial_count,
         algorithm_signature,suite_signature FROM brain_lab_generations
         WHERE status='accepted' ORDER BY id DESC LIMIT 1""").fetchone()
-    comparable=bool(baseline and baseline["suite_signature"]==suite)
+    comparable=bool(baseline and baseline["suite_signature"]==suite
+                    and type(baseline["trial_count"]) is int
+                    and 1<=baseline["trial_count"]<=MAX_TRIALS)
     reference=None
     if comparable:
         try:
