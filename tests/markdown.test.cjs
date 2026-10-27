@@ -70,3 +70,17 @@ test('content below the nesting limit is kept as literal text', () => {
   const flat = JSON.stringify(parse(deep));
   for (let level = 1; level <= 9; level++) assert.ok(flat.includes('уровень ' + level), 'level ' + level);
 });
+test('every block opener followed by long whitespace runs parses quickly', () => {
+  const openers = ['', '## a', '#', '# a #', '```', '```js', '- ', '- a', '1. ', '1) a', '> ', '>', '---', '***', '- - ', '| a |', '| a |\n|', '| a |\n| -- |', '[a](', '[a](http://x', '**a', '*a', '__a', '`a', '    '];
+  const gaps = [' ', '\t', ' \t'];
+  for (const opener of openers) {
+    for (const gap of gaps) {
+      for (const tail of ['x', '!', '\n', '#', '|', '-']) {
+        const text = opener + gap.repeat(20000) + tail;
+        const started = Date.now();
+        parse(text);
+        assert.ok(Date.now() - started < 400, JSON.stringify([opener, gap, tail]));
+      }
+    }
+  }
+});

@@ -27,22 +27,22 @@
   const LIST = /^\s*([-*+]|\d{1,3}[.)])\s+(.*)$/;
   const MAX_DEPTH = 6, indentOf = (line) => line.match(/^ */)[0].length;
   function blocks(source, depth = 0) {
-    const lines = String(source).replace(/\r\n?/g, '\n').split('\n'), out = [];
+    const lines = String(source).replace(/\r\n?/g, '\n').split('\n').map((row) => row.trimEnd()), out = [];
     let i = 0;
     while (i < lines.length) {
       const line = lines[i];
       if (!line.trim()) { i++; continue; }
-      const fence = line.match(/^(\s*)```\s*([\w+#.-]*)\s*$/);
+      const fence = line.match(/^(\s*)```\s*([\w+#.-]*)$/);
       if (fence) {
         const code = []; i++;
-        while (i < lines.length && !/^\s*```\s*$/.test(lines[i])) code.push(lines[i++].startsWith(fence[1]) ? lines[i - 1].slice(fence[1].length) : lines[i - 1]);
+        while (i < lines.length && !/^\s*```$/.test(lines[i])) code.push(lines[i++].startsWith(fence[1]) ? lines[i - 1].slice(fence[1].length) : lines[i - 1]);
         i++;
         out.push({t: 'codeblock', lang: fence[2], v: code.join('\n')});
         continue;
       }
-      const heading = line.match(/^\s{0,3}(#{1,4})\s+(.+?)(?:\s+#+)?\s*$/);
-      if (heading) { out.push({t: 'heading', level: heading[1].length, c: inline(heading[2])}); i++; continue; }
-      if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { out.push({t: 'rule'}); i++; continue; }
+      const heading = line.match(/^\s{0,3}(#{1,4})\s+(\S.*)$/);
+      if (heading) { out.push({t: 'heading', level: heading[1].length, c: inline(heading[2].replace(/\s#+$/, '') || heading[2])}); i++; continue; }
+      if (/^\s*([-*_])(\s*\1){2,}$/.test(line)) { out.push({t: 'rule'}); i++; continue; }
       if (line.includes('|') && i + 1 < lines.length && isRule(lines[i + 1])) {
         const head = splitRow(line), rows = []; i += 2;
         while (i < lines.length && lines[i].includes('|') && lines[i].trim()) rows.push(splitRow(lines[i++]));
