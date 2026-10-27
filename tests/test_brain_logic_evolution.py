@@ -15,10 +15,6 @@ class CycleTests(unittest.TestCase):
         self.assertTrue(all(x["decision"]=="review" for x in result["evolution"]["trials"]))
 
     def test_unfinished_operation_blocks_promotion(self):
-        from evolution_ledger import DEFAULT_LEDGER
-        import copy
-        ledger=copy.deepcopy(DEFAULT_LEDGER)
-        from evolution_ledger import start_operation
         # Fail closed even if a stale or malformed ledger is injected.
         self.assertEqual(validate({"version":1,"cycles":"bad","reviews":[]}),DEFAULT_CYCLE)
         self.assertTrue(run({"evolution_ledger":{"version":1,"events":[]}})["evolution"]["manual_review_required"])
