@@ -50,10 +50,8 @@ jobs:
         run: python bootstrap/ci_timed.py --label 'Веб-макет' -- node --test tests/layout.test.cjs
       - name: Установить зависимости защитных регрессий
         run: python bootstrap/ci_timed.py --label 'Установка pypdf' -- python -m pip install -r requirements-ci.txt
-      - name: Проверить целостность Лаборатории развития
-        run: python bootstrap/ci_timed.py --label 'Целостность лаборатории' -- python bootstrap/ci_unittest_profile.py --pattern test_brain_lab_integrity.py
-      - name: Проверить негативные сценарии Лаборатории
-        run: python bootstrap/ci_timed.py --label 'Негативные сценарии' -- python -m unittest discover -s tests -p 'test_brain_lab_adversarial.py' -v
+      - name: Проверить обе независимые защитные регрессии параллельно
+        run: python bootstrap/ci_timed.py --label 'Защитные регрессии параллельно' -- python bootstrap/ci_parallel_quick.py
 
       - name: Три самых медленных этапа
         if: always()
