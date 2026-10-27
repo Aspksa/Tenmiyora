@@ -28,7 +28,7 @@ MAX_FILE_BYTES = 750_000
 MAX_BYTES = 16_000_000
 MAX_ISSUES = 150
 SCHEMA_VERSION = 1
-CORE = {"brain_lab.py", "memory_engine.py", "knowledge.py",
+CORE = {"brain_lab.py", "brain_lab_eight.py", "memory_engine.py", "knowledge.py",
         "source_provenance.py", "relation_verification.py",
         "document_understanding.py"}
 TIERS = {"critical": 0, "high": 1, "medium": 2, "low": 3}

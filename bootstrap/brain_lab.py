@@ -21,7 +21,7 @@ THRESHOLDS=Path(__file__).resolve().parents[1]/"tests"/"quality"/"thresholds.jso
 CORE_FILES=(
     # Включаем саму лабораторию: изменение логики экзамена/принятия
     # недопустимо скрывать от цифровой подписи алгоритма.
-    "brain_lab.py","brain_lab_audit.py",
+    "brain_lab.py","brain_lab_audit.py","brain_lab_eight.py",
     "knowledge.py","memory_engine.py","topic_router.py","topic_discovery.py",
     "topic_aliases.py","semantic.py","natural_relations.py","knowledge_relations.py",
     "knowledge_paths.py","document_understanding.py","document_deep_analysis.py",
@@ -175,7 +175,8 @@ def algorithm_signature():
 def suite_signature():
     """Fingerprint independent gold and guardrails; changed tests ≠ improvement."""
     return _digest_paths([GOLD,THRESHOLDS,LAB_ROOT/"brain_lab_holdout.py",
-                          LAB_ROOT/"quality_eval.py"])
+                          LAB_ROOT/"quality_eval.py",
+                          LAB_ROOT/"brain_lab_eight.py"])
 
 
 def _candidates(db):
@@ -291,6 +292,28 @@ def run_experiment(db,trials=3):
         raise ValueError("Число испытаний должно быть от 1 до 12.")
     before=signature(db)
     from brain_lab_holdout import evaluate as holdout_evaluate
+    from brain_lab_eight import evaluate as lab_eight_evaluate, NAMES as lab_eight_names
+    eight=lab_eight_evaluate()
+    eight_metrics=eight["metrics"]
+    # Fail closed if an exam was skipped, malformed or disagrees with its
+    # own verdict; a partial suite cannot silently promote a generation.
+    expected={"lab8_"+name for name,_ in lab_eight_names}
+    observations=eight.get("checks")
+    if (set(eight_metrics)!=expected or not isinstance(observations,list)
+            or len(observations)!=len(expected)
+            or {row.get("id") for row in observations
+                if isinstance(row,dict)}!={name for name,_ in lab_eight_names}):
+        raise RuntimeError("Неполный или повреждённый набор восьми экзаменов Мозга.")
+    if (eight.get("passed") is not all(row.get("passed") is True
+            for row in observations)):
+        raise RuntimeError("Противоречивый итог экзаменов Мозга: поколение не оценивается.")
+    if any(type(value) is not float or value not in (0.0,1.0)
+           or value!=float(next(row["passed"] for row in observations
+                      if "lab8_"+row["id"]==name))
+           for name,value in eight_metrics.items()):
+        raise RuntimeError("Метрика Мозга не соответствует фактическому экзамену.")
+    eight_failures=[{"metric":name,"actual":value,"minimum":1.0}
+                    for name,value in eight_metrics.items() if value<1.0]
     samples=[]
     per_trial_failures=[]
     all_failures=[]
@@ -299,11 +322,11 @@ def run_experiment(db,trials=3):
     for i in range(trials):
         metrics,failures=_trial(13001+i)
         holdout,additional=holdout_evaluate(87001+i)
-        combined={**metrics,**holdout}
-        if len(combined)!=len(metrics)+len(holdout):
+        combined={**metrics,**holdout,**eight_metrics}
+        if len(combined)!=len(metrics)+len(holdout)+len(eight_metrics):
             raise RuntimeError("Пересечение имён контрольных метрик.")
         samples.append(combined)
-        current=list(failures)+list(additional)
+        current=list(failures)+list(additional)+list(eight_failures)
         per_trial_failures.append(current)
         all_failures.extend(current)
     if algorithm_signature()!=algorithm or suite_signature()!=suite:
@@ -316,7 +339,8 @@ def run_experiment(db,trials=3):
         "retrieval_hit_at_k","source_integrity","negative_query_accuracy",
         "statement_recall","guardrail_citation_integrity",
         "guardrail_negative_abstention","guardrail_source_revocation",
-        "guardrail_duplicate_resistance","guardrail_counterargument"))
+        "guardrail_duplicate_resistance","guardrail_counterargument",
+        *eight_metrics.keys()))
     baseline=db.execute("""SELECT id,metrics_json,data_signature,
         algorithm_signature,suite_signature FROM brain_lab_generations
         WHERE status='accepted' ORDER BY id DESC LIMIT 1""").fetchone()
@@ -363,6 +387,7 @@ def run_experiment(db,trials=3):
             "knowledge_signature":before,
             "algorithm_signature":algorithm,
             "suite_signature":suite,
+            "lab_eight":eight,
             "limits":"Синтетические задачи: не доказывает развитие весов, научную точность или автономное улучшение кода."}
 
 
