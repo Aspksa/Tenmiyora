@@ -54,7 +54,7 @@
 .disk-dropzone{background:var(--surface);border:1.5px dashed var(--line-strong);border-radius:12px;padding:25px;display:flex;flex-direction:column;align-items:center;gap:7px;margin-bottom:18px;cursor:pointer;color:var(--gold);text-align:center}
 .disk-dropzone svg{width:25px;height:25px}.disk-dropzone strong{font-size:14px;font-weight:500}.disk-dropzone span{font-size:12px;color:var(--faint)}
 .disk-dropzone.drag-over{background:var(--gold-soft);border-color:var(--gold)}
-.disk-list-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.disk-list-header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
 .disk-list-header h2{margin:0}
 .disk-list{display:grid;gap:7px}
 .disk-row{display:flex;gap:13px;align-items:center;border:1px solid var(--line);border-radius:9px;padding:13px 14px;min-height:64px}
@@ -64,14 +64,55 @@
 .disk-item-name{font-size:14px;font-weight:500;display:block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left}
 .disk-item-name:hover{text-decoration:underline}
 .disk-item-meta{display:block;font-size:12px;color:var(--muted);line-height:1.6;margin-top:3px;overflow-wrap:anywhere}
-.disk-row-actions{display:flex;gap:3px}
+.disk-row-actions{display:flex;gap:3px;align-items:center}
 .disk-row-actions button{font-size:12px;color:var(--gold);padding:8px;border-radius:6px}
 .disk-row-actions button:hover{background:var(--surface-3)}
+.disk-select-all,.disk-check{display:grid;place-items:center}
+.disk-check,#disk-select-all{width:17px;height:17px;margin:0;accent-color:var(--gold);cursor:pointer;flex-shrink:0}
+.disk-view-controls{margin-left:auto;display:flex;align-items:center;gap:8px}
+#disk-sort{padding:8px 10px;border:1px solid var(--line-strong);background:var(--surface-2);color:var(--text);border-radius:8px;font:inherit;font-size:12px}
+.disk-view-toggle{display:flex;border:1px solid var(--line-strong);border-radius:8px;overflow:hidden}
+.disk-view-toggle button{width:34px;height:32px;display:grid;place-items:center;color:var(--muted)}
+.disk-view-toggle button svg{width:16px;height:16px}
+.disk-view-toggle button[aria-pressed=true]{background:var(--gold-soft);color:var(--gold-bright)}
+.disk-bulk{display:flex;align-items:center;flex-wrap:wrap;gap:4px 6px;padding:9px 12px;margin-bottom:10px;border:1px solid var(--gold-deep);background:var(--gold-soft);border-radius:9px;font-size:13px}
+.disk-bulk[hidden]{display:none}
+.disk-bulk strong{color:var(--gold-bright);font-weight:500;margin-right:6px}
+.disk-bulk button{color:var(--gold);padding:6px 8px;border-radius:6px;font-size:12px}
+.disk-bulk button:hover{background:var(--surface-3)}
+.disk-bulk #disk-bulk-delete{color:var(--danger)}
+.disk-row.selected{background:var(--gold-soft);border-color:var(--gold-deep)}
+.disk-row.drop-over,.disk-tree-line.drop-over,#disk-breadcrumbs button.drop-over{outline:1.5px dashed var(--gold);outline-offset:-2px;background:var(--gold-soft)}
+.disk-list>*{min-width:0}
+.disk-badge{display:inline-block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:top;box-sizing:border-box;margin-top:5px;padding:2px 8px;border-radius:999px;font-size:11px;line-height:1.6;border:1px solid var(--line-strong);color:var(--faint)}
+.disk-badge.ok{color:var(--ok);border-color:#9fbf7a55;background:#9fbf7a14}
+.disk-badge.busy{color:var(--gold);border-color:var(--gold-deep)}
+.disk-badge.error{color:var(--danger);border-color:#e3916d55;background:var(--danger-soft)}
+.disk-menu{position:relative}
+.disk-menu summary{list-style:none;cursor:pointer;color:var(--gold);padding:4px 10px;border-radius:6px;font-size:16px;line-height:1.4}
+.disk-menu summary::-webkit-details-marker{display:none}
+.disk-menu summary:hover,.disk-menu[open] summary{background:var(--surface-3)}
+.disk-menu-items{position:absolute;right:0;top:calc(100% + 4px);z-index:30;min-width:190px;display:grid;padding:6px;background:var(--surface-2);border:1px solid var(--line-strong);border-radius:9px;box-shadow:0 14px 40px #000000a0}
+.disk-row-actions .disk-menu-items button{text-align:left;font-size:13px;padding:9px 10px;color:var(--text)}
+.disk-row-actions .disk-menu-items button:last-child{color:var(--danger)}
+.disk-link{color:var(--gold);text-decoration:underline;font-size:12px;padding:0}
+.disk-list.grid{grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px}
+.disk-list.grid .disk-row{flex-direction:column;align-items:flex-start;position:relative;padding:14px;min-height:150px}
+.disk-list.grid .disk-check{position:absolute;top:12px;left:12px}
+.disk-list.grid .disk-icon{margin:4px auto 2px;width:52px;height:52px}
+.disk-list.grid .disk-item-content{width:100%;text-align:center}
+.disk-list.grid .disk-item-name{text-align:center;margin:0 auto}
+.disk-list.grid .disk-row-actions{width:100%;justify-content:center;flex-wrap:wrap;max-width:none}
+.disk-move-list{display:grid;gap:2px;max-height:55vh;overflow:auto;margin-top:6px}
+.disk-move-option{display:flex;align-items:center;gap:9px;padding:9px 10px 9px calc(10px + var(--depth,0) * 18px);border-radius:7px;text-align:left;font-size:13px;color:var(--text)}
+.disk-move-option svg{width:16px;height:16px;color:var(--gold);flex-shrink:0}
+.disk-move-option:hover:not(:disabled){background:var(--gold-soft)}
+.disk-move-option:disabled{opacity:.35;cursor:not-allowed}
 .disk-empty{text-align:center;color:var(--faint);padding:34px 12px;font-size:14px}
 .disk-note{margin-top:16px;max-width:900px}
 @media(max-width:1100px){.module-columns{grid-template-columns:1fr}}
 @media(max-width:760px){.knowledge-view .module-head{align-items:flex-start;flex-direction:column}.disk-toolbar{align-items:stretch;flex-direction:column}#disk-search{width:100%;max-width:none}.module-panel{padding:17px}}
-@media(max-width:470px){.disk-row{padding:10px;gap:8px}.disk-row-actions{flex-wrap:wrap;justify-content:flex-end;max-width:82px}.disk-row-actions button{font-size:11px;padding:4px}.disk-icon{width:30px;height:34px}.module-head .primary-button{gap:8px}}
+@media(max-width:470px){.disk-inline-study{display:none}.disk-view-controls{margin-left:0;width:100%}#disk-sort{flex:1}.disk-list.grid{grid-template-columns:1fr 1fr}.disk-row{padding:10px;gap:8px}.disk-row-actions{flex-wrap:wrap;justify-content:flex-end;max-width:82px}.disk-row-actions button{font-size:11px;padding:4px}.disk-icon{width:30px;height:34px}.module-head .primary-button{gap:8px}}
 
 /* Структурный анализ документа: локальный диалог без новых зависимостей. */
 .doc-dialog{box-sizing:border-box;width:min(800px,calc(100vw - 22px));max-height:min(88vh,860px);padding:24px;border:1px solid var(--line-strong);border-radius:15px;background:var(--surface);color:var(--text);box-shadow:0 24px 80px #000000b3}

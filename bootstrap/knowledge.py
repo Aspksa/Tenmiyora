@@ -26,6 +26,7 @@ import zipfile
 
 MAX_UPLOAD = 25 * 1024 * 1024
 MAX_EXTRACT = 350_000
+MAX_TEXT_EDIT = 400 * 1024
 ALLOWED_TEXT = {".txt", ".md", ".markdown", ".rst", ".csv", ".json",
                 ".yaml", ".yml", ".log", ".ini", ".toml", ".py", ".js",
                 ".ts", ".jsx", ".tsx", ".css", ".html", ".htm", ".sql",
@@ -165,6 +166,10 @@ def categorize(text):
         return ["Общие знания"]
     return [category for score, category in match[:2] if score >= max(1, match[0][0] // 3)]
 
+# Строка файла для Диска: сколько знаний Мозг извлёк из него.
+FILE_ROWS = """SELECT f.*, (SELECT COUNT(*) FROM facts WHERE source_type='file' AND source_id=f.id) AS facts
+    FROM files AS f"""
+
 class KnowledgeStore:
     def __init__(self, directory):
         self.root = Path(directory) / "tenmiyora-disk"
@@ -235,8 +240,11 @@ class KnowledgeStore:
             self.log(conn, "папка", name)
             return {"id": fid, "name": name}
 
-    def create_folder_path(self, parent, path):
-        """Цепочка «Проекты/2026/Отчёты»: существующие звенья переиспользуются."""
+    def create_folder_path(self, parent, path, ensure=False):
+        """Цепочка «Проекты/2026/Отчёты»: существующие звенья переиспользуются.
+
+        ensure=True не считает ошибкой полностью существующую цепочку — так
+        загрузка папки с компьютера раскладывает файлы по готовой структуре."""
         if not isinstance(path, str):
             raise ValueError("Неверное имя.")
         parts = [clean_name(part) for part in re.split(r"[/\\]", path.strip().strip("/\\"))]
@@ -255,9 +263,10 @@ class KnowledgeStore:
                 conn.execute("INSERT INTO folders VALUES(?,?,?,?)", (fid, node, name, now()))
                 created.append({"id": fid, "name": name})
                 node = fid
-            if not created:
+            if not created and not ensure:
                 raise ValueError("Такие папки уже существуют.")
-            self.log(conn, "папка", "/".join(parts))
+            if created:
+                self.log(conn, "папка", "/".join(parts))
             return {"id": node, "name": parts[-1], "created": created}
 
     def create_text_file(self, folder, name, text=""):
@@ -290,10 +299,10 @@ class KnowledgeStore:
             query = query.strip()[:120]
             if query:
                 folders = conn.execute("SELECT * FROM folders WHERE name LIKE ? ORDER BY name", ("%" + query + "%",)).fetchall()
-                files = conn.execute("SELECT * FROM files WHERE name LIKE ? ORDER BY created DESC", ("%" + query + "%",)).fetchall()
+                files = conn.execute(FILE_ROWS + " WHERE name LIKE ? ORDER BY created DESC", ("%" + query + "%",)).fetchall()
             else:
                 folders = conn.execute("SELECT * FROM folders WHERE parent IS ? ORDER BY name", (parent,)).fetchall()
-                files = conn.execute("SELECT * FROM files WHERE folder IS ? ORDER BY created DESC", (parent,)).fetchall()
+                files = conn.execute(FILE_ROWS + " WHERE folder IS ? ORDER BY created DESC", (parent,)).fetchall()
             crumb = []
             seen = set()
             node = parent
@@ -307,8 +316,10 @@ class KnowledgeStore:
             return {"folders": [dict(x) for x in folders], "files": [dict(x) for x in files],
                     "breadcrumbs": crumb}
 
-    def upload(self, name, data, folder=None, mime="application/octet-stream"):
-        """Повторная загрузка того же имени обновляет файл с архивированием версии."""
+    def upload(self, name, data, folder=None, mime="application/octet-stream", force=False, file_id=None):
+        """Повторная загрузка того же имени обновляет файл с архивированием версии.
+
+        force=True заново проводит неизменённый файл через извлечение знаний."""
         name = clean_name(name)
         if not isinstance(data, bytes) or len(data) > MAX_UPLOAD:
             raise ValueError("Максимальный размер файла — 25 МБ.")
@@ -328,10 +339,19 @@ class KnowledgeStore:
             if folder is not None and not conn.execute(
                     "SELECT 1 FROM folders WHERE id=?", (folder,)).fetchone():
                 raise ValueError("Папка не найдена.")
-            previous = conn.execute("""SELECT id,name,sha256,size,status FROM files
-                WHERE folder IS ? AND name=? ORDER BY created DESC LIMIT 1""",
-                (folder, name)).fetchone()
-            if previous and previous["sha256"] == checksum:
+            if file_id is not None:
+                # Правка и переобучение обновляют именно этот файл, даже если
+                # в папке есть другой с тем же именем.
+                previous = conn.execute("""SELECT id,name,sha256,size,status FROM files
+                    WHERE id=?""", (file_id,)).fetchone()
+                if not previous:
+                    raise ValueError("Файл не найден.")
+            else:
+                previous = conn.execute("""SELECT id,name,sha256,size,status FROM files
+                    WHERE folder IS ? AND name=? ORDER BY created DESC LIMIT 1""",
+                    (folder, name)).fetchone()
+            same = previous is not None and previous["sha256"] == checksum
+            if same and not force:
                 return {"id": previous["id"], "name": name,
                         "status": "без изменений", "size": len(data)}
             fid = previous["id"] if previous else secrets.token_hex(16)
@@ -344,7 +364,7 @@ class KnowledgeStore:
                     stream.write(data)
                     stream.flush()
                     os.fsync(stream.fileno())
-                if updated:
+                if updated and not same:
                     directory = self.root / "versions" / fid
                     directory.mkdir(parents=True, exist_ok=True)
                     archived = directory / (previous["sha256"] + ".bin")
@@ -354,6 +374,7 @@ class KnowledgeStore:
                         (file_id,sha256,size,relative_path,saved_at) VALUES(?,?,?,?,?)""",
                         (fid,previous["sha256"],previous["size"],
                          str(archived.relative_to(self.root)),now()))
+                if updated:
                     conn.execute("DELETE FROM facts WHERE source_type='file' AND source_id=?",(fid,))
                     self.engine.remove_source(conn,"file",fid)
                     conn.execute("""UPDATE files SET size=?,mime=?,sha256=?,status=?,created=? WHERE id=?""",
@@ -771,26 +792,109 @@ class KnowledgeStore:
             self.log(conn, "переименование", name)
             return {"ok": True}
 
-    def delete(self, kind, fid):
+    def delete(self, kind, fid, recursive=False):
+        """Папка удаляется целиком только по явному recursive=True."""
         table = {"file": "files", "folder": "folders"}.get(kind)
         if table is None:
             raise ValueError("Неверный тип объекта.")
+        files = []
         with self.lock, self.db() as conn:
             row = conn.execute(f"SELECT name FROM {table} WHERE id=?", (fid,)).fetchone()
             if not row:
                 raise ValueError("Объект не найден.")
             if kind == "folder":
-                if conn.execute("SELECT 1 FROM files WHERE folder=? UNION SELECT 1 FROM folders WHERE parent=?", (fid, fid)).fetchone():
+                folders = self._subtree(conn, fid)
+                marks = ",".join("?" * len(folders))
+                files = [x["id"] for x in conn.execute(
+                    f"SELECT id FROM files WHERE folder IN ({marks})", folders).fetchall()]
+                if (files or len(folders) > 1) and not recursive:
                     raise ValueError("Папка не пустая. Удалите или переместите её содержимое.")
             else:
-                conn.execute("DELETE FROM facts WHERE source_type='file' AND source_id=?", (fid,))
-                self.engine.remove_source(conn, "file", fid)
-                from document_understanding import remove as remove_document
-                remove_document(conn,fid)
-                conn.execute("DELETE FROM file_versions WHERE file_id=?", (fid,))
-            conn.execute(f"DELETE FROM {table} WHERE id=?", (fid,))
-            self.log(conn, "удаление", row["name"])
-        if kind == "file":
-            (self.objects / fid).unlink(missing_ok=True)
-            shutil.rmtree(self.root / "versions" / fid, ignore_errors=True)
-        return {"ok": True}
+                folders, files = [], [fid]
+            from document_understanding import remove as remove_document
+            for item in files:
+                conn.execute("DELETE FROM facts WHERE source_type='file' AND source_id=?", (item,))
+                self.engine.remove_source(conn, "file", item)
+                remove_document(conn, item)
+                conn.execute("DELETE FROM file_versions WHERE file_id=?", (item,))
+                conn.execute("DELETE FROM files WHERE id=?", (item,))
+            # Дети раньше родителей: внешний ключ parent не нарушается.
+            for item in reversed(folders):
+                conn.execute("DELETE FROM folders WHERE id=?", (item,))
+            self.log(conn, "удаление", row["name"] + (f" ({len(files)} файлов)" if kind == "folder" and files else ""))
+        for item in files:
+            (self.objects / item).unlink(missing_ok=True)
+            shutil.rmtree(self.root / "versions" / item, ignore_errors=True)
+        return {"ok": True, "files": len(files), "folders": len(folders)}
+
+    def _subtree(self, conn, fid):
+        """Папка и все вложенные, от корня к листьям."""
+        result, queue, seen = [], [fid], set()
+        while queue:
+            node = queue.pop(0)
+            if node in seen:
+                continue
+            seen.add(node)
+            result.append(node)
+            queue.extend(x["id"] for x in conn.execute("SELECT id FROM folders WHERE parent=?", (node,)).fetchall())
+        return result
+
+    def move(self, kind, fid, target):
+        """Перенос в другую папку; знания Мозга привязаны к файлу, а не к пути."""
+        table = {"file": "files", "folder": "folders"}.get(kind)
+        if table is None:
+            raise ValueError("Неверный тип объекта.")
+        with self.lock, self.db() as conn:
+            row = conn.execute(f"SELECT * FROM {table} WHERE id=?", (fid,)).fetchone()
+            if not row:
+                raise ValueError("Объект не найден.")
+            if target is not None and not conn.execute("SELECT 1 FROM folders WHERE id=?", (target,)).fetchone():
+                raise ValueError("Папка назначения не найдена.")
+            column = "parent" if kind == "folder" else "folder"
+            if row[column] == target:
+                return {"ok": True, "moved": False}
+            if kind == "folder" and target in self._subtree(conn, fid):
+                raise ValueError("Нельзя переместить папку внутрь неё самой.")
+            if conn.execute(f"SELECT 1 FROM {table} WHERE {column} IS ? AND name=? AND id<>?",
+                            (target, row["name"], fid)).fetchone():
+                raise ValueError("В папке назначения уже есть «" + row["name"] + "».")
+            conn.execute(f"UPDATE {table} SET {column}=? WHERE id=?", (target, fid))
+            self.log(conn, "перемещение", row["name"])
+            return {"ok": True, "moved": True}
+
+    def read_text(self, fid):
+        """Текст файла для просмотра и правки прямо на Диске."""
+        with self.lock, self.db() as conn:
+            row = conn.execute("SELECT name,size FROM files WHERE id=?", (fid,)).fetchone()
+        if not row:
+            raise ValueError("Файл не найден.")
+        if Path(row["name"]).suffix.lower() not in ALLOWED_TEXT:
+            raise ValueError("Этот формат нельзя открыть как текст. Скачайте файл.")
+        if row["size"] > MAX_TEXT_EDIT:
+            raise ValueError("Файл слишком большой для правки на Диске (больше 400 КБ).")
+        raw = (self.objects / fid).read_bytes()
+        try:
+            text = raw.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            raise ValueError("Файл не в кодировке UTF-8: правка на Диске недоступна.") from None
+        return {"id": fid, "name": row["name"], "text": text}
+
+    def save_text(self, fid, text):
+        """Сохранение правки: новая версия файла, старая уходит в архив, Мозг переучивается."""
+        if not isinstance(text, str) or len(text.encode("utf-8")) > MAX_TEXT_EDIT:
+            raise ValueError("Текст слишком большой для правки на Диске (больше 400 КБ).")
+        with self.lock:
+            current = self.read_text(fid)
+            with self.db() as conn:
+                row = conn.execute("SELECT folder,mime FROM files WHERE id=?", (fid,)).fetchone()
+            return self.upload(current["name"], text.encode("utf-8"), row["folder"], row["mime"], file_id=fid)
+
+    def relearn(self, fid):
+        """Заново извлечь знания из неизменённого файла (например, после ошибки)."""
+        with self.lock:
+            with self.db() as conn:
+                row = conn.execute("SELECT name,folder,mime FROM files WHERE id=?", (fid,)).fetchone()
+            if not row:
+                raise ValueError("Файл не найден.")
+            data = (self.objects / fid).read_bytes()
+            return self.upload(row["name"], data, row["folder"], row["mime"], force=True, file_id=fid)
