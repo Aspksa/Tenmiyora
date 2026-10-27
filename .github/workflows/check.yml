@@ -78,6 +78,8 @@ jobs:
       - name: Проверить рост характера по обратной связи
         run: python bootstrap/ci_timed.py --label 'Soul feedback growth' -- python -m unittest discover -s tests -p 'test_soul_feedback_growth.py' -v
 
+      - name: Проверить опыт и развитие личности
+        run: python -m unittest discover -s tests -p 'test_soul_experience.py' -v
       - name: Проверить шесть инвариантов Лаборатории
         run: python bootstrap/ci_timed.py --label 'Метаморфные проверки' -- python bootstrap/brain_lab_metamorphic.py --check --output .runtime/quality-reports/brain-lab-metamorphic.json
       - name: Проверить блокировки принятия и SHA-пломбу инвариантов
