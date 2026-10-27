@@ -447,7 +447,7 @@ class MemoryEngine:
                     # Итоговый фильтр ниже требует достаточной поддержки фрагмента.
                     query = " OR ".join('"' + term.replace('"', '""') + '"*' for term in terms)
                     matches = db.execute("""SELECT k.statement AS excerpt,k.locator,
-                        k.source_type,k.source_id,b.name AS branch,bm25(knowledge_fts) AS rank
+                        k.source_type,k.source_id,b.name AS branch,b.id AS branch_id,bm25(knowledge_fts) AS rank
                         FROM knowledge_fts JOIN knowledge_items k ON k.id=knowledge_fts.rowid
                         JOIN branches b ON b.id=k.branch_id
                         WHERE knowledge_fts MATCH ? ORDER BY rank LIMIT ?""",
@@ -456,7 +456,7 @@ class MemoryEngine:
                     matches = []
             if not self.fts:
                 matches = db.execute("""SELECT k.statement AS excerpt,k.locator,
-                    k.source_type,k.source_id,b.name AS branch
+                    k.source_type,k.source_id,b.name AS branch,b.id AS branch_id
                     FROM knowledge_items k JOIN branches b ON b.id=k.branch_id
                     ORDER BY k.id DESC LIMIT 200000""").fetchall()
 
@@ -541,7 +541,7 @@ class MemoryEngine:
                         return evidence[:limit]
             # Старые факты проходят РОВНО такую же проверку достаточности.
             rows = db.execute("""SELECT f.excerpt,f.locator,f.source_type,f.source_id,
-                b.name AS branch FROM facts f JOIN branches b ON b.id=f.branch
+                b.name AS branch,b.id AS branch_id FROM facts f JOIN branches b ON b.id=f.branch
                 ORDER BY f.id DESC LIMIT 200000""").fetchall()
             return select(rows)
 

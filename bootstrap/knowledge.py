@@ -455,7 +455,53 @@ class KnowledgeStore:
                 visible[target_id]["facts"] += item["facts"]
             recent = conn.execute("SELECT time,action,detail FROM journal ORDER BY id DESC LIMIT 15").fetchall()
             nodes = sorted(visible.values(), key=lambda item: (item["parent"] or 0,item["name"]))
-            return {"branches": nodes, "recent": [dict(row) for row in recent]}
+            return {"branches": nodes, "recent": [dict(row) for row in recent],
+                    "stats": self._brain_stats(conn)}
+
+    def _brain_stats(self, conn):
+        """Сводка для экрана Мозга: сколько знаний и откуда они пришли."""
+        # Как и в branches(): ветка без knowledge_items показывает legacy facts.
+        row = conn.execute("""WITH effective AS (
+              SELECT source_type,source_id FROM knowledge_items
+              UNION ALL
+              SELECT f.source_type,f.source_id FROM facts f WHERE NOT EXISTS
+                (SELECT 1 FROM knowledge_items k WHERE k.branch_id=f.branch))
+            SELECT COUNT(*) AS facts,
+            COUNT(DISTINCT CASE WHEN source_type='file' THEN source_id END) AS files,
+            SUM(CASE WHEN source_type='chat' THEN 1 ELSE 0 END) AS chat
+            FROM effective""").fetchone()
+        return {"facts": row["facts"], "files": row["files"], "chat": row["chat"] or 0}
+
+    def search_brain(self, question, limit=12):
+        """Поиск по Мозгу для интерфейса: те же строгие правила, что и для чата."""
+        if not isinstance(question, str) or len(question.strip()) < 2:
+            raise ValueError("Введите запрос для поиска.")
+        results = self.retrieve(question.strip()[:300], limit)
+        from topic_aliases import projection
+        files = {item["source_id"] for item in results if item.get("source_type") == "file"}
+        names, branches = {}, {}
+        with self.lock, self.db() as conn:
+            if files:
+                params = ",".join("?" for _ in files)
+                names = {row["id"]: row["name"] for row in conn.execute(
+                    f"SELECT id,name FROM files WHERE id IN ({params})", tuple(files))}
+            # Поиск отдаёт исходную ветку; дерево показывает каноническую
+            # после слияния синонимов, поэтому переходим по её id.
+            mapping = projection(conn)
+            for origin in {item.get("branch_id") for item in results} - {None}:
+                target = mapping.get(origin, origin)
+                row = conn.execute("SELECT name FROM branches WHERE id=?", (target,)).fetchone()
+                if row:
+                    branches[origin] = (target, row["name"])
+        found = []
+        for item in results:
+            branch_id, branch_name = branches.get(item.get("branch_id"), (None, item.get("branch", "")))
+            found.append({"excerpt": item["excerpt"], "locator": item["locator"],
+                          "branch": branch_name, "branch_id": branch_id,
+                          "source_type": item.get("source_type", ""),
+                          "source_id": item.get("source_id", ""),
+                          "source_name": names.get(item.get("source_id"))})
+        return {"results": found}
 
     def facts(self, branch):
         from topic_aliases import projection
@@ -466,11 +512,14 @@ class KnowledgeStore:
             params = ",".join("?" for _ in ids)
             # All old IDs remain valid and their knowledge is readable.
             rows = conn.execute(f"""SELECT k.id,k.statement AS excerpt,k.locator,
-                k.source_type,k.source_id,k.created FROM knowledge_items k
+                k.source_type,k.source_id,k.created,d.name AS source_name FROM knowledge_items k
+                LEFT JOIN files d ON k.source_type='file' AND d.id=k.source_id
                 WHERE k.branch_id IN ({params}) ORDER BY k.id DESC LIMIT 100""", ids).fetchall()
             if not rows:
                 rows = conn.execute(f"""SELECT f.id,f.excerpt,f.locator,f.source_type,
-                    f.source_id,f.created FROM facts f WHERE f.branch IN ({params})
+                    f.source_id,f.created,d.name AS source_name FROM facts f
+                    LEFT JOIN files d ON f.source_type='file' AND d.id=f.source_id
+                    WHERE f.branch IN ({params})
                     ORDER BY f.id DESC LIMIT 100""", ids).fetchall()
             return {"facts": [dict(row) for row in rows]}
 

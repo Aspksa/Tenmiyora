@@ -32,6 +32,8 @@
   <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 2.4 6.6L21 12l-6.6 2.4L12 21l-2.4-6.6L3 12l6.6-2.4Z"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
   <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
 </svg>
 <div class="app-shell">
   <aside class="sidebar" aria-label="Главное меню">
@@ -53,15 +55,25 @@
         </div>
         <p class="gesture-guide"><span class="guide-mark">✦</span>Щелчок по аватару — чат, правый щелчок — настройки. Аватар можно перетаскивать.</p>
       </section>
-      <section id="brain-view" class="view knowledge-view" hidden>
-        <div class="module-head"><div><h1>Мозг</h1><p>Знания из документов на Диске и сообщений чата. У каждого знания сохраняется источник.</p></div><button class="secondary-button" id="brain-refresh">Обновить ↻</button></div>
-        <div class="brain-metrics" aria-label="Показатели памяти"><div><strong id="brain-branches-count">0</strong><span>веток</span></div><div><strong id="brain-facts-count">0</strong><span>знаний</span></div><div><strong id="brain-events-count">0</strong><span>последних событий</span></div></div>
-        <div class="module-columns"><section class="module-panel"><h2>Дерево знаний</h2><p class="module-muted">Выберите ветку, чтобы увидеть подтверждающие фрагменты.</p><div id="brain-tree" class="brain-tree"></div></section><section class="module-panel"><h2 id="brain-detail-title">Содержимое ветки</h2><div id="brain-detail" class="brain-detail"><p class="module-muted">Выберите ветку слева.</p></div></section></div>
-        <section class="module-panel activity-panel"><h2>История роста</h2><div id="brain-events"></div></section>
+      <section id="brain-view" class="view knowledge-view brain-view" hidden>
+        <div class="module-head brain-head"><div><span class="brain-eyebrow"><svg><use href="#i-brain"/></svg>Память Tenmiyora</span><h1>Мозг</h1><p>Знания из документов на Диске и сообщений чата. У каждого знания сохраняется источник.</p></div><button class="secondary-button" id="brain-refresh"><svg><use href="#i-reset"/></svg>Обновить</button></div>
+        <form id="brain-search-form" class="brain-search" role="search"><svg><use href="#i-search"/></svg><label class="sr-only" for="brain-search-input">Поиск по Мозгу</label><input id="brain-search-input" type="search" maxlength="300" placeholder="Спросите Мозг: например, «сроки оплаты по договору»" autocomplete="off"><button class="primary-button" type="submit">Найти<svg><use href="#i-arrow"/></svg></button></form>
+        <section id="brain-search-results" class="brain-search-results" aria-live="polite" hidden></section>
+        <div class="brain-metrics" aria-label="Показатели памяти">
+          <div><span class="metric-icon"><svg><use href="#i-brain"/></svg></span><strong id="brain-branches-count">0</strong><span>веток</span></div>
+          <div><span class="metric-icon"><svg><use href="#i-spark"/></svg></span><strong id="brain-facts-count">0</strong><span>знаний</span></div>
+          <div><span class="metric-icon"><svg><use href="#i-file"/></svg></span><strong id="brain-files-count">0</strong><span>документов</span></div>
+          <div><span class="metric-icon"><svg><use href="#i-chat"/></svg></span><strong id="brain-chat-count">0</strong><span>из чата</span></div>
+        </div>
+        <div class="module-columns brain-explorer">
+          <section class="module-panel brain-tree-panel"><div class="panel-head"><h2>Дерево знаний</h2><span id="brain-tree-count" class="brain-pill"></span></div><label class="sr-only" for="brain-filter">Фильтр веток</label><input id="brain-filter" class="brain-filter" type="search" placeholder="Фильтр веток" autocomplete="off"><div id="brain-tree" class="brain-tree" role="tree" aria-label="Ветки знаний"></div></section>
+          <section class="module-panel brain-detail-panel"><div class="panel-head"><div><nav id="brain-detail-path" class="brain-path" aria-label="Путь к ветке"></nav><h2 id="brain-detail-title">Содержимое ветки</h2></div><span id="brain-detail-count" class="brain-pill" hidden></span></div><div id="brain-detail" class="brain-detail"><div class="brain-empty"><svg><use href="#i-brain"/></svg><p>Выберите ветку слева, чтобы увидеть знания и их источники.</p></div></div></section>
+        </div>
+        <section class="module-panel activity-panel"><div class="panel-head"><h2>История роста</h2><span class="module-muted">последние события</span></div><div id="brain-events" class="brain-timeline"></div></section>
         <section class="module-panel brain-lab-panel" aria-labelledby="brain-lab-title">
-          <div class="brain-lab-head"><div><h2 id="brain-lab-title">Лаборатория развития</h2><p class="module-muted">Поколения, проверочные задачи, пробелы, навыки и эксперименты. Только локально — без самостоятельного изменения кода или весов.</p></div>
-          <div class="brain-lab-actions"><button type="button" id="brain-lab-scan" class="secondary-button">Найти пробелы</button><button type="button" id="brain-lab-exam" class="secondary-button">Провести экзамен</button></div></div>
-          <p id="brain-lab-status" class="module-muted" aria-live="polite">Экзамены выполняются по отдельному запросу.</p>
+          <div class="brain-lab-head"><div><h2 id="brain-lab-title">Лаборатория развития</h2><p class="module-muted">Поколения, проверочные задачи, пробелы и навыки. Только локально, без изменения кода или весов модели.</p></div>
+          <div class="brain-lab-actions"><button type="button" id="brain-lab-scan" class="secondary-button"><svg><use href="#i-search"/></svg>Найти пробелы</button><button type="button" id="brain-lab-exam" class="secondary-button"><svg><use href="#i-check"/></svg>Провести экзамен</button></div></div>
+          <p id="brain-lab-status" class="brain-lab-status" aria-live="polite">Экзамены выполняются по отдельному запросу.</p>
           <div id="brain-lab-content" class="brain-lab-content"></div>
         </section>
       </section>

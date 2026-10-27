@@ -3,6 +3,7 @@ import http.client
 import importlib.util
 import io
 import json
+import urllib.parse
 from pathlib import Path
 import tempfile
 import threading
@@ -123,7 +124,23 @@ class KnowledgeApiTests(unittest.TestCase):
         self.assertIn("attachment", headers["Content-Disposition"])
         status, body, _ = self.call("GET", "/api/brain")
         self.assertEqual(status, 200)
-        self.assertTrue(json.loads(body)["branches"])
+        brain = json.loads(body)
+        self.assertTrue(brain["branches"])
+        self.assertGreater(brain["stats"]["facts"], 0)
+        self.assertEqual(brain["stats"]["files"], 1)
+        branch = next(item for item in brain["branches"] if item["facts"])
+        status, body, _ = self.call("GET", "/api/brain/facts?branch=" + str(branch["id"]))
+        self.assertEqual(status, 200)
+        facts = json.loads(body)["facts"]
+        self.assertTrue(any(fact["source_name"] == "contract.txt" for fact in facts))
+        status, body, _ = self.call("GET", "/api/brain/search?q=" + urllib.parse.quote("договор поставки"))
+        self.assertEqual(status, 200, body)
+        results = json.loads(body)["results"]
+        self.assertTrue(results)
+        self.assertEqual(results[0]["source_name"], "contract.txt")
+        self.assertEqual(results[0]["source_id"], file_id)
+        status, body, _ = self.call("GET", "/api/brain/search?q=")
+        self.assertEqual(status, 400)
     def test_chat_uses_context_from_disk(self):
         store = self.host.workspace
         store.knowledge.upload("python.txt", "Python можно тестировать с использованием библиотеки unittest и простого SQLite.".encode())
