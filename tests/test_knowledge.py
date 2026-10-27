@@ -51,6 +51,40 @@ class KnowledgeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.store.download(item["id"])
 
+    def test_folder_chain_tree_and_created_text_file(self):
+        top = self.store.create_folder(None, "Проекты")
+        chain = self.store.create_folder_path(None, "Проекты/2026/Отчёты")
+        self.assertEqual([x["name"] for x in chain["created"]], ["2026", "Отчёты"])
+        self.assertEqual(self.store.listing(chain["id"])["breadcrumbs"][0]["id"], top["id"])
+        more = self.store.create_folder_path(chain["id"], "Квартал/Черновики")
+        self.assertEqual(len(self.store.listing(chain["id"])["folders"]), 1)
+        with self.assertRaisesRegex(ValueError, "уже существуют"):
+            self.store.create_folder_path(None, "Проекты/2026")
+        with self.assertRaises(ValueError):
+            self.store.create_folder_path(None, "Проекты/../секрет")
+        with self.assertRaises(ValueError):
+            self.store.create_folder_path(None, "а//б")
+        note = self.store.create_text_file(more["id"], "заметка", "Python и SQLite хранят локальные данные приложения надёжно и просто.")
+        self.assertEqual(note["name"], "заметка.md")
+        self.assertTrue(self.store.retrieve("Что известно о Python и SQLite?"))
+        with self.assertRaisesRegex(ValueError, "уже есть"):
+            self.store.create_text_file(more["id"], "заметка.md", "")
+        results = []
+        def create(text):
+            try:
+                results.append(self.store.create_text_file(None, "гонка.txt", text)["id"])
+            except ValueError:
+                results.append(None)
+        workers = [threading.Thread(target=create, args=("Первый текст " + str(i),)) for i in range(4)]
+        for worker in workers: worker.start()
+        for worker in workers: worker.join()
+        self.assertEqual(sum(x is not None for x in results), 1)
+        empty = self.store.create_text_file(None, "пусто.txt")
+        self.assertEqual(self.store.download(empty["id"])[1], b"")
+        tree = self.store.tree()
+        self.assertEqual(len(tree["folders"]), 5)
+        self.assertEqual({x["folder"] for x in tree["files"]}, {more["id"], None})
+
     def test_docx_extraction_and_source_removal(self):
         xml = ('<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
                '<w:body><w:p><w:r><w:t>Договор поставки товара и ответственность сторон.</w:t></w:r></w:p></w:body></w:document>')
@@ -102,6 +136,28 @@ class KnowledgeApiTests(unittest.TestCase):
             return response.status, response.read(), dict(response.getheaders())
         finally:
             connection.close()
+    def test_routes_folder_chain_new_file_and_tree(self):
+        status, body, _ = self.call("POST", "/api/disk/folder",
+            json.dumps({"parent": None, "name": "Работа"}).encode(),
+            {"Content-Type": "application/json"})
+        fid = json.loads(body)["id"]
+        status, body, _ = self.call("POST", "/api/disk/folder",
+            json.dumps({"parent": fid, "name": "Клиенты/Договоры"}).encode(),
+            {"Content-Type": "application/json"})
+        self.assertEqual(status, 200, body)
+        nested = json.loads(body)["id"]
+        status, body, _ = self.call("POST", "/api/disk/file",
+            json.dumps({"folder": nested, "name": "памятка.txt", "text": "Сроки оплаты договора поставки составляют тридцать дней."}).encode(),
+            {"Content-Type": "application/json"})
+        self.assertEqual(status, 200, body)
+        status, body, _ = self.call("POST", "/api/disk/file",
+            json.dumps({"folder": nested, "name": "длинный.txt", "text": "Ж" * 100000}, ensure_ascii=False).encode(),
+            {"Content-Type": "application/json"})
+        self.assertEqual(status, 200, body)
+        status, body, _ = self.call("GET", "/api/disk/tree")
+        tree = json.loads(body)
+        self.assertEqual(len(tree["folders"]), 3)
+        self.assertEqual({x["folder"] for x in tree["files"]}, {nested})
     def test_routes_upload_list_download_and_brain(self):
         for path in ("/knowledge.js", "/knowledge.css"):
             status, _, _ = self.call("GET", path)
