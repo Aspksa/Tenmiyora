@@ -13,6 +13,10 @@ import sys
 
 
 class TimedResult(unittest.TextTestResult):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.durations = []
+
     def startTest(self, test):
         self._started = time.monotonic()
         super().startTest(test)
@@ -34,12 +38,6 @@ def main():
         top_level_dir=str(root / "tests"))
     class Runner(unittest.TextTestRunner):
         resultclass = TimedResult
-    # A custom result needs durations before first test begins.
-    original = TimedResult.__init__
-    def initial(self, *a, **kw):
-        original(self, *a, **kw)
-        self.durations = []
-    TimedResult.__init__ = initial
     result = Runner(verbosity=2).run(suite)
     print("Slowest individual tests:")
     for seconds, test_id in sorted(result.durations, reverse=True)[:3]:
