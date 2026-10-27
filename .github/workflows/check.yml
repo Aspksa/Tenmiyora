@@ -68,6 +68,9 @@ jobs:
       - name: PDF — контроль OCR и полноты страниц
         run: python bootstrap/ci_timed.py --label 'PDF OCR coverage' -- python -m unittest discover -s tests -p 'test_pdf_ocr_coverage.py' -v
 
+      - name: Проверить развитие личности Tenmiyora
+        run: python bootstrap/ci_timed.py --label 'Soul evolution' -- python -m unittest discover -s tests -p 'test_soul_evolution.py' -v
+
       - name: Проверить шесть инвариантов Лаборатории
         run: python bootstrap/ci_timed.py --label 'Метаморфные проверки' -- python bootstrap/brain_lab_metamorphic.py --check --output .runtime/quality-reports/brain-lab-metamorphic.json
       - name: Проверить блокировки принятия и SHA-пломбу инвариантов
