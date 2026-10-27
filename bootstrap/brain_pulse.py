@@ -10,7 +10,7 @@ from brain_growth import EFFECTIVE
 from topic_aliases import projection
 
 KEEP_PULSES = 60
-MAX_SYNAPSES = 30
+MAX_SYNAPSES = 16
 
 
 def init_schema(db):
@@ -37,11 +37,14 @@ def record(db, branch_ids, origin, clock):
     visible = sorted({mapping.get(b, b) for b in branch_ids if b is not None})
     if not visible:
         return None
-    for branch in visible:
+    # Самоэкзамен в режиме ожидания только светится на карте: это не настоящий
+    # вопрос, поэтому он не будит ветки и не укрепляет связи между ними.
+    linked = [] if origin == "idle" else visible
+    for branch in linked:
         db.execute("""INSERT INTO brain_usage(branch_id,uses,last_used) VALUES(?,1,?)
             ON CONFLICT(branch_id) DO UPDATE SET uses=uses+1,last_used=excluded.last_used""", (branch, clock))
-    for i, a in enumerate(visible):
-        for b in visible[i + 1:]:
+    for i, a in enumerate(linked):
+        for b in linked[i + 1:]:
             db.execute("""INSERT INTO brain_synapses(a,b,weight,last_used) VALUES(?,?,1,?)
                 ON CONFLICT(a,b) DO UPDATE SET weight=weight+1,last_used=excluded.last_used""", (a, b, clock))
     pulse = db.execute("INSERT INTO brain_pulses(time,origin,branches) VALUES(?,?,?)",

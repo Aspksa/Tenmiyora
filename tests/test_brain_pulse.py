@@ -80,6 +80,17 @@ class BrainPulseTests(unittest.TestCase):
             self.assertEqual(db.execute("SELECT COUNT(*) FROM brain_usage WHERE branch_id=?", (b,)).fetchone()[0], 0)
             self.assertEqual(db.execute("SELECT COUNT(*) FROM brain_usage WHERE branch_id=?", (a,)).fetchone()[0], 1)
 
+    def test_idle_exam_glows_but_does_not_strengthen(self):
+        from brain_pulse import record
+        self.store.upload("python.txt", "Python позволяет тестировать код с помощью unittest и pytest.".encode())
+        self.store.upload("contract.txt", "Договор поставки: поставщик передаёт товар покупателю после оплаты.".encode())
+        ids = sorted(self.visible())
+        with self.store.db() as db:
+            record(db, ids, "idle", "2026-01-01T00:00:00+00:00")
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM brain_usage").fetchone()[0], 0)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM brain_synapses").fetchone()[0], 0)
+        self.assertEqual(self.store.brain_pulses()["pulses"][-1]["branches"], ids)
+
     def test_old_pulses_are_pruned(self):
         from brain_pulse import record, KEEP_PULSES
         self.store.upload("python.txt", "Python позволяет тестировать код с помощью unittest и pytest.".encode())

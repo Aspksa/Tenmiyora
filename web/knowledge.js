@@ -762,30 +762,54 @@
     const bend = polar(to.angle, ([0, 70, 165, 235, 285][Math.min(to.depth, 4)]));
     return `M${cx.toFixed(1)},${cy.toFixed(1)} Q${bend[0].toFixed(1)},${bend[1].toFixed(1)} ${to.x.toFixed(1)},${to.y.toFixed(1)}`;
   }
-  // Подпись не должна вылезать за край карты: ветку у края подписываем внутрь
-  // и укорачиваем имя под оставшееся место (ширина символа — грубая оценка).
-  function placeLabel(label, item) {
-    const root = item.depth === 1, font = MAP.narrow ? (root ? 21 : 17) : (root ? 15 : 12);
-    const char = font * .58, pad = 6, name = item.node.name;
-    const fit = space => {
-      const max = Math.max(4, Math.min(26, Math.floor(space / char)));
-      return name.length > max ? name.slice(0, max - 1) + '…' : name;
-    };
-    if (root) {
-      const text = fit(MAP.width - pad * 2), half = text.length * char / 2;
-      const shift = Math.max(pad + half - item.x, Math.min(0, MAP.width - pad - half - item.x));
-      label.setAttribute('x', shift.toFixed(1));
-      label.setAttribute('text-anchor', 'middle');
-      label.textContent = text;
-      return;
+  // Подпись ветки: короткая, в одну-две строки, и не вылезает за край карты.
+  // Длинное название переносится по словам; полное — во всплывающей подсказке и карточке.
+  const LABEL = {font: [13, 11], narrow: [18, 15], line: 1.2, perLine: 16};
+  function wrapName(name, perLine) {
+    const lines = [];
+    let line = '';
+    for (const word of name.split(/\s+/)) {
+      if (!line) line = word;
+      else if ((line + ' ' + word).length <= perLine) line += ' ' + word;
+      else { lines.push(line); line = word; }
     }
-    const gap = item.size + 9, right = MAP.width - item.x - gap - pad, left = item.x - gap - pad;
+    if (line) lines.push(line);
+    if (lines.length > 2) lines.splice(1, lines.length, lines.slice(1).join(' '));
+    // Обрезаем по границе слова, чтобы не было «персоналом и ка…».
+    return lines.map(text => {
+      if (text.length <= perLine) return text;
+      const cut = text.slice(0, perLine - 1), space = cut.lastIndexOf(' ');
+      return (space > perLine / 3 ? cut.slice(0, space) : cut).trimEnd() + '…';
+    });
+  }
+  function placeLabel(label, item) {
+    const root = item.depth === 1, font = (MAP.narrow ? LABEL.narrow : LABEL.font)[root ? 0 : 1];
+    const char = font * .56, pad = 6, name = item.node.name;
+    const gap = item.size + 7, right = MAP.width - item.x - gap - pad, left = item.x - gap - pad;
     let outward = Math.cos(item.angle) >= 0;
-    const wanted = Math.min(name.length, 26) * char;
-    if ((outward ? right : left) < wanted && (outward ? left : right) > (outward ? right : left)) outward = !outward;
-    label.setAttribute('x', (outward ? gap : -gap).toFixed(1));
-    label.setAttribute('text-anchor', outward ? 'start' : 'end');
-    label.textContent = fit(outward ? right : left);
+    if (!root) {
+      const wanted = Math.min(name.length, LABEL.perLine) * char;
+      if ((outward ? right : left) < wanted && (outward ? left : right) > (outward ? right : left)) outward = !outward;
+    }
+    const room = root ? MAP.width - pad * 2 : (outward ? right : left);
+    const lines = wrapName(name, Math.max(5, Math.min(LABEL.perLine, Math.floor(room / char))));
+    const step = font * LABEL.line;
+    // Корень подписан над узлом (строки растут вверх), ветка — сбоку, по центру.
+    const first = root ? -item.size - 6 - (lines.length - 1) * step : 4 - (lines.length - 1) * step / 2;
+    let x = 0, anchor = 'middle';
+    if (root) {
+      const half = Math.max(...lines.map(text => text.length)) * char / 2;
+      x = Math.max(pad + half - item.x, Math.min(0, MAP.width - pad - half - item.x));
+    } else {
+      x = outward ? gap : -gap;
+      anchor = outward ? 'start' : 'end';
+    }
+    label.setAttribute('text-anchor', anchor);
+    label.replaceChildren(...lines.map((text, i) => {
+      const span = svg('tspan', {x: x.toFixed(1), y: (first + i * step).toFixed(1)});
+      span.textContent = text;
+      return span;
+    }));
   }
 
   function renderMap() {
@@ -879,7 +903,10 @@
         count.textContent = item.total;
         inner.append(count);
       }
-      const label = svg('text', {y: item.depth === 1 ? -item.size - 6 : 4}, 'map-label' + (item.depth === 1 ? ' root' : ''));
+      const tip = svg('title');
+      tip.textContent = item.node.name;
+      group.append(tip);
+      const label = svg('text', {}, 'map-label' + (item.depth === 1 ? ' root' : ''));
       placeLabel(label, item);
       inner.append(label);
       if (fresh || born) {
