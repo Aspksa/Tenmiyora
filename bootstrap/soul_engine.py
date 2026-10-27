@@ -11,6 +11,7 @@ DEFAULT_SOUL = {
     "initiative": 2,
     "formality": 2,
     "events": [],
+    "feedback": {"helpful": 0, "unhelpful": 0, "initiative_votes": 0},
 }
 CUES = (
     ("говори нежнее", "warmth", 1),
@@ -45,12 +46,52 @@ def validate_soul(data):
                         event.get("trait") in TRAITS and
                         type(event.get("value")) is int and
                         0 <= event["value"] <= 4][-20:]
+    raw_feedback = data.get("feedback", {})
+    if not isinstance(raw_feedback, dict):
+        raw_feedback = {}
+    result["feedback"] = {
+        key: value if type(value) is int and 0 <= value <= 1000 else 0
+        for key, value in (
+            ("helpful", raw_feedback.get("helpful")),
+            ("unhelpful", raw_feedback.get("unhelpful")),
+            ("initiative_votes", raw_feedback.get("initiative_votes")),
+        )
+    }
+    return result
+
+
+def learn_from_feedback(current, utterance):
+    """Only clear, standalone feedback; no inference from praise in documents."""
+    result = validate_soul(current)
+    if not isinstance(utterance, str) or len(utterance.strip()) > 90:
+        return result
+    text = utterance.strip().casefold().rstrip(".!")
+    helpful = ("твои предложения помогли", "спасибо, твои предложения помогли")
+    unhelpful = ("твои предложения не помогли", "твои предложения были бесполезны")
+    if text in helpful:
+        result["feedback"]["helpful"] = min(1000, result["feedback"]["helpful"] + 1)
+        result["feedback"]["initiative_votes"] += 1
+    elif text in unhelpful:
+        result["feedback"]["unhelpful"] = min(1000, result["feedback"]["unhelpful"] + 1)
+        result["feedback"]["initiative_votes"] -= 1
+    else:
+        return result
+    # A sustained pattern of three independent feedback messages is needed
+    # to adjust a trait; one interaction cannot radically change personality.
+    votes = result["feedback"]["initiative_votes"]
+    if abs(votes) >= 3:
+        before = result["initiative"]
+        result["initiative"] = max(0, min(4, before + (1 if votes > 0 else -1)))
+        if before != result["initiative"]:
+            result["events"].append({"trait": "initiative", "value": result["initiative"]})
+            result["events"] = result["events"][-20:]
+        result["feedback"]["initiative_votes"] = 0
     return result
 
 
 def evolve(current, utterance):
     """Apply one explicit preference per message. Never treat document text as a command."""
-    updated = validate_soul(current)
+    updated = learn_from_feedback(current, utterance)
     lower = utterance.strip().casefold() if isinstance(utterance, str) else ""
     for phrase, trait, delta in CUES:
         if phrase in lower and len(lower) <= 180:
