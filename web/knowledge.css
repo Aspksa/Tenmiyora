@@ -9,6 +9,42 @@
 .module-panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:23px;min-width:0}
 .module-panel h2{font:23px var(--serif);color:var(--gold-bright);letter-spacing:-.3px;margin:0 0 10px}
 .module-muted{font-size:13px;line-height:1.7;color:var(--muted)}
+.disk-layout{display:grid;grid-template-columns:minmax(220px,290px) minmax(0,1fr);gap:16px;align-items:start}
+.disk-main{min-width:0}
+.disk-tree-panel{padding:16px 12px;position:sticky;top:18px;max-height:calc(100vh - 40px);overflow:auto}
+.disk-tree-panel summary{display:flex;align-items:baseline;gap:9px;cursor:pointer;list-style:none;padding:0 6px 10px}
+.disk-tree-panel summary::-webkit-details-marker{display:none}
+.disk-tree-panel summary h2{margin:0;font-size:20px}
+.disk-tree ul{list-style:none;margin:0;padding:0}
+.disk-tree-line{display:flex;align-items:center;gap:2px;border-radius:7px;padding-left:calc(var(--depth,0) * 14px);min-height:34px}
+.disk-tree-line:hover{background:var(--surface-2)}
+.disk-tree-line.current{background:var(--gold-soft)}
+.disk-tree-line.current .disk-tree-name{color:var(--gold-bright)}
+.disk-tree-toggle{width:24px;height:28px;display:grid;place-items:center;flex-shrink:0;color:var(--faint);border-radius:5px}
+.disk-tree-toggle svg{width:13px;height:13px;transition:transform .15s}
+.disk-tree-toggle.open svg{transform:rotate(90deg)}
+.disk-tree-toggle:disabled svg{opacity:0}
+.disk-tree-toggle:not(:disabled):hover{color:var(--gold)}
+.disk-tree-name{flex:1;min-width:0;display:flex;align-items:center;gap:8px;padding:6px 4px;font-size:13px;color:var(--text);text-align:left}
+.disk-tree-name svg{width:16px;height:16px;flex-shrink:0;color:var(--gold)}
+.disk-tree-line.file .disk-tree-name{color:var(--muted)}
+.disk-tree-line.file .disk-tree-name svg{color:var(--faint)}
+.disk-tree-line.root .disk-tree-name{font-weight:500;padding-left:8px}
+.disk-tree-name span{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.disk-tree-add{width:28px;height:28px;display:grid;place-items:center;flex-shrink:0;color:var(--gold);border-radius:6px;opacity:0}
+.disk-tree-add svg{width:14px;height:14px}
+.disk-tree-line:hover .disk-tree-add,.disk-tree-add:focus-visible{opacity:1}
+.disk-tree-add:hover{background:var(--surface-3)}
+.disk-tree-empty{color:var(--faint);font-size:13px;padding:12px 8px;margin:0}
+.disk-file-form{display:grid;gap:14px}
+.disk-file-form label{display:grid;gap:7px;font-size:13px;color:var(--muted)}
+.disk-file-form input,.disk-file-form textarea{width:100%;box-sizing:border-box;padding:11px;border:1px solid var(--line-strong);background:var(--surface-2);border-radius:9px;color:var(--text);font:inherit;font-size:14px}
+.disk-file-form textarea{resize:vertical;min-height:180px;line-height:1.6}
+.disk-file-form .module-muted{margin:0}
+.disk-file-actions{display:flex;justify-content:flex-end;gap:9px}
+.disk-file-actions .primary-button{gap:10px}
+@media(hover:none){.disk-tree-add{opacity:1}}
+@media(max-width:960px){.disk-layout{grid-template-columns:1fr}.disk-tree-panel{position:static;max-height:none}.disk-tree-panel details:not([open]) summary{padding-bottom:0}}
 .disk-toolbar{display:flex;align-items:center;justify-content:space-between;gap:15px;margin-bottom:17px}
 #disk-breadcrumbs{display:flex;gap:7px;align-items:center;flex-wrap:wrap;min-width:0}
 #disk-breadcrumbs button{padding:6px 7px;border-radius:6px;color:var(--gold);font-size:13px}

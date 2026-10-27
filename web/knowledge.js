@@ -75,7 +75,173 @@
   function navigate(id) {
     folder = id;
     $('disk-search').value = '';
+    if (id) expandTo(id);
+    renderTree();
     loadDisk();
+  }
+  async function refreshDisk() {
+    await Promise.all([loadDisk(), loadTree()]);
+  }
+
+  // Дерево: вся структура Диска, раскрытые ветки запоминаются в браузере.
+  let treeData = {folders: [], files: []};
+  const expanded = new Set((() => {
+    try { return JSON.parse(localStorage.getItem('tenmiyora-disk-tree') || '[]'); }
+    catch { return []; }
+  })());
+  function saveExpanded() {
+    try { localStorage.setItem('tenmiyora-disk-tree', JSON.stringify([...expanded])); } catch {}
+  }
+  function expandTo(id) {
+    const parents = new Map(treeData.folders.map(x => [x.id, x.parent]));
+    for (let node = id, guard = 0; node && guard < 200; node = parents.get(node), guard++) expanded.add(node);
+    saveExpanded();
+  }
+  async function loadTree() {
+    try {
+      treeData = await request('disk/tree');
+      renderTree();
+    } catch (error) { message(error.message); }
+  }
+  function treeIcon(name) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    use.setAttribute('href', '#i-' + name);
+    svg.setAttribute('aria-hidden', 'true');
+    svg.append(use);
+    return svg;
+  }
+  function renderTree() {
+    const folders = new Map(), files = new Map();
+    for (const item of treeData.folders) {
+      if (!folders.has(item.parent)) folders.set(item.parent, []);
+      folders.get(item.parent).push(item);
+    }
+    for (const item of treeData.files) {
+      if (!files.has(item.folder)) files.set(item.folder, []);
+      files.get(item.folder).push(item);
+    }
+    const seen = new Set();
+    function branch(parent, depth) {
+      const group = element('ul', depth ? 'disk-tree-group' : 'disk-tree-root');
+      group.setAttribute('role', depth ? 'group' : 'none');
+      for (const item of folders.get(parent) || []) {
+        if (seen.has(item.id)) continue;
+        seen.add(item.id);
+        const hasChildren = (folders.get(item.id) || []).length + (files.get(item.id) || []).length > 0;
+        const open = expanded.has(item.id);
+        const node = element('li', 'disk-tree-node');
+        node.setAttribute('role', 'treeitem');
+        if (hasChildren) node.setAttribute('aria-expanded', String(open));
+        const line = element('div', 'disk-tree-line' + (item.id === folder ? ' current' : ''));
+        line.style.setProperty('--depth', depth);
+        const toggle = button('', () => {
+          open ? expanded.delete(item.id) : expanded.add(item.id);
+          saveExpanded(); renderTree();
+        }, 'disk-tree-toggle' + (open ? ' open' : ''));
+        toggle.setAttribute('aria-label', (open ? 'Свернуть ' : 'Развернуть ') + item.name);
+        toggle.disabled = !hasChildren;
+        toggle.append(treeIcon('chevron'));
+        const name = button('', () => navigate(item.id), 'disk-tree-name');
+        name.append(treeIcon('folder'), element('span', '', item.name));
+        name.title = item.name;
+        const add = button('', () => createFolder(item.id), 'disk-tree-add');
+        add.setAttribute('aria-label', 'Новая папка внутри «' + item.name + '»');
+        add.title = 'Новая папка внутри';
+        add.append(treeIcon('plus'));
+        line.append(toggle, name, add);
+        node.append(line);
+        if (open && hasChildren) node.append(branch(item.id, depth + 1));
+        group.append(node);
+      }
+      for (const item of files.get(parent) || []) {
+        const node = element('li', 'disk-tree-node');
+        node.setAttribute('role', 'treeitem');
+        const line = element('div', 'disk-tree-line file');
+        line.style.setProperty('--depth', depth);
+        const name = button('', () => openDocument(item), 'disk-tree-name');
+        name.append(treeIcon('file'), element('span', '', item.name));
+        name.title = item.name + ' · ' + readableBytes(item.size) + ' · ' + item.status;
+        line.append(element('span', 'disk-tree-toggle'), name);
+        node.append(line);
+        group.append(node);
+      }
+      return group;
+    }
+    const root = element('div', 'disk-tree-line root' + (folder === null ? ' current' : ''));
+    const home = button('', () => navigate(null), 'disk-tree-name');
+    home.append(treeIcon('disk'), element('span', '', 'Мой диск'));
+    const add = button('', () => createFolder(null), 'disk-tree-add');
+    add.setAttribute('aria-label', 'Новая папка в корне диска');
+    add.title = 'Новая папка в корне';
+    add.append(treeIcon('plus'));
+    root.append(home, add);
+    const body = branch(null, 0);
+    $('disk-tree').replaceChildren(root, body);
+    if (!treeData.folders.length && !treeData.files.length)
+      $('disk-tree').append(element('p', 'disk-tree-empty', 'Пока пусто. Создайте папку или файл.'));
+  }
+  async function createFolder(parent) {
+    const name = prompt('Название новой папки.\nМожно сразу цепочку через «/», например: Проекты/2026/Отчёты');
+    if (name === null || !name.trim()) return;
+    try {
+      const result = await request('disk/folder', {parent, name: name.trim()});
+      if (parent) expanded.add(parent);
+      expandTo(result.created ? result.created[result.created.length - 1].id : result.id);
+      if (result.created && result.created.length > 1) message('Создано папок: ' + result.created.length + '.');
+      await refreshDisk();
+    } catch (error) { message(error.message); }
+  }
+  let fileDialog;
+  function ensureFileDialog() {
+    if (fileDialog) return fileDialog;
+    const dialog = element('dialog', 'doc-dialog disk-file-dialog');
+    const form = element('form', 'disk-file-form');
+    form.method = 'dialog';
+    const head = element('div', 'doc-dialog-head');
+    head.append(element('h3', '', 'Новый файл'));
+    head.append(button('Закрыть', () => dialog.close()));
+    const place = element('p', 'module-muted');
+    place.id = 'disk-file-place';
+    const nameLabel = element('label', '', 'Имя файла');
+    const nameInput = element('input');
+    nameInput.id = 'disk-file-name'; nameInput.required = true; nameInput.maxLength = 180;
+    nameInput.placeholder = 'заметка.md';
+    nameLabel.append(nameInput);
+    const textLabel = element('label', '', 'Текст');
+    const textInput = element('textarea');
+    textInput.id = 'disk-file-text'; textInput.rows = 12; textInput.maxLength = 100000;
+    textInput.placeholder = 'Текст файла. Его содержимое пополнит Мозг так же, как загруженный документ.';
+    textLabel.append(textInput);
+    const actions = element('div', 'disk-file-actions');
+    const cancel = button('Отмена', () => dialog.close(), 'secondary-button');
+    const submit = element('button', 'primary-button', 'Создать');
+    submit.type = 'submit';
+    actions.append(cancel, submit);
+    form.append(head, place, nameLabel, textLabel, actions);
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      submit.disabled = true;
+      try {
+        const result = await request('disk/file', {folder, name: nameInput.value.trim(), text: textInput.value});
+        dialog.close();
+        message('Создан «' + result.name + '». ' + result.status + '.');
+        if (folder) expandTo(folder);
+        await refreshDisk();
+      } catch (error) { message(error.message); }
+      finally { submit.disabled = false; }
+    });
+    dialog.append(form);
+    document.body.append(dialog);
+    return fileDialog = dialog;
+  }
+  function openFileDialog() {
+    const dialog = ensureFileDialog();
+    const crumbs = [...$('disk-breadcrumbs').querySelectorAll('button')].map(x => x.textContent);
+    $('disk-file-place').textContent = 'Папка: ' + (crumbs.join(' / ') || 'Мой диск');
+    $('disk-file-name').value = ''; $('disk-file-text').value = '';
+    dialog.showModal();
+    $('disk-file-name').focus();
   }
   function makeRow(kind, item) {
     const row = element('div', 'disk-row');
@@ -96,14 +262,14 @@
       if (next === null || next.trim() === item.name) return;
       try {
         await request('disk/rename', {kind, id: item.id, name: next.trim()});
-        await loadDisk();
+        await refreshDisk();
       } catch (error) { message(error.message); }
     }));
     actions.append(button('Удалить', async () => {
       if (!confirm('Удалить «' + item.name + '»? Связанные знания из файла тоже будут удалены.')) return;
       try {
         await request('disk/delete', {kind, id: item.id});
-        await loadDisk();
+        await refreshDisk();
         if (location.hash === '#brain') await loadBrain();
       } catch (error) { message(error.message); }
     }));
@@ -280,20 +446,15 @@
         message('Сохранён «' + file.name + '». ' + result.status + '.');
       } catch (error) { message(file.name + ': ' + error.message); }
     }
-    await loadDisk();
+    await refreshDisk();
   }
   $('disk-file-input').addEventListener('change', event => {
     upload([...event.target.files]); event.target.value = '';
   });
   $('disk-upload-button').addEventListener('click', () => $('disk-file-input').click());
-  $('disk-new-folder').addEventListener('click', async () => {
-    const name = prompt('Название новой папки:');
-    if (name === null) return;
-    try {
-      await request('disk/folder', {parent: folder, name: name.trim()});
-      await loadDisk();
-    } catch (error) { message(error.message); }
-  });
+  $('disk-new-folder').addEventListener('click', () => createFolder(folder));
+  $('disk-new-file').addEventListener('click', openFileDialog);
+  if (matchMedia('(max-width: 960px)').matches) $('disk-tree-details').open = false;
   const dropzone = $('disk-dropzone');
   dropzone.addEventListener('click', () => $('disk-file-input').click());
   dropzone.addEventListener('keydown', event => {
@@ -1014,7 +1175,7 @@ function renderMap() {
   window.TenmiyoraModules = {
     show(view) {
       if (view === 'brain') loadBrain();
-      if (view === 'disk') loadDisk();
+      if (view === 'disk') refreshDisk();
     }
   };
   const initial = location.hash.replace('#', '');
