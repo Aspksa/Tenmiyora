@@ -27,7 +27,7 @@ from knowledge import KnowledgeStore, MAX_UPLOAD
 from semantic import make_messages, parse_topics, samples_from_text
 from soul_engine import DEFAULT_SOUL, validate_soul, evolve, persona_guidance
 from relationship_memory import DEFAULT_RELATIONSHIP, validate_relationship, remember, guidance
-from soul_experience import DEFAULT_EXPERIENCE, validate_experience, observe, guidance as experience_guidance
+from soul_experience import DEFAULT_EXPERIENCE, validate_experience, observe, guidance as experience_guidance, verified_outcome
 from relation_suggestions import validate_candidates
 
 VERSION = "0.9.6"
@@ -546,6 +546,12 @@ class Workspace:
         """Новая версия файла с Диска получает тот же смысловой анализ, что и загрузка."""
         if result["status"] == "готово" and self.schedule_semantic(result["id"]):
             result["status"] = "готово; смысловой анализ выполняется"
+        if result.get("id") and result.get("status", "").startswith("готово"):
+            # The disk backend reported a persisted item. Do not infer task
+            # quality or store filenames, file contents or identifiers here.
+            with self.lock:
+                self.data["experience"] = verified_outcome(self.data["experience"], "disk_saved")
+                self.save()
         return result
 
     def analyze_document(self,payload):
@@ -578,6 +584,11 @@ class Workspace:
                 file=conn.execute("SELECT sha256 FROM files WHERE id=?",(fid,)).fetchone()
                 if not file or file["sha256"]!=result.pop("_source_sha"):
                     raise AppError("Документ изменился во время анализа; результат не сохранён.",409)
+            # Count only a completed, source-hash-verified analysis; not a
+            # claim that its conclusions were independently correct.
+            with self.lock:
+                self.data["experience"] = verified_outcome(self.data["experience"], "document_reviewed")
+                self.save()
             return result
         finally:
             self.document_lock.release()
