@@ -47,7 +47,7 @@
     state.layout[name] = normalized(rect.left, rect.top, rect.width, rect.height, vp.width, vp.height);
     scheduleSave();
   }
-  function fitWindows() { place(avatar, 'avatar'); if (!chat.hidden) place(chat, 'chat'); if (!settings.hidden) place(settings, 'settings'); }
+  function fitWindows() { place(avatar, 'avatar'); if (!chat.hidden) { if (chatDocked) dockChat(); else place(chat, 'chat'); } if (!settings.hidden) place(settings, 'settings'); }
   function applyAppearance() {
     const a = state.appearance, vp = viewport();
     const maxSize = Math.min(vp.width - 16, vp.height - 45);
@@ -60,17 +60,32 @@
     $('avatar-opacity').value = a.opacity; $('avatar-opacity-value').textContent = a.opacity + '%';
     $('avatar-visible').checked = a.visible; $('avatar-pinned').checked = a.pinned; $('avatar-motion').checked = a.motion;
     place(avatar, 'avatar');
+    if (!chat.hidden && chatDocked) dockChat();
   }
+  let mood = 'idle', moodTimer, sleepTimer, listenTimer;
+  function setMood(next, hold = 0) {
+    clearTimeout(moodTimer); mood = next; avatar.dataset.state = next;
+    if (hold) moodTimer = setTimeout(() => setMood(pending ? 'thinking' : 'idle'), hold);
+  }
+  function stirAvatar() {
+    if (avatar.dataset.state === 'sleepy') setMood('idle');
+    clearTimeout(sleepTimer); sleepTimer = setTimeout(() => { if (!pending && chat.hidden) setMood('sleepy'); else stirAvatar(); }, 240000);
+  }
+  for (const type of ['pointerdown', 'pointermove', 'keydown']) document.addEventListener(type, stirAvatar, {passive: true});
+  $('chat-input').addEventListener('input', () => { if (pending) return; setMood('listening'); clearTimeout(listenTimer); listenTimer = setTimeout(() => { if (mood === 'listening') setMood('idle'); }, 2200); });
+  $('chat-input').addEventListener('blur', () => { if (mood === 'listening') setMood('idle'); });
+  stirAvatar();
   function front(element) { element.style.zIndex = ++layer; }
-  function makeDraggable(element, handle, name, enabled = () => true) {
+  function makeDraggable(element, handle, name, enabled = () => true, onmove = () => {}) {
     let start = null, moved = false, consumedClick = false, holdTimer;
     handle.addEventListener('pointerdown', (event) => {
       if (event.button !== 0 || event.target.closest('a,input,textarea,select') || (name !== 'avatar' && event.target.closest('button'))) return;
       front(element); moved = false;
+      if (name === 'avatar') closeMenu();
       const rect = element.getBoundingClientRect();
       start = {id: event.pointerId, x: event.clientX, y: event.clientY, left: rect.left, top: rect.top};
       handle.setPointerCapture(event.pointerId);
-      if (name === 'avatar' && event.pointerType !== 'mouse') holdTimer = setTimeout(() => { consumedClick = true; start = null; openSettings(); }, 650);
+      if (name === 'avatar' && event.pointerType !== 'mouse') holdTimer = setTimeout(() => { consumedClick = true; start = null; openMenu(event.clientX, event.clientY); }, 650);
     });
     handle.addEventListener('pointermove', (event) => {
       if (!start || event.pointerId !== start.id) return;
@@ -84,6 +99,7 @@
       element.style.left = clamp(start.left + dx, 8, Math.max(8, vp.width - rect.width - 8)) + 'px';
       element.style.top = clamp(start.top + dy, 8, Math.max(8, vp.height - rect.height - 8)) + 'px';
       element.style.right = 'auto';
+      onmove();
     });
     function finish(event) {
       clearTimeout(holdTimer);
@@ -95,14 +111,57 @@
     handle.addEventListener('lostpointercapture', finish);
     handle.addEventListener('click', (event) => { if (consumedClick) { event.preventDefault(); event.stopImmediatePropagation(); consumedClick = false; } }, true);
   }
-  makeDraggable(avatar, avatar, 'avatar', () => !state.appearance.pinned);
-  makeDraggable(chat, $('chat-handle'), 'chat');
+  makeDraggable(avatar, avatar, 'avatar', () => !state.appearance.pinned, () => { if (!chat.hidden && chatDocked) dockChat(); });
+  makeDraggable(chat, $('chat-handle'), 'chat', () => true, () => { chatDocked = false; });
   makeDraggable(settings, $('settings-handle'), 'settings');
   avatar.addEventListener('click', () => openChat());
-  avatar.addEventListener('contextmenu', (event) => { event.preventDefault(); openSettings(); });
-  avatar.addEventListener('keydown', (event) => { if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) { event.preventDefault(); openSettings(); } });
+  avatar.addEventListener('contextmenu', (event) => { event.preventDefault(); openMenu(event.clientX, event.clientY); });
+  avatar.addEventListener('keydown', (event) => { if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) { event.preventDefault(); const rect = avatar.getBoundingClientRect(); openMenu(rect.left + rect.width / 2, rect.top + rect.height / 2, true); } });
+  const menu = $('avatar-menu'), menuItems = [...menu.querySelectorAll('button')];
+  function openMenu(x, y, focus = false) {
+    const vp = viewport(), radius = vp.width < 470 ? 70 : 92, pad = radius + 28;
+    const cx = clamp(x, Math.min(pad, vp.width / 2), Math.max(vp.width - pad, vp.width / 2)), cy = clamp(y, Math.min(pad, vp.height / 2), Math.max(vp.height - pad, vp.height / 2));
+    menu.style.left = cx + 'px'; menu.style.top = cy + 'px'; menu.style.setProperty('--r', radius + 'px');
+    menuItems.forEach((item, index) => { const angle = -Math.PI / 2 + index * 2 * Math.PI / menuItems.length; item.style.setProperty('--x', Math.cos(angle) * radius + 'px'); item.style.setProperty('--y', Math.sin(angle) * radius + 'px'); item.style.setProperty('--i', index); });
+    menu.hidden = false; front(menu); void menu.offsetWidth; menu.classList.add('open');
+    if (focus) menuItems[0].focus({preventScroll: true});
+  }
+  function closeMenu(restoreFocus = false) {
+    if (menu.hidden) return;
+    menu.classList.remove('open'); menu.hidden = true;
+    if (restoreFocus) avatar.focus({preventScroll: true});
+  }
+  const menuActions = {
+    chat: () => openChat(),
+    ask: () => { location.hash = '#brain'; setTimeout(() => $('brain-search-input')?.focus({preventScroll: true}), 80); },
+    disk: () => { location.hash = '#disk'; },
+    hide: () => { state.appearance.visible = false; applyAppearance(); scheduleSave(); },
+    settings: () => openSettings(),
+  };
+  menuItems.forEach((item) => item.addEventListener('click', () => { closeMenu(); menuActions[item.dataset.menu]?.(); }));
+  menu.addEventListener('keydown', (event) => {
+    const index = menuItems.indexOf(document.activeElement);
+    if (['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp'].includes(event.key)) { event.preventDefault(); const step = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : -1; menuItems[(index + step + menuItems.length) % menuItems.length].focus(); }
+  });
+  document.addEventListener('pointerdown', (event) => { if (!menu.hidden && !menu.contains(event.target)) closeMenu(); }, true);
   $('avatar-restore').addEventListener('click', () => { state.appearance.visible = true; applyAppearance(); scheduleSave(); });
-  function openChat() { if (chat.hidden) lastChatFocus = document.activeElement; chat.hidden = false; place(chat, 'chat'); front(chat); renderMessages(); $('chat-input').focus({preventScroll: true}); }
+  let chatDocked = true;
+  function dockChat() {
+    const vp = viewport(), a = avatar.getBoundingClientRect(), w = chat.offsetWidth, h = chat.offsetHeight;
+    if (vp.width < 760 || avatar.hidden) { place(chat, 'chat'); return; }
+    const left = a.left + a.width * .12 - w - 8, right = a.right - a.width * .12 + 8;
+    const x = left >= 8 ? left : right + w <= vp.width - 8 ? right : clamp(a.left + (a.width - w) / 2, 8, Math.max(8, vp.width - w - 8));
+    chat.style.left = x + 'px'; chat.style.right = 'auto';
+    chat.style.top = clamp(a.top + a.height / 2 - h / 2, 8, Math.max(8, vp.height - h - 8)) + 'px';
+  }
+  function openChat() {
+    if (!chat.hidden) { front(chat); $('chat-input').focus({preventScroll: true}); return; }
+    lastChatFocus = document.activeElement; chat.hidden = false; chatDocked = true; dockChat(); front(chat); renderMessages();
+    const a = avatar.getBoundingClientRect(), c = chat.getBoundingClientRect();
+    chat.style.transformOrigin = clamp(a.left + a.width / 2 - c.left, 0, c.width) + 'px ' + clamp(a.top + a.height / 2 - c.top, 0, c.height) + 'px';
+    chat.classList.remove('opening'); void chat.offsetWidth; chat.classList.add('opening');
+    $('chat-input').focus({preventScroll: true});
+  }
   function closeChat() { chat.hidden = true; if (lastChatFocus && lastChatFocus.isConnected) lastChatFocus.focus({preventScroll: true}); }
   function selectTab(name) {
     for (const tab of document.querySelectorAll('[data-tab]')) { const active = tab.dataset.tab === name; tab.setAttribute('aria-selected', String(active)); tab.tabIndex = active ? 0 : -1; }
@@ -116,7 +175,7 @@
     tab.addEventListener('click', () => selectTab(tab.dataset.tab));
     tab.addEventListener('keydown', (event) => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) { event.preventDefault(); const name = tab.dataset.tab === 'appearance' ? 'connection' : 'appearance'; selectTab(name); $('tab-' + name).focus(); } });
   });
-  document.addEventListener('keydown', (event) => { if (event.key === 'Escape') { if (!settings.hidden && (chat.hidden || Number(settings.style.zIndex) > Number(chat.style.zIndex))) closeSettings(); else if (!chat.hidden) closeChat(); } });
+  document.addEventListener('keydown', (event) => { if (event.key === 'Escape') { if (!menu.hidden) { closeMenu(true); return; } if (!settings.hidden && (chat.hidden || Number(settings.style.zIndex) > Number(chat.style.zIndex))) closeSettings(); else if (!chat.hidden) closeChat(); } });
   for (const element of [chat, settings]) element.addEventListener('pointerdown', () => front(element));
   function route() {
     const requested = location.hash.slice(1);
@@ -176,6 +235,40 @@
     $('composer-hint').textContent = configured ? (isTouch ? 'Ваше сообщение для Tenmiyora' : 'Enter — отправить · Shift+Enter — новая строка') : 'Сначала подключите модель в настройках';
     $('connection-summary').textContent = !connection.has_key ? 'Ключ ещё не сохранён' : !connection.model ? 'Ключ сохранён. Выберите модель для чата.' : connection.verified_at ? 'API проверен ' + new Date(connection.verified_at).toLocaleString('ru-RU') + '. Модель: ' + connection.model : 'Ключ и модель сохранены. Можно отправить сообщение или проверить доступ к API.';
   }
+  function renderInline(nodes, parent) {
+    for (const node of nodes) {
+      if (node.t === 'text') parent.append(node.v);
+      else if (node.t === 'code') { const el = document.createElement('code'); el.textContent = node.v; parent.append(el); }
+      else if (node.t === 'link') { const el = document.createElement('a'); el.href = node.href; el.target = '_blank'; el.rel = 'noopener noreferrer'; renderInline(node.c, el); parent.append(el); }
+      else { const el = document.createElement(node.t === 'strong' ? 'strong' : 'em'); renderInline(node.c, el); parent.append(el); }
+    }
+  }
+  function renderBlocks(blocks, parent) {
+    for (const block of blocks) {
+      let el;
+      if (block.t === 'p') { el = document.createElement('p'); renderInline(block.c, el); }
+      else if (block.t === 'heading') { el = document.createElement('h' + Math.min(6, block.level + 2)); renderInline(block.c, el); }
+      else if (block.t === 'ul' || block.t === 'ol') { el = document.createElement(block.t); for (const item of block.items) { const li = document.createElement('li'); renderInline(item, li); el.append(li); } }
+      else if (block.t === 'quote') { el = document.createElement('blockquote'); renderBlocks(block.c, el); }
+      else if (block.t === 'rule') el = document.createElement('hr');
+      else if (block.t === 'table') {
+        el = document.createElement('div'); el.className = 'md-table';
+        const table = document.createElement('table'), head = table.createTHead().insertRow(), body = table.createTBody();
+        for (const cell of block.head) renderInline(cell, head.appendChild(document.createElement('th')));
+        for (const row of block.rows) { const tr = body.insertRow(); for (const cell of row) renderInline(cell, tr.insertCell()); }
+        el.append(table);
+      } else if (block.t === 'codeblock') {
+        el = document.createElement('div'); el.className = 'md-code';
+        const copy = document.createElement('button'); copy.type = 'button'; copy.className = 'md-copy'; copy.setAttribute('aria-label', 'Копировать код'); copy.title = 'Копировать код';
+        copy.innerHTML = '<svg><use href="#i-copy"/></svg>';
+        copy.addEventListener('click', async () => { try { await navigator.clipboard.writeText(block.v); copy.classList.add('done'); copy.innerHTML = '<svg><use href="#i-check"/></svg>'; setTimeout(() => { copy.classList.remove('done'); copy.innerHTML = '<svg><use href="#i-copy"/></svg>'; }, 1600); } catch { toast('Не удалось скопировать'); } });
+        const pre = document.createElement('pre'), code = document.createElement('code'); code.textContent = block.v; pre.append(code);
+        if (block.lang) el.dataset.lang = block.lang;
+        el.append(copy, pre);
+      }
+      if (el) parent.append(el);
+    }
+  }
   function renderMessages(extra) {
     const log = $('chat-messages'); log.replaceChildren();
     if (!state.messages.length && !extra) {
@@ -190,7 +283,7 @@
     for (const message of [...state.messages, ...(extra ? [extra] : [])]) {
       const article = document.createElement('article'); article.className = 'message ' + message.role;
       const name = document.createElement('span'); name.className = 'message-name'; name.textContent = message.role === 'user' ? 'Вы' : 'Tenmiyora';
-      const body = document.createElement('div'); body.className = 'message-body'; body.textContent = message.content;
+      const body = document.createElement('div'); body.className = 'message-body'; if (message.role === 'assistant' && window.TenmiyoraMarkdown) { body.classList.add('rich'); renderBlocks(window.TenmiyoraMarkdown.parse(message.content), body); } else body.textContent = message.content;
       article.append(name, body);
       if (message.finish_reason === 'length') { const warning = document.createElement('small'); warning.className = 'provider-limit-note'; warning.textContent = 'Ответ остановлен по лимиту провайдера. Можно попросить модель продолжить.'; article.append(warning); }
       if (message.time) { const time = document.createElement('time'); time.dateTime = message.time; time.textContent = new Date(message.time).toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'}); article.append(time); }
@@ -205,9 +298,9 @@
     event.preventDefault(); const content = $('chat-input').value.trim();
     if (!content || pending) return;
     if (!state.connection.has_key || !state.connection.model) { openSettings('connection'); return; }
-    pending = true; $('chat-input').value = ''; state.messages.push({role: 'user', content, time: new Date().toISOString()}); renderMessages({role: 'pending', content: 'Tenmiyora обдумывает ответ…'}); renderConnection();
-    try { const result = await api('chat', {message: content}); state.messages = result.messages; renderMessages(); }
-    catch (error) { try { const latest = await api('state'); state.messages = latest.messages; } catch { /* Keep the visible message if the server is unavailable. */ } renderMessages({role: 'error', content: error.message}); $('chat-input').value = content; }
+    pending = true; $('chat-input').value = ''; state.messages.push({role: 'user', content, time: new Date().toISOString()}); renderMessages({role: 'pending', content: 'Tenmiyora обдумывает ответ…'}); renderConnection(); setMood('thinking');
+    try { const result = await api('chat', {message: content}); state.messages = result.messages; renderMessages(); setMood('happy', 2600); }
+    catch (error) { try { const latest = await api('state'); state.messages = latest.messages; } catch { /* Keep the visible message if the server is unavailable. */ } renderMessages({role: 'error', content: error.message}); $('chat-input').value = content; setMood('idle'); }
     finally { pending = false; renderConnection(); }
   }
   $('chat-form').addEventListener('submit', sendMessage);

@@ -72,7 +72,6 @@ h1 em{font-style:normal;color:var(--gold)}
 .orbit-outer:before,.orbit-outer:after{content:"";position:absolute;width:5px;height:5px;background:var(--gold);border-radius:50%;box-shadow:0 0 10px var(--gold)}
 .orbit-outer:before{top:40px;left:48px}
 .orbit-outer:after{bottom:42px;right:45px}
-.gesture-guide{display:flex;align-items:center;gap:12px;margin:24px 0 48px;padding:16px 18px;background:var(--surface);border:1px solid var(--line);border-radius:10px;font-size:13px;color:var(--muted)}
 .guide-mark{font-size:18px;color:var(--gold)}
 
 /* Кнопки */
@@ -93,9 +92,6 @@ h1 em{font-style:normal;color:var(--gold)}
 .avatar.dragging{cursor:grabbing}
 .avatar.dragging img{animation-play-state:paused}
 .avatar.pinned{cursor:pointer}
-.avatar-label{height:28px;position:absolute;bottom:-20px;left:50%;transform:translateX(-50%);padding:0 12px;display:flex;align-items:center;gap:7px;background:var(--surface-2);border:1px solid var(--line-strong);box-shadow:0 4px 20px #00000080;border-radius:20px;font:12px var(--font);white-space:nowrap;color:var(--gold-bright);opacity:0;transition:opacity .2s}
-.avatar:hover .avatar-label,.avatar:focus-visible .avatar-label,.avatar.dragging .avatar-label{opacity:1}
-.avatar-grip{font-size:16px;color:var(--faint);margin-left:4px}
 .avatar-restore{position:fixed;right:24px;bottom:24px;z-index:25;background:var(--surface-2);color:var(--gold-bright);border:1px solid var(--line-strong);border-radius:25px;padding:11px 16px;display:flex;align-items:center;gap:9px;font-size:13px;box-shadow:var(--shadow)}
 .avatar-restore svg{width:16px;height:16px}
 
@@ -125,9 +121,10 @@ h1 em{font-style:normal;color:var(--gold)}
 .message{display:flex;flex-direction:column;align-items:flex-start;margin:0 0 16px}
 .message.user{align-items:flex-end}
 .message-name{font-size:11px;color:var(--faint);padding:0 2px;margin-bottom:4px}
-.message-body{max-width:94%;white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.65;background:var(--surface-3);border:1px solid var(--line);border-radius:3px 12px 12px;padding:10px 13px;color:var(--text)}
-.user .message-body{color:var(--on-gold);background:var(--gold);border-color:var(--gold);border-radius:12px 3px 12px 12px}
+.message-body{max-width:94%;overflow-wrap:anywhere;font-size:14px;line-height:1.65;background:var(--surface-3);border:1px solid var(--line);border-radius:3px 12px 12px;padding:10px 13px;color:var(--text)}
+.user .message-body{white-space:pre-wrap;color:var(--on-gold);background:var(--gold);border-color:var(--gold);border-radius:12px 3px 12px 12px}
 .message.error .message-body{background:var(--danger-soft);border-color:#e3916d55;color:var(--danger)}
+.message.error .message-body,.message.pending .message-body{white-space:pre-wrap}
 .message.pending .message-body{color:var(--gold)}
 .message time{font-size:10px;color:var(--faint);margin-top:4px;padding:0 2px}
 .provider-limit-note{font-size:11px;color:var(--gold);margin-top:6px;line-height:1.6;max-width:94%}
@@ -219,8 +216,7 @@ select option:disabled{color:var(--faint)}
   .hero-art{position:absolute;right:0;bottom:0;width:220px;min-height:220px;height:220px;opacity:.8}
   .orbit{width:190px;height:190px}
   .orbit-inner{width:160px;height:160px}
-  .gesture-guide{font-size:12px}
-  .settings-window{max-height:calc(100dvh - 16px)}
+    .settings-window{max-height:calc(100dvh - 16px)}
   .fatal-error{left:82px;right:15px}
 }
 @media(max-width:470px){
@@ -242,3 +238,71 @@ select option:disabled{color:var(--faint)}
   .chat-empty{padding:0 15px}
 }
 .settings-tabs button:focus-visible{outline-offset:2px;border-radius:4px}
+
+/* Живые состояния аватара */
+.avatar-aura{position:absolute;inset:8% 4% 2%;border-radius:50%;background:radial-gradient(closest-side,#e8cf8a55,#d4af5f1f 55%,transparent 75%);opacity:0;transition:opacity .5s;pointer-events:none;z-index:0}
+.avatar img{position:relative;z-index:1;transition:filter .8s}
+.avatar-sparks{position:absolute;inset:0;pointer-events:none;z-index:2;opacity:0;transition:opacity .4s}
+.avatar-sparks i{position:absolute;width:7px;height:7px;background:var(--gold-bright);border-radius:50%;box-shadow:0 0 12px 2px var(--gold),0 0 3px #fff;animation:twinkle 2.2s ease-in-out infinite}
+.avatar-sparks i:nth-child(1){left:14%;top:46%}
+.avatar-sparks i:nth-child(2){left:26%;top:18%;animation-delay:.5s;width:5px;height:5px}
+.avatar-sparks i:nth-child(3){right:12%;top:40%;animation-delay:1s}
+.avatar-sparks i:nth-child(4){right:26%;top:12%;animation-delay:1.5s;width:5px;height:5px}
+.avatar-sparks i:nth-child(5){left:48%;top:4%;animation-delay:.8s;width:4px;height:4px}
+.avatar[data-state=listening] .avatar-aura{opacity:.55}
+.avatar[data-state=listening].motion img{animation:lean 2.6s ease-in-out infinite}
+.avatar[data-state=thinking] .avatar-aura{opacity:1;animation:aura-pulse 1.8s ease-in-out infinite}
+.avatar[data-state=thinking] .avatar-sparks,.avatar[data-state=happy] .avatar-sparks{opacity:1}
+.avatar[data-state=thinking].motion img{animation-duration:3.4s}
+.avatar[data-state=happy] .avatar-aura{opacity:.9}
+.avatar[data-state=happy] .avatar-sparks i{animation-duration:1s}
+.avatar[data-state=happy].motion img{animation:hop .9s cubic-bezier(.3,.7,.4,1) 1}
+.avatar[data-state=sleepy] img{filter:brightness(.68) saturate(.75) drop-shadow(0 16px 26px #000000b3)}
+.avatar[data-state=sleepy].motion img{animation-duration:14s}
+@keyframes twinkle{0%,100%{transform:scale(.2);opacity:0}50%{transform:scale(1);opacity:1}}
+@keyframes aura-pulse{0%,100%{transform:scale(.94);opacity:.7}50%{transform:scale(1.04);opacity:1}}
+@keyframes lean{0%,100%{transform:translateY(-2px) rotate(-.8deg)}50%{transform:translateY(-4px) rotate(.8deg) scale(1.01)}}
+@keyframes hop{0%{transform:translateY(0)}30%{transform:translateY(-16px) rotate(-1deg)}55%{transform:translateY(0)}72%{transform:translateY(-6px)}100%{transform:translateY(0)}}
+
+/* Чат раскрывается из аватара */
+.chat-window.opening{animation:chat-open .34s cubic-bezier(.2,.8,.2,1)}
+@keyframes chat-open{from{opacity:0;transform:scale(.3)}60%{opacity:1}to{opacity:1;transform:scale(1)}}
+
+/* Оформление ответов */
+.message-body.rich>*:first-child{margin-top:0}
+.message-body.rich>*:last-child{margin-bottom:0}
+.message-body.rich p{margin:0 0 .7em}
+.message-body.rich h3,.message-body.rich h4,.message-body.rich h5,.message-body.rich h6{font:400 17px var(--serif);color:var(--gold-bright);margin:1em 0 .4em}
+.message-body.rich h3{font-size:19px}
+.message-body.rich ul,.message-body.rich ol{margin:0 0 .7em;padding-left:1.3em}
+.message-body.rich li{margin:.2em 0}
+.message-body.rich li::marker{color:var(--gold)}
+.message-body.rich a{color:var(--gold-bright);text-decoration:underline;text-decoration-color:var(--gold-deep)}
+.message-body.rich blockquote{margin:0 0 .7em;padding:2px 0 2px 12px;border-left:2px solid var(--gold-deep);color:var(--muted)}
+.message-body.rich hr{border:0;border-top:1px solid var(--line-strong);margin:1em 0}
+.message-body.rich code{font:12.5px ui-monospace,Consolas,monospace;background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:1px 5px;color:var(--gold-bright)}
+.md-code{position:relative;margin:0 0 .8em;background:var(--bg);border:1px solid var(--line-strong);border-radius:9px}
+.md-code[data-lang]:before{content:attr(data-lang);position:absolute;left:12px;top:6px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.md-code pre{margin:0;padding:26px 12px 12px;overflow-x:auto;scrollbar-width:thin;scrollbar-color:var(--line-strong) transparent}
+.md-code[data-lang] pre{padding-top:26px}
+.md-code:not([data-lang]) pre{padding-top:12px}
+.message-body.rich .md-code code{background:none;border:0;padding:0;color:var(--text);white-space:pre}
+.md-copy{position:absolute;right:6px;top:5px;width:28px;height:28px;display:grid;place-items:center;border-radius:7px;color:var(--faint);opacity:0;transition:opacity .15s}
+.md-code:hover .md-copy,.md-copy:focus-visible,.md-copy.done{opacity:1}
+.md-copy:hover,.md-copy.done{color:var(--gold-bright);background:var(--surface-3)}
+.md-copy svg{width:15px;height:15px}
+.md-table{overflow-x:auto;margin:0 0 .8em}
+.md-table table{border-collapse:collapse;font-size:13px}
+.md-table th,.md-table td{border:1px solid var(--line-strong);padding:5px 10px;text-align:left}
+.md-table th{background:var(--surface-2);color:var(--gold-bright);font-weight:500}
+
+/* Круговое меню аватара */
+.avatar-menu{position:fixed;z-index:60;width:0;height:0}
+.avatar-menu:before{content:"";position:absolute;left:calc(var(--r) * -1 - 6px);top:calc(var(--r) * -1 - 6px);width:calc(var(--r) * 2 + 12px);height:calc(var(--r) * 2 + 12px);border-radius:50%;border:1px dashed var(--line-strong);background:radial-gradient(circle,#0d0c0a73 55%,transparent 72%);opacity:0;transform:scale(.4);transition:opacity .25s,transform .3s cubic-bezier(.2,.8,.2,1);pointer-events:none}
+.avatar-menu.open:before{opacity:1;transform:scale(1)}
+.avatar-menu button{position:absolute;left:-23px;top:-23px;width:46px;height:46px;display:grid;place-items:center;border-radius:50%;background:var(--surface-2);border:1px solid var(--gold-deep);color:var(--gold-bright);box-shadow:0 6px 22px #000000a0,0 0 14px #d4af5f26;opacity:0;transform:translate(0,0) scale(.3);transition:transform .32s cubic-bezier(.2,.9,.25,1.2) calc(var(--i) * 28ms),opacity .2s calc(var(--i) * 28ms),background .15s,color .15s}
+.avatar-menu.open button{opacity:1;transform:translate(var(--x),var(--y)) scale(1)}
+.avatar-menu button:hover,.avatar-menu button:focus-visible{background:var(--gold);color:var(--on-gold);outline:none}
+.avatar-menu.open button:hover,.avatar-menu.open button:focus-visible{transform:translate(var(--x),var(--y)) scale(1.14)}
+.avatar-menu svg{width:20px;height:20px}
+@media(prefers-reduced-motion:reduce){.avatar-sparks i{animation:none;opacity:1;transform:none}}

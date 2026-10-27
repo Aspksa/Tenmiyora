@@ -34,6 +34,7 @@ STATIC = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/styles.css": ("styles.css", "text/css; charset=utf-8"),
     "/layout.js": ("layout.js", "text/javascript; charset=utf-8"),
+    "/markdown.js": ("markdown.js", "text/javascript; charset=utf-8"),
     "/app.js": ("app.js", "text/javascript; charset=utf-8"),
     "/knowledge.js": ("knowledge.js", "text/javascript; charset=utf-8"),
     "/knowledge.css": ("knowledge.css", "text/css; charset=utf-8"),
