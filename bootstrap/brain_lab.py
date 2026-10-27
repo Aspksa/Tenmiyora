@@ -55,6 +55,7 @@ def init_schema(db):
       data_signature TEXT NOT NULL,
       quality_score REAL NOT NULL,
       metrics_json TEXT NOT NULL,
+      trial_count INTEGER,
       status TEXT NOT NULL CHECK(status IN ('evaluated','accepted','rejected')),
       notes TEXT NOT NULL DEFAULT ''
     );
@@ -119,6 +120,10 @@ def init_schema(db):
     for name in ("algorithm_signature","suite_signature"):
         if name not in columns:
             db.execute(f"ALTER TABLE brain_lab_generations ADD COLUMN {name} TEXT")
+    # Old checkpoints have NULL: without a recorded expected trial count
+    # they cannot be safely accepted; a fresh experiment is required.
+    if "trial_count" not in columns:
+        db.execute("ALTER TABLE brain_lab_generations ADD COLUMN trial_count INTEGER")
 
 
 def signature(db):
@@ -367,11 +372,11 @@ def run_experiment(db,trials=3):
     when=clock()
     new=db.execute("""INSERT INTO brain_lab_generations
         (parent_id,created,data_signature,quality_score,metrics_json,status,notes,
-         algorithm_signature,suite_signature)
-        VALUES(?,?,?,?,?,'evaluated',?,?,?)""",(
+         algorithm_signature,suite_signature,trial_count)
+        VALUES(?,?,?,?,?,'evaluated',?,?,?,?)""",(
           baseline["id"] if baseline else None,when,before,score,stable_json(worst),
           "Испытания основного корпуса и независимых защит, не обучение весов",
-          algorithm,suite)).lastrowid
+          algorithm,suite,trials)).lastrowid
     for i,sample in enumerate(samples):
         db.execute("""INSERT INTO brain_lab_trials
           (generation_id,trial_no,seed,metrics_json,pass_thresholds)
@@ -401,7 +406,9 @@ def _validate_saved_trials(db, item):
     entries=db.execute("""SELECT trial_no,seed,metrics_json,pass_thresholds
       FROM brain_lab_trials WHERE generation_id=?
       ORDER BY trial_no""",(item["id"],)).fetchall()
-    if not 1<=len(entries)<=MAX_TRIALS:
+    if (type(item["trial_count"]) is not int or
+            not 1<=item["trial_count"]<=MAX_TRIALS or
+            len(entries)!=item["trial_count"]):
         raise ValueError("Нет полного комплекта испытаний: поколение не принимается.")
     try:
         aggregate=json.loads(item["metrics_json"])
@@ -443,7 +450,7 @@ def accept(db,generation):
         raise ValueError("Некорректный номер поколения.")
     item=db.execute("""SELECT g.id,g.status,g.data_signature,g.parent_id,
        g.algorithm_signature,g.suite_signature,g.metrics_json,g.quality_score,
-       e.verdict,e.baseline_id
+       g.trial_count,e.verdict,e.baseline_id
       FROM brain_lab_generations g JOIN brain_lab_experiments e ON e.generation_id=g.id
       WHERE g.id=?""",(generation,)).fetchone()
     if not item or item["status"]!="evaluated":
