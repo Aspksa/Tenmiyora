@@ -19,16 +19,34 @@ def upgrade(root, package, live, backup, *, approved=False,
     if not verify(package):
         return {"updated":False, "phase":"invalid_package"}
     # Fail closed unless the original server can be safely stopped by its owner.
-    if stop() is not True:
+    try:
+        stopped=stop() is True
+    except Exception:
+        stopped=False
+    if not stopped:
         return {"updated":False, "phase":"stop_failed"}
     # Once stopped, offline_run rechecks session PID, paths, package and backup.
-    outcome=offline_run(root,package,live,backup,approved=True,
-                        process_alive=process_alive)
+    try:
+        outcome=offline_run(root,package,live,backup,approved=True,
+                            process_alive=process_alive)
+    except Exception:
+        # Filesystem errors may occur *after* changing the code. Do not
+        # restart or overwrite code when transaction state is uncertain.
+        return {"updated":False,"phase":"install_state_unknown",
+                "manual_recovery_required":True}
     if not outcome.get("installed"):
-        # Try to resume original server only after explicitly verified no changes.
-        restored=start() is True
+        # Only restart original code if preflight explicitly reports refusal.
+        # An ambiguous write failure must be handled by a human operator.
+        preflight=outcome.get("preflight")
+        if not isinstance(preflight,dict) or preflight.get("ready") is not False:
+            return {"updated":False,"phase":"install_state_unknown",
+                    "manual_recovery_required":True}
+        try:
+            restored=start() is True
+        except Exception:
+            restored=False
         return {"updated":False,"phase":"preflight_failed",
-                "restarted_original":restored,"preflight":outcome.get("preflight")}
+                "restarted_original":restored,"preflight":preflight}
     try:
         running=start() is True
         checked=running and healthy() is True
