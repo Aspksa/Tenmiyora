@@ -29,6 +29,7 @@ from soul_engine import DEFAULT_SOUL, validate_soul, evolve, persona_guidance
 from soul_maturation import maturation_guidance
 from soul_romance import DEFAULT_ROMANCE, validate as validate_romance, progress as romance_progress, guidance as romance_guidance, evolve_from_feedback as romance_evolve
 from soul_reflection import DEFAULT_REFLECTION, validate as validate_reflection, reflect as soul_reflect, guidance as reflection_guidance
+from brain_logic_evolution import DEFAULT_CYCLE, validate as validate_brain_cycle, run as run_brain_cycle
 from soul_continuity import DEFAULT_CONTINUITY, validate as validate_continuity, observe as observe_continuity
 from soul_quality import quality_guidance
 from soul_failures import DEFAULT_FAILURES, validate_failures, record_failure, guidance as failure_guidance
@@ -61,7 +62,7 @@ STATIC = {
 PASSIVE = {"/api/brain/pulses", "/api/brain/idle", "/api/brain/activity"}
 DEFAULT = {
     "appearance": {"size": 340, "opacity": 100, "visible": True, "pinned": False, "motion": True},
-    "layout": {}, "messages": [], "soul": DEFAULT_SOUL, "romance": DEFAULT_ROMANCE, "relationship": DEFAULT_RELATIONSHIP, "experience": DEFAULT_EXPERIENCE, "soul_reflection": DEFAULT_REFLECTION, "soul_continuity": DEFAULT_CONTINUITY, "failures": DEFAULT_FAILURES, "recovery": DEFAULT_RECOVERY, "operation_audit": DEFAULT_AUDIT, "evolution_ledger": DEFAULT_LEDGER, "improvements": DEFAULT_IMPROVEMENTS, "improvement_gate": DEFAULT_GATE,
+    "layout": {}, "messages": [], "soul": DEFAULT_SOUL, "romance": DEFAULT_ROMANCE, "relationship": DEFAULT_RELATIONSHIP, "experience": DEFAULT_EXPERIENCE, "soul_reflection": DEFAULT_REFLECTION, "brain_logic_cycle": DEFAULT_CYCLE, "soul_continuity": DEFAULT_CONTINUITY, "failures": DEFAULT_FAILURES, "recovery": DEFAULT_RECOVERY, "operation_audit": DEFAULT_AUDIT, "evolution_ledger": DEFAULT_LEDGER, "improvements": DEFAULT_IMPROVEMENTS, "improvement_gate": DEFAULT_GATE,
     "connection": {"url": CLOUDRU_URL, "model": "", "key": "", "verified_at": None},
     "model_cache": {"url": "", "models": [], "details": [], "loaded_at": None},
     "growth": {"enabled": True, "cloud": False, "idle_minutes": 15, "cloud_daily": 10},
@@ -185,6 +186,7 @@ class Workspace:
                                  "relationship": validate_relationship(stored.get("relationship", DEFAULT_RELATIONSHIP)),
                                  "experience": validate_experience(stored.get("experience", DEFAULT_EXPERIENCE)),
                                  "soul_reflection": validate_reflection(stored.get("soul_reflection", DEFAULT_REFLECTION)),
+                                 "brain_logic_cycle": validate_brain_cycle(stored.get("brain_logic_cycle", DEFAULT_CYCLE)),
                                  "soul_continuity": validate_continuity(stored.get("soul_continuity", DEFAULT_CONTINUITY)),
                                  "failures": validate_failures(stored.get("failures", DEFAULT_FAILURES)),
                                  "recovery": validate_recovery(stored.get("recovery", DEFAULT_RECOVERY)),
@@ -495,6 +497,9 @@ class Workspace:
                 self.data["experience"] = observe(self.data["experience"], content)
                 self.data["romance"] = romance_evolve(self.data["romance"], self.data["experience"])
                 self.data["soul_reflection"] = soul_reflect(self.data["soul_reflection"], self.data["experience"])
+                if self.data["experience"]["revision"] != before_experience["revision"]:
+                    self.data["brain_logic_cycle"] = run_brain_cycle(
+                        self.data, self.data["brain_logic_cycle"])["cycle"]
                 self.data["soul_continuity"] = observe_continuity(
                     self.data["soul_continuity"], before_soul, before_experience,
                     self.data["soul"], self.data["experience"])
