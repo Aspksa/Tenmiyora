@@ -104,6 +104,37 @@ class BrainInsightTests(unittest.TestCase):
         self.store.upload("Договор 15.txt", CONTRACT.encode())
         self.assertTrue(self.store.brain_insight()["dossiers"])
 
+    def test_negated_payment_is_not_paid(self):
+        self.store.upload("Договор.txt", "Договор № 15. Сумма 100 000 руб. не оплачена.".encode())
+        self.assertEqual(self.run_insight()["money"]["paid"], 0)
+
+    def test_payment_in_another_sentence_closes_overdue_alert(self):
+        self.store.upload("Договор.txt", ("Договор № 15.\n"
+            "Покупатель обязуется оплатить Поставщику 100 000 руб. до 20.10.2026.\n"
+            "Покупатель перечислил Поставщику 100 000 руб. по договору № 15.\n").encode())
+        data = self.run_insight()
+        self.assertEqual(data["money"]["paid"], 100000)
+        self.assertFalse([i for i in data["foresight"]["items"] if i["kind"] == "overdue"])
+
+    def test_budget_in_contract_file_is_not_a_payment(self):
+        self.store.upload("Договор.txt", ("Договор № 15.\nБюджет проекта составляет 12 млн рублей.\n"
+            "Покупатель обязуется оплатить Поставщику 100 000 руб. до 20.11.2026.\n").encode())
+        self.assertEqual(self.run_insight()["money"]["total"], 100000)
+
+    def test_same_sum_and_date_in_two_contracts_are_two_alerts(self):
+        for number in (15, 16):
+            self.store.upload(f"Договор {number}.txt", (f"Договор № {number}.\n"
+                "Покупатель обязуется оплатить Поставщику 100 000 руб. до 20.10.2026.\n").encode())
+        data = self.run_insight()
+        self.assertEqual(data["money"]["overdue"], 200000)
+        self.assertEqual(data["foresight"]["counts"]["critical"], 2)
+
+    def test_edited_document_refreshes_cache(self):
+        result = self.store.upload("Договор.txt", "Договор № 15. Сумма 100 000 руб.".encode())
+        self.assertEqual(self.store.brain_insight()["money"]["total"], 100000)
+        self.store.save_text(result["id"], "Договор № 15. Сумма 200 000 руб.")
+        self.assertEqual(self.store.brain_insight()["money"]["total"], 200000)
+
 
 if __name__ == "__main__":
     unittest.main()

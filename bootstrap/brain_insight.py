@@ -80,12 +80,20 @@ PURPOSE = re.compile(r"(?i)\bза\s+([а-яё][а-яё\-]+(?:\s+[а-яё\-]+){0,
 DONE = re.compile(r"(?i)(?<!быть )(?<!будет )\b(оплачен[оаы]?|исполнен[оаы]?|выполнен[оаы]?|поставлен[оаы]?|"
                   r"получен[оаы]?|подписан[оаы]?|погашен[оаы]?|перечислен[оаы]?|перечислил\w*|оплатил\w*|заплатил\w*|погасил\w*)\b")
 OBLIGED = re.compile(r"(?i)\b(должн\w*|обязу\w*|обязан\w*|не\s+позднее|подлежит)\b|\bдо\s+\d")
+NEGATED = re.compile(r"(?i)\b(?:не|ни)\s+(?:был[аио]?\s+)?(?:оплач|исполн|выполн|постав|получ|подписа|погаш|перечисл|оплати|заплати|погаси)")
+NON_PAYMENT = re.compile(r"(?i)\b(бюджет\w*|оценк\w*|прогноз\w*|резерв\w*|доход\w*|расход\w*|выручк\w*|план\w*)")
+PAYMENT_WORDS = re.compile(r"(?i)\b(сумм\w*|стоимост\w*|цен[аеуы]\w*|итого|к\s+оплате)")
 DEADLINE = re.compile(r"(?i)\b(срок\w*|не\s+позднее|до|истека\w*|действует\s+до|по\s+\d|в\s+течение|оплатить|поставить|"
                       r"обязуется|должен|должна|должны|подлежит)\b")
 EXPIRY = re.compile(r"(?i)\b(действует\s+до|срок\s+действия|истека\w*|действ\w+\s+по)\b")
 RENEW = re.compile(r"(?i)\b(пролонгир\w*|продлева\w*|продлён\w*|продлен\w*)\b")
 WITHIN = re.compile(r"(?i)в\s+течение\s+(\d{1,3})\s*(?:\([^()]{2,40}\)\s*)?(рабочих|банковских|календарных)?\s*дн")
 DELIVERY = re.compile(r"(?i)\b(постав\w*|отгруз\w*|доставк\w*|передат\w*|передач\w*)\b")
+
+
+def is_done(sentence):
+    """Есть слово об исполнении, нет обязательства «должен/обязуется» и нет отрицания «не оплачено»."""
+    return bool(DONE.search(sentence)) and not OBLIGED.search(sentence) and not NEGATED.search(sentence)
 
 
 def _clean(text):
@@ -254,16 +262,19 @@ def _records(db):
         if total > MAX_CHARS:
             return
         yield "file", row["source_id"], row["name"], row["locator"], row["text"], row["created"]
-    seen = set()
+    # Из чата — целые фрагменты сообщений (facts), а утверждения knowledge_items —
+    # только если их нет внутри фрагмента: иначе «Петров С. Н. …» рвётся на инициалах.
+    excerpts = {}
+    for row in db.execute("SELECT source_id,excerpt,created FROM facts WHERE source_type='chat' ORDER BY created,id"):
+        if row["excerpt"] not in excerpts.setdefault(row["source_id"], []):
+            excerpts[row["source_id"]].append(row["excerpt"])
+            yield "chat", row["source_id"], "Разговор в чате", "сообщение", row["excerpt"], row["created"]
     for row in db.execute("""SELECT source_id,statement AS text,created FROM knowledge_items
-            WHERE source_type='chat' UNION ALL
-            SELECT source_id,excerpt AS text,created FROM facts WHERE source_type='chat'
-            ORDER BY created"""):
-        digest = (row["source_id"], row["text"])
-        if digest in seen:
-            continue
-        seen.add(digest)
-        yield "chat", row["source_id"], "Разговор в чате", "сообщение", row["text"], row["created"]
+            WHERE source_type='chat' ORDER BY created,id"""):
+        known = excerpts.setdefault(row["source_id"], [])
+        if not any(row["text"] in excerpt for excerpt in known):
+            known.append(row["text"])
+            yield "chat", row["source_id"], "Разговор в чате", "сообщение", row["text"], row["created"]
 
 
 def signature(db):
@@ -272,7 +283,9 @@ def signature(db):
         (SELECT COUNT(*) FROM knowledge_items WHERE source_type='chat') AS c,
         (SELECT IFNULL(MAX(id),0) FROM knowledge_items) AS d,
         (SELECT COUNT(*) FROM facts WHERE source_type='chat') AS e,
-        (SELECT COUNT(*) FROM files) AS f""").fetchone()
+        (SELECT COUNT(*) FROM files) AS f,
+        (SELECT IFNULL(MAX(id),0) FROM journal) AS g,
+        (SELECT group_concat(sha256) FROM (SELECT sha256 FROM files ORDER BY id)) AS h""").fetchone()
     return tuple(row)
 
 
@@ -349,7 +362,7 @@ def analyse(db, today):
         roles = _roles([r[4] for r in records]) if source_type == "file" else {}
         name = records[0][2]
         sources[(source_type, source_id)] = name
-        contracts_here, seen_here, rows_here = set(), set(), len(money)
+        contracts_here, seen_here, rows_here, dates_here = set(), set(), len(money), len(deadlines)
         for _, _, _, locator, text, created in records:
             for sentence in sentences(text):
                 origin = {"type": source_type, "id": source_id, "name": name, "locator": locator}
@@ -365,7 +378,7 @@ def analyse(db, today):
                             found.append((key, "company", label, position))
                 keys = [item[0] for item in found]
                 seen_here.update(keys)
-                done = bool(DONE.search(sentence)) and not OBLIGED.search(sentence)
+                done = is_done(sentence)
                 due, approximate = _due(sentence)
                 for key, kind, label, _ in found:
                     entry = entities.setdefault(key, {"kind": kind, "name": label, "mentions": [], "links": {}})
@@ -418,6 +431,7 @@ def analyse(db, today):
                                       "kind": "payment" if first or PAY.search(sentence) else "expiry" if EXPIRY.search(sentence)
                                       else "delivery" if DELIVERY.search(sentence) else "deadline",
                                       "amount": first, "renew": bool(RENEW.search(sentence)), "quote": sentence,
+                                      "contract": linked[0]["number"] if linked else None,
                                       "entities": keys[:6], **origin})
         # Источник об одном договоре: счета и акты в нём относятся к этому договору.
         if len(contracts_here) == 1 and source_type == "file":
@@ -425,8 +439,11 @@ def analyse(db, today):
             chain = chains[number]
             for row in money[rows_here:]:
                 row["contract"] = row["contract"] or number
-                if row["kind"] == "mention":
-                    row["kind"] = "payment"  # сумма в документе договора — его сумма, а не упоминание
+                # «Сумма 1 200 000 руб.» в счёте по договору — его сумма; бюджет или оценка — нет.
+                if row["kind"] == "mention" and PAYMENT_WORDS.search(row["quote"]) and not NON_PAYMENT.search(row["quote"]):
+                    row["kind"] = "payment"
+            for row in deadlines[dates_here:]:
+                row["contract"] = row["contract"] or number
             # Договор связан со всеми, кто упомянут в его документе.
             contract_key = _key("contract", "договор " + number)
             if contract_key in entities:
@@ -441,11 +458,31 @@ def analyse(db, today):
                         if doc["kind"] not in CONTRACTS:
                             chain["kinds"].setdefault(doc["kind"], {"number": doc["number"], "quote": sentence,
                                                                     "origin": {"type": source_type, "id": source_id, "name": name, "locator": locator}})
-                    if DONE.search(sentence) and not OBLIGED.search(sentence) and "оплач" in sentence.casefold():
+                    if is_done(sentence) and "оплач" in sentence.casefold():
                         chain["paid"] = True
     merged = _merge_people(entities)
+    _reconcile(money, deadlines)
     money = _unique(money)
     return _dossiers(entities, merged, money, deadlines), _money(money, today), _foresight(deadlines, chains, today)
+
+
+def _reconcile(money, deadlines):
+    """Подтверждение оплаты в другом предложении или документе закрывает то же обязательство."""
+    paid = set()
+    for row in money:
+        if row["status"] == "paid":
+            if row["contract"]:
+                paid.add((row["amount"], "contract", row["contract"]))
+            if row["payer"] and row["payee"]:
+                paid.add((row["amount"], row["payer"], row["payee"]))
+    for row in money:
+        if row["status"] != "paid" and ((row["amount"], "contract", row["contract"]) in paid
+                                        or (row["amount"], row["payer"], row["payee"]) in paid):
+            row["status"] = "paid"
+            row["closed_by_payment"] = True
+    for row in deadlines:
+        if row["amount"] and row["contract"] and (row["amount"], "contract", row["contract"]) in paid:
+            row["done"] = True
 
 
 def _dossiers(entities, merged, money, deadlines):
@@ -533,8 +570,9 @@ def _money(unique, today):
 def _foresight(deadlines, chains, today):
     items, seen = [], set()
 
-    def add(kind, level, title, detail, quote, origin, when=None, days=None):
-        mark = (kind, title)
+    def add(kind, level, title, detail, quote, origin, when=None, days=None, identity=None):
+        # Одно и то же обязательство из разных цитат — одно предупреждение; разные договоры — разные.
+        mark = (kind, title, identity or origin["id"])
         if mark in seen:
             return
         seen.add(mark)
@@ -546,7 +584,7 @@ def _foresight(deadlines, chains, today):
     for row in deadlines:
         when = date.fromisoformat(row["date"])
         days = (when - today).days
-        timeline.append({"date": row["date"], "days": days, "kind": row["kind"], "done": row["done"],
+        timeline.append({"date": row["date"], "days": days, "kind": row["kind"], "done": row["done"], "entities": row["entities"],
                          "quote": row["quote"], "source": origin_of(row)})
         if row["done"] or days < -90 or days > 120:
             continue
@@ -557,12 +595,13 @@ def _foresight(deadlines, chains, today):
         if days < 0:
             add("overdue", "critical", (f"Платёж {format_rub(row['amount'])} просрочен: срок был {label}" if row["amount"]
                                         else f"{what} прошёл {label}"),
-                f"Прошло {-days} дн. В источниках нет отметки, что это сделано.", row["quote"], origin_of(row), row["date"], days)
+                f"Прошло {-days} дн. В источниках нет отметки, что это сделано.", row["quote"], origin_of(row), row["date"], days,
+                row["contract"])
         elif days <= 30:
             renew = " Договор продлевается сам, если никто не возразит заранее." if row["renew"] else ""
             add("expiry" if row["kind"] == "expiry" else "soon", "warning" if days <= 7 else "notice",
                 f"{what} {label}", ("Сегодня." if days == 0 else f"Осталось {days} дн.") + renew,
-                row["quote"], origin_of(row), row["date"], days)
+                row["quote"], origin_of(row), row["date"], days, row["contract"])
     for number, chain in chains.items():
         kinds = chain["kinds"]
         invoice, shipped = kinds.get("счёт"), next((kinds[k] for k in SHIPPING if k in kinds), None)
