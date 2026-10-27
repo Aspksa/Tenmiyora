@@ -771,7 +771,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.json_reply(200, store.search_brain(value("q")))
                 elif path == "/api/brain/lab":
                     lab = store.brain_lab_report()
-                    lab["personality_development"] = assess_lab_personality(store.data, lab)
+                    lab["personality_development"] = assess_lab_personality(self.server.workspace.data, lab)
                     self.json_reply(200, lab)
                 elif path == "/api/disk":
                     self.json_reply(200, store.listing(value("folder") or None, value("q")))
