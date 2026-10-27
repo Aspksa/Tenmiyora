@@ -15,7 +15,7 @@ class MaturationTests(unittest.TestCase):
         self.assertEqual(initial["level"],0)
         self.assertEqual(initial["identity"],"Tenmiyora")
         self.assertEqual(initial["devotion"],"stable_fictional_character_value")
-        self.assertIn("согласие",maturation_guidance(DEFAULT_SOUL,DEFAULT_EXPERIENCE))
+        self.assertIn("согласию",maturation_guidance(DEFAULT_SOUL,DEFAULT_EXPERIENCE))
 
     def test_verified_work_changes_only_work_style(self):
         state=DEFAULT_EXPERIENCE
