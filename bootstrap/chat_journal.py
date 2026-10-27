@@ -11,6 +11,7 @@ from pathlib import Path
 import re
 import sqlite3
 import threading
+from chat_evidence import extract, compare
 
 WORDS=re.compile(r"[^\W_]+(?:[-'][^\W_]+)*",re.UNICODE)
 MAX_TEXT=2_000_000
@@ -36,6 +37,13 @@ class ChatJournal:
                     keywords_json TEXT NOT NULL,
                     confidence TEXT NOT NULL DEFAULT 'unverified');
                 CREATE INDEX IF NOT EXISTS turns_role_time ON turns(role,time);
+                CREATE TABLE IF NOT EXISTS candidates(
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    turn_id INTEGER NOT NULL REFERENCES turns(id) ON DELETE CASCADE,
+                    kind TEXT NOT NULL, start INTEGER NOT NULL, end INTEGER NOT NULL,
+                    fingerprint TEXT NOT NULL, polarity INTEGER NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'unverified');
+                CREATE INDEX IF NOT EXISTS candidates_turn ON candidates(turn_id);
             """)
 
     def _db(self):
@@ -67,6 +75,11 @@ class ChatJournal:
             db.execute("INSERT INTO analysis(turn_id,word_count,unique_word_count,keywords_json,confidence) VALUES(?,?,?,?,?)",
                        (cursor.lastrowid,info["word_count"],info["unique_word_count"],
                         json.dumps(info["keywords"],ensure_ascii=False),info["confidence"]))
+            if role=="user":
+                for item in extract(text):
+                    db.execute("INSERT INTO candidates(turn_id,kind,start,end,fingerprint,polarity,status) VALUES(?,?,?,?,?,?,?)",
+                               (cursor.lastrowid,item["kind"],item["start"],item["end"],
+                                item["key"],item["polarity"],item["status"]))
         return {"id":cursor.lastrowid,"sha256":digest,**info}
 
     def verify(self):
@@ -78,6 +91,7 @@ class ChatJournal:
 
     def clear(self):
         with self.lock,self._db() as db:
+            db.execute("DELETE FROM candidates")
             db.execute("DELETE FROM analysis")
             db.execute("DELETE FROM turns")
 
@@ -85,3 +99,22 @@ class ChatJournal:
         with self.lock,self._db() as db:
             return [{"role":r[0],"content":r[1],"time":r[2]}
                     for r in db.execute("SELECT role,text,time FROM turns ORDER BY id")]
+
+
+    def reflection(self):
+        """Read-only diagnostics; never includes the raw message text."""
+        with self.lock,self._db() as db:
+            rows=[{"turn_id":r[0],"kind":r[1],"start":r[2],"end":r[3],
+                   "key":r[4],"polarity":r[5],"status":r[6]}
+                  for r in db.execute("SELECT turn_id,kind,start,end,fingerprint,polarity,status FROM candidates ORDER BY id DESC LIMIT 200")]
+        rows.reverse()
+        return {"candidates":len(rows),"unverified":sum(x["status"]=="unverified" for x in rows),
+                "conflicts":compare(rows),"automatic_facts":0}
+
+    def evidence(self,turn_id):
+        """Read exact evidence locally, only when explicitly requested."""
+        with self.lock,self._db() as db:
+            row=db.execute("SELECT role,text,digest,time FROM turns WHERE id=?",(turn_id,)).fetchone()
+        if row is None:
+            return None
+        return {"role":row[0],"content":row[1],"sha256":row[2],"time":row[3]}
