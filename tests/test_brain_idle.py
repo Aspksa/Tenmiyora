@@ -103,7 +103,46 @@ class BrainIdleTests(unittest.TestCase):
         with self.assertRaises(server.AppError):
             self.work.growth_question({"id": third[1]["id"], "action": "merge"})
 
+    def test_merging_canonical_topic_moves_its_aliases(self):
+        from brain_idle import merge_topics
+        with self.store.db() as db:
+            ids = [db.execute("INSERT INTO branches(parent,name,created) VALUES(NULL,?,'2026-01-01')", (name,)).lastrowid
+                   for name in ("Логистика", "Логистика склада", "Логистика склада товаров")]
+            merge_topics(db, ids[1], ids[2])
+            merge_topics(db, ids[0], ids[1])
+        names = {row["name"] for row in self.store.branches()["branches"]}
+        self.assertIn("Логистика", names)
+        self.assertNotIn("Логистика склада", names)
+        self.assertNotIn("Логистика склада товаров", names)
+
+    def test_old_documents_are_reached_after_failed_new_ones(self):
+        from brain_idle import next_document, _set_state
+        for i in range(60):
+            self.store.upload(f"doc{i}.txt", f"Документ номер {i}: поставщик передаёт товар после оплаты.".encode())
+        with self.store.db() as db:
+            rows = db.execute("SELECT id,sha256 FROM files ORDER BY created DESC").fetchall()
+            _set_state(db, "documents_tried", [f"{r['id']}:{r['sha256']}" for r in rows[:-1]])
+            self.assertEqual(next_document(db)["id"], rows[-1]["id"])
+
+    def test_deep_findings_saved_per_batch_when_budget_runs_out(self):
+        long_text = "\n\n".join(f"Раздел {i}. Поставщик обязуется передать товар номер {i} покупателю. " * 40 for i in range(6))
+        self.store.upload("long.txt", long_text.encode())
+        with self.work.lock:
+            self.work.data["connection"].update(key="k", model="m")
+        self.work.growth_update({"cloud": True, "cloud_daily": 2})
+        self.work.semantic_once = lambda fid, connection: 0
+        def provider(suffix, payload, **kwargs):
+            segments = json.loads(payload["messages"][1]["content"])["segments"]
+            first = segments[0]
+            quote = first["text"][:40]
+            return {"choices": [{"message": {"content": json.dumps({"findings": [
+                {"segment": first["segment"], "kind": "obligation", "quote": quote, "interpretation": "Обязанность поставщика."}]})}}]}
+        self.work.provider = provider
+        self.run_all()
+        self.assertEqual(len(self.work.growth_status()["insights"]), 1)
+
     def test_deep_review_reserves_only_real_batches_and_stops_when_disabled(self):
+
         self.store.upload("python.txt", PYTHON.encode())
         with self.work.lock:
             self.work.data["connection"].update(key="k", model="m")

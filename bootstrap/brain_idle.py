@@ -218,8 +218,10 @@ def merge_topics(db, keep, merge):
     alias = normalize_label(rows[merge])
     if db.execute("SELECT 1 FROM topic_aliases WHERE alias_key IN (?,?)", (normalize_label(rows[keep]), alias)).fetchone():
         raise ValueError("Одна из этих тем уже объединена с другой. Обновите Мозг.")
-    db.execute("""INSERT OR IGNORE INTO topic_aliases(alias_key,alias_name,canonical_id,left_key,right_key,created)
+    db.execute("""INSERT INTO topic_aliases(alias_key,alias_name,canonical_id,left_key,right_key,created)
         VALUES(?,?,?,?,?,?)""", (alias, rows[merge], keep, "user:" + normalize_label(rows[keep]), "user:" + alias, clock()))
+    # Темы, уже объединённые с поглощаемой, переходят к новой: цепочек псевдонимов нет.
+    db.execute("UPDATE topic_aliases SET canonical_id=? WHERE canonical_id=?", (keep, merge))
     return rows[keep]
 
 
@@ -227,7 +229,7 @@ def next_document(db):
     """Самый новый документ без смыслового разбора и без попытки в режиме ожидания."""
     tried = set(_state(db, "documents_tried", []))
     for row in db.execute("""SELECT id,sha256,name FROM files WHERE status LIKE 'готово%'
-          AND status NOT LIKE '%смысловой анализ завершён%' ORDER BY created DESC LIMIT 50"""):
+          AND status NOT LIKE '%смысловой анализ завершён%' ORDER BY created DESC"""):
         if f"{row['id']}:{row['sha256']}" not in tried:
             return dict(row)
     return None
@@ -385,35 +387,33 @@ class Grower:
         return summary
 
     def _deep(self, document, connection, limit):
-        from document_deep_analysis import batches, review
+        """До трёх частей документа моделью; каждая часть сохраняется сразу после ответа."""
+        from document_deep_analysis import batches, model_messages, validate_answer
         self.store.ensure_document_index(document["id"])
         with self.store.db() as conn:
+            info = conn.execute("""SELECT c.file_sha FROM document_coverage c
+                JOIN files f ON f.id=c.file_id AND f.sha256=c.file_sha WHERE c.file_id=?""", (document["id"],)).fetchone()
             rows = conn.execute("SELECT ordinal,locator,excerpt FROM document_segments WHERE file_id=? ORDER BY ordinal",
                                 (document["id"],)).fetchall()
-        count = min(DEEP_BATCHES, len(list(batches(rows))))
-        if not count or self.workspace.growth_cloud() is None:
+        if not info:
             return 0
-
-        def provider(*args, **kwargs):
+        saved = 0
+        for batch in list(batches(rows))[:DEEP_BATCHES]:
             # Перед каждым запросом: разрешение ещё действует и лимит не исчерпан.
             if self.workspace.growth_cloud() is None or not self.workspace.growth_settings()["enabled"]:
-                raise PermissionError("Разбор моделью выключен")
+                break
             if not self.store.engine.reserve_semantic(limit):
-                raise PermissionError("Дневной лимит исчерпан")
-            return self.workspace.provider(*args, **kwargs)
-
-        try:
-            with self.store.db() as conn:
-                result = review(conn, provider, connection, document["id"], "", count)
-        except PermissionError:
-            return 0
-        with self.store.lock, self.store.db() as db:
-            current = db.execute("SELECT sha256 FROM files WHERE id=?", (document["id"],)).fetchone()
-            if not current or current["sha256"] != result["_source_sha"]:
-                return 0
-            for item in result["findings"]:
-                db.execute("""INSERT INTO brain_idle_insights(file_id,file_sha,kind,text,quote,locator,created)
-                    VALUES(?,?,?,?,?,?,?)""", (document["id"], result["_source_sha"], str(item.get("kind", ""))[:40],
-                    str(item.get("interpretation") or item.get("text") or "")[:600],
-                    str(item.get("quote", ""))[:600], str(item.get("locator", ""))[:120], clock()))
-        return len(result["findings"])
+                break
+            raw = self.workspace.provider("/chat/completions", {"model": connection["model"],
+                "messages": model_messages(batch), "stream": False}, connection=connection, timeout=60, max_bytes=100000)
+            findings = validate_answer(raw["choices"][0]["message"]["content"], batch)
+            with self.store.lock, self.store.db() as db:
+                current = db.execute("SELECT sha256 FROM files WHERE id=?", (document["id"],)).fetchone()
+                if not current or current["sha256"] != info["file_sha"]:
+                    break  # Документ заменили или удалили во время разбора.
+                for item in findings:
+                    db.execute("""INSERT INTO brain_idle_insights(file_id,file_sha,kind,text,quote,locator,created)
+                        VALUES(?,?,?,?,?,?,?)""", (document["id"], info["file_sha"], item["kind"],
+                        item["interpretation"][:600], item["quote"][:600], item["locator"][:120], clock()))
+            saved += len(findings)
+        return saved
