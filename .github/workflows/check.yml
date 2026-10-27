@@ -119,6 +119,9 @@ jobs:
       - name: Проверить реальные парные испытания кандидатов
         run: python bootstrap/ci_timed.py --label 'Trusted fault trials' -- python -m unittest discover -s tests -p 'test_improvement_trial_runner.py' -v
 
+      - name: Проверить безопасную подготовку пакетов обновления
+        run: python bootstrap/ci_timed.py --label 'Release staging' -- python -m unittest discover -s tests -p 'test_release_staging.py' -v
+
       - name: Проверить шесть инвариантов Лаборатории
         run: python bootstrap/ci_timed.py --label 'Метаморфные проверки' -- python bootstrap/brain_lab_metamorphic.py --check --output .runtime/quality-reports/brain-lab-metamorphic.json
       - name: Проверить блокировки принятия и SHA-пломбу инвариантов
