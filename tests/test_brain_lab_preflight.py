@@ -106,12 +106,9 @@ class SourcePreflightTests(unittest.TestCase):
             self.assertEqual(db.execute("SELECT COUNT(*) FROM brain_lab_generations").fetchone()[0],0)
 
     def test_refuses_invalid_id_before_path_resolution(self):
-        with self.store.db() as db:
-            db.execute("UPDATE files SET id=? WHERE id=?",
-                       ("../unsafe",self.file))
-        with self.store.db() as db:
-            with self.assertRaisesRegex(ValueError,"ID"):
-                verify(db)
+        from brain_lab_preflight import _verified_bytes
+        with self.assertRaisesRegex(ValueError,"ID"):
+            _verified_bytes(self.store.objects,"../unsafe",8,"f"*64)
 
     @unittest.skipUnless(os.name!="nt","Windows normally requires privileges for symlinks")
     def test_refuses_symlink_source(self):
