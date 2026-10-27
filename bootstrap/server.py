@@ -28,6 +28,7 @@ from semantic import make_messages, parse_topics, samples_from_text
 from soul_engine import DEFAULT_SOUL, validate_soul, evolve, persona_guidance
 from soul_maturation import maturation_guidance
 from soul_quality import quality_guidance
+from soul_failures import DEFAULT_FAILURES, validate_failures, record_failure, guidance as failure_guidance
 from relationship_memory import DEFAULT_RELATIONSHIP, validate_relationship, remember, guidance
 from soul_experience import DEFAULT_EXPERIENCE, validate_experience, observe, guidance as experience_guidance, verified_outcome
 from relation_suggestions import validate_candidates
@@ -49,7 +50,7 @@ STATIC = {
 PASSIVE = {"/api/brain/pulses", "/api/brain/idle", "/api/brain/activity"}
 DEFAULT = {
     "appearance": {"size": 340, "opacity": 100, "visible": True, "pinned": False, "motion": True},
-    "layout": {}, "messages": [], "soul": DEFAULT_SOUL, "relationship": DEFAULT_RELATIONSHIP, "experience": DEFAULT_EXPERIENCE,
+    "layout": {}, "messages": [], "soul": DEFAULT_SOUL, "relationship": DEFAULT_RELATIONSHIP, "experience": DEFAULT_EXPERIENCE, "failures": DEFAULT_FAILURES,
     "connection": {"url": CLOUDRU_URL, "model": "", "key": "", "verified_at": None},
     "model_cache": {"url": "", "models": [], "details": [], "loaded_at": None},
     "growth": {"enabled": True, "cloud": False, "idle_minutes": 15, "cloud_daily": 10},
@@ -170,7 +171,8 @@ class Workspace:
                                  "growth": validate_growth(stored.get("growth")),
                                  "soul": validate_soul(stored.get("soul", DEFAULT_SOUL)),
                                  "relationship": validate_relationship(stored.get("relationship", DEFAULT_RELATIONSHIP)),
-                                 "experience": validate_experience(stored.get("experience", DEFAULT_EXPERIENCE))}
+                                 "experience": validate_experience(stored.get("experience", DEFAULT_EXPERIENCE)),
+                                 "failures": validate_failures(stored.get("failures", DEFAULT_FAILURES))}
                 except (ValueError, KeyError, TypeError, AppError):
                     raise AppError("Файл .runtime/workspace.json повреждён. Сохраните его копию и уберите из рабочей папки для нового запуска.", 500) from None
 
@@ -522,6 +524,7 @@ class Workspace:
             context[0]["content"] += " " + experience_guidance(self.data["experience"])
             context[0]["content"] += " " + maturation_guidance(self.data["soul"], self.data["experience"])
             context[0]["content"] += " " + quality_guidance(self.data["experience"])
+            context[0]["content"] += " " + failure_guidance(self.data["failures"])
             result = self.provider("/chat/completions", {"model": model, "messages": context, "stream": False}, connection=connection)
             try:
                 answer = result["choices"][0]["message"]["content"]
@@ -544,7 +547,13 @@ class Workspace:
             self.chat_lock.release()
 
     def create_disk_file(self, payload):
-        return self.learned(self.knowledge.create_text_file(payload.get("folder"), payload.get("name"), payload.get("text", "")))
+        try:
+            return self.learned(self.knowledge.create_text_file(payload.get("folder"), payload.get("name"), payload.get("text", "")))
+        except (OSError, IOError):
+            with self.lock:
+                self.data["failures"] = record_failure(self.data["failures"], "disk_save_failed")
+                self.save()
+            raise
 
     def learned(self, result):
         """Новая версия файла с Диска получает тот же смысловой анализ, что и загрузка."""
@@ -587,6 +596,9 @@ class Workspace:
             with self.knowledge.db() as conn:
                 file=conn.execute("SELECT sha256 FROM files WHERE id=?",(fid,)).fetchone()
                 if not file or file["sha256"]!=result.pop("_source_sha"):
+                    with self.lock:
+                        self.data["failures"] = record_failure(self.data["failures"], "document_source_changed")
+                        self.save()
                     raise AppError("Документ изменился во время анализа; результат не сохранён.",409)
             # Count only a completed, source-hash-verified analysis; not a
             # claim that its conclusions were independently correct.
