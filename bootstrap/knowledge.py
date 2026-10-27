@@ -460,12 +460,16 @@ class KnowledgeStore:
 
     def _brain_stats(self, conn):
         """Сводка для экрана Мозга: сколько знаний и откуда они пришли."""
-        table = "knowledge_items" if conn.execute(
-            "SELECT 1 FROM knowledge_items LIMIT 1").fetchone() else "facts"
-        row = conn.execute(f"""SELECT COUNT(*) AS facts,
+        # Как и в branches(): ветка без knowledge_items показывает legacy facts.
+        row = conn.execute("""WITH effective AS (
+              SELECT source_type,source_id FROM knowledge_items
+              UNION ALL
+              SELECT f.source_type,f.source_id FROM facts f WHERE NOT EXISTS
+                (SELECT 1 FROM knowledge_items k WHERE k.branch_id=f.branch))
+            SELECT COUNT(*) AS facts,
             COUNT(DISTINCT CASE WHEN source_type='file' THEN source_id END) AS files,
             SUM(CASE WHEN source_type='chat' THEN 1 ELSE 0 END) AS chat
-            FROM {table}""").fetchone()
+            FROM effective""").fetchone()
         return {"facts": row["facts"], "files": row["files"], "chat": row["chat"] or 0}
 
     def search_brain(self, question, limit=12):
@@ -473,18 +477,32 @@ class KnowledgeStore:
         if not isinstance(question, str) or len(question.strip()) < 2:
             raise ValueError("Введите запрос для поиска.")
         results = self.retrieve(question.strip()[:300], limit)
+        from topic_aliases import projection
         files = {item["source_id"] for item in results if item.get("source_type") == "file"}
-        names = {}
-        if files:
-            with self.lock, self.db() as conn:
+        names, branches = {}, {}
+        with self.lock, self.db() as conn:
+            if files:
                 params = ",".join("?" for _ in files)
                 names = {row["id"]: row["name"] for row in conn.execute(
                     f"SELECT id,name FROM files WHERE id IN ({params})", tuple(files))}
-        return {"results": [{"excerpt": item["excerpt"], "locator": item["locator"],
-                             "branch": item.get("branch", ""), "source_type": item.get("source_type", ""),
-                             "source_id": item.get("source_id", ""),
-                             "source_name": names.get(item.get("source_id"))}
-                            for item in results]}
+            # Поиск отдаёт исходное имя ветки; дерево показывает каноническую
+            # ветку после слияния синонимов, поэтому переходим по её id.
+            mapping = projection(conn)
+            for name in {item.get("branch", "") for item in results}:
+                row = conn.execute("SELECT id FROM branches WHERE name=? ORDER BY id LIMIT 1", (name,)).fetchone()
+                if row:
+                    target = mapping.get(row["id"], row["id"])
+                    canonical = conn.execute("SELECT name FROM branches WHERE id=?", (target,)).fetchone()
+                    branches[name] = (target, canonical["name"] if canonical else name)
+        found = []
+        for item in results:
+            branch_id, branch_name = branches.get(item.get("branch", ""), (None, item.get("branch", "")))
+            found.append({"excerpt": item["excerpt"], "locator": item["locator"],
+                          "branch": branch_name, "branch_id": branch_id,
+                          "source_type": item.get("source_type", ""),
+                          "source_id": item.get("source_id", ""),
+                          "source_name": names.get(item.get("source_id"))})
+        return {"results": found}
 
     def facts(self, branch):
         from topic_aliases import projection

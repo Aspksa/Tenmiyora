@@ -33,6 +33,17 @@ class AliasTests(unittest.TestCase):
         with self.store.db() as db:
             return db.execute("SELECT COUNT(*) FROM topic_aliases").fetchone()[0]
 
+    def test_brain_search_points_to_canonical_branch(self):
+        self.store.upload("astronomy.txt",ASTRO.encode())
+        self.store.upload("stars.txt",STARS.encode())
+        self.store.upload("synonyms.txt",PROOF.encode())
+        visible={r["id"]:r["name"] for r in self.store.branches()["branches"]}
+        results=self.store.search_brain("Звездоведение свойства звёзд")["results"]
+        self.assertTrue(results)
+        for item in results:
+            self.assertIn(item["branch_id"],visible)
+            self.assertEqual(item["branch"],visible[item["branch_id"]])
+
     def test_two_proofs_merge_existing_roots_without_deleting_knowledge(self):
         a=self.store.upload("astronomy.txt",ASTRO.encode())["id"]
         b=self.store.upload("stars.txt",STARS.encode())["id"]

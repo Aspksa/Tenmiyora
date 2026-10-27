@@ -320,7 +320,7 @@
 
   // ---- Мозг ----
   let brainData = {branches: [], recent: []};
-  let brainLoading = false, brainLoaded = false, factsRequest = 0;
+  let brainLoading = false, brainLoaded = false, factsRequest = 0, searchRequest = 0;
   const expanded = new Set();
   function svgIcon(name) {
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -373,7 +373,7 @@
   }
 
   // Карточка знания: цитата, источник, дата и переход к документу.
-  function knowledgeCard(fact, branchName) {
+  function knowledgeCard(fact, branchName, branchId) {
     const card = element('article', 'brain-fact');
     const head = element('div', 'brain-fact-head');
     const fromFile = fact.source_type === 'file';
@@ -381,7 +381,7 @@
     badge.append(svgIcon(fromFile ? 'file' : 'chat'), document.createTextNode(fromFile ? 'Файл' : 'Чат'));
     head.append(badge);
     if (branchName) {
-      const chip = button(branchName, () => openBranchByName(branchName), 'brain-chip');
+      const chip = button(branchName, () => openBranch(branchId), 'brain-chip');
       chip.title = 'Открыть ветку «' + branchName + '»';
       head.append(chip);
     }
@@ -616,9 +616,10 @@
     $('brain-detail-count').hidden = true;
     $('brain-detail').replaceChildren(emptyState('Выберите ветку слева, чтобы увидеть знания и их источники.'));
   }
-  function openBranchByName(name) {
-    const node = brainData.branches.find(item => item.name === name);
+  function openBranch(id) {
+    const node = brainData.branches.find(item => item.id === id);
     if (node) selectBranch(node, true);
+    else message('Ветка не найдена. Нажмите «Обновить».');
   }
   async function selectBranch(branch, reveal) {
     selectedBranch = branch.id;
@@ -665,21 +666,23 @@
     if (query.length < 2) { message('Введите хотя бы два символа.'); return; }
     panel.hidden = false;
     panel.replaceChildren(element('div', 'brain-skeleton tall'));
+    const ticket = ++searchRequest;
     try {
       const data = await request('brain/search?' + new URLSearchParams({q: query}));
+      if (ticket !== searchRequest) return;
       const head = element('div', 'brain-search-head');
       head.append(element('h2', '', data.results.length ?
         'Найдено: ' + knowledgeCount(data.results.length) : 'Ничего не найдено'));
-      const close = button('', () => { panel.hidden = true; panel.replaceChildren(); }, 'icon-button');
+      const close = button('', () => { searchRequest++; panel.hidden = true; panel.replaceChildren(); }, 'icon-button');
       close.setAttribute('aria-label', 'Закрыть результаты поиска');
       close.append(svgIcon('close'));
       head.append(close);
       panel.replaceChildren(head);
       if (!data.results.length) panel.append(element('p', 'module-muted',
         'В Мозге нет знаний, достаточно точно подходящих под запрос «' + query + '». Попробуйте другие слова или загрузите документ на Диск.'));
-      for (const item of data.results) panel.append(knowledgeCard(item, item.branch));
+      for (const item of data.results) panel.append(knowledgeCard(item, item.branch, item.branch_id));
     } catch (error) {
-      panel.replaceChildren(emptyState(error.message, 'search'));
+      if (ticket === searchRequest) panel.replaceChildren(emptyState(error.message, 'search'));
     }
   }
   $('brain-search-form').addEventListener('submit', searchBrain);
