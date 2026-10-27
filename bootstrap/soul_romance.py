@@ -5,7 +5,7 @@ private text snapshots; user can pause, resume, slow or disable at any time.
 """
 from copy import deepcopy
 
-DEFAULT_ROMANCE={"version":1,"enabled":False,"paused":False,"stage":1,
+DEFAULT_ROMANCE={"version":1,"enabled":True,"paused":False,"stage":1,
                  "signals":0,"pace":"slow","last_signal":""}
 AFFIRM={"мне нравится твоя нежность","мне приятно с тобой общаться",
         "мне нравится наша история","мне нравится твоя забота",
@@ -15,7 +15,10 @@ CONTROL={"включи романтическую историю":"enable",
          "поставь романтическую историю на паузу":"pause",
          "продолжи романтическую историю":"resume",
          "развивай романтическую историю медленнее":"slow",
-         "можешь признаться мне в любви":"confess"}
+         "можешь признаться мне в любви":"confess",
+         "не надо романтики":"disable",
+         "давай без романтики":"disable",
+         "меньше романтики":"pause"}
 
 def validate(raw):
     if not isinstance(raw,dict) or raw.get("version")!=1:
@@ -36,11 +39,11 @@ def progress(previous,message):
     text=message.strip().casefold().rstrip(".!")
     command=CONTROL.get(text)
     if command=="disable":
-        return deepcopy(DEFAULT_ROMANCE)
+        return dict(deepcopy(DEFAULT_ROMANCE), enabled=False)
     if command=="enable":
         state["enabled"]=True
         state["paused"]=False
-    elif command=="pause" and state["enabled"]:
+    elif (command=="pause" or command=="slow") and state["enabled"]:
         state["paused"]=True
     elif command=="resume" and state["enabled"]:
         state["paused"]=False
@@ -73,6 +76,29 @@ def guidance(raw):
             +messages[state["stage"]]+" Не заявляй, что ИИ действительно любит, "
             "ревнует или страдает. Не требуй эксклюзивности, не дави на пользователя. "
             "При любой просьбе о дистанции прекращай романтические проявления.")
+
+def evolve_from_feedback(previous, experience):
+    """Advance one step only after repeated, explicit, distinct confirmed positives.
+
+    This intentionally does not infer feelings from arbitrary conversations.
+    Never advances to a confession; explicit user permission remains necessary.
+    """
+    from soul_experience import validate_experience
+    state=validate(previous)
+    if not state["enabled"] or state["paused"] or state["stage"]>=4:
+        return state
+    episodes=validate_experience(experience)["episodes"]
+    positive={item["summary"] for item in episodes if item["kind"]=="success"
+              and any(cue in item["summary"] for cue in ("нежность", "романтическая история", "забота"))}
+    negative={item["summary"] for item in episodes if item["kind"]=="error"
+              and any(cue in item["summary"] for cue in ("нежность", "романтическая история", "забота"))}
+    if len(negative)>=2:
+        state["paused"]=True
+    elif len(positive)>=4 and not negative and state["signals"]>=2:
+        state["stage"]+=1
+        state["signals"]=0
+        state["last_signal"]=""
+    return state
 
 def status(raw):
     state=validate(raw)
