@@ -40,5 +40,19 @@ class StrictExam(unittest.TestCase):
         self.assertFalse(validate_claim(msg.replace("поезд","кофе"),claim))
     def test_no_candidates_for_sensitive_dialogue(self):
         self.assertEqual(candidates("Мне нравится чай. API_KEY = secretvalue"),[])
-if __name__=="__main__":
+
+    def test_temporal_links(self):
+        import tempfile
+        from chat_journal import ChatJournal
+        from chat_temporal_reader import reconstruct
+        with tempfile.TemporaryDirectory() as root:
+            journal=ChatJournal(root)
+            journal.append("user","Мне нравится чай","t1")
+            journal.append("user","Мне не нравится чай","t2")
+            result=reconstruct(journal)
+            self.assertEqual(result["topics"][0]["changes"],1)
+            self.assertEqual(result["verified_facts"],0)
+            journal.clear()
+            self.assertEqual(reconstruct(journal)["topics"],[])
+\nif __name__=="__main__":
     unittest.main()
