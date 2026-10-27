@@ -11,7 +11,8 @@ from pathlib import Path
 import re
 import sqlite3
 import threading
-from chat_evidence import extract, compare
+from chat_evidence import compare
+from chat_semantic import candidates, validate_claim
 
 WORDS=re.compile(r"[^\W_]+(?:[-'][^\W_]+)*",re.UNICODE)
 MAX_TEXT=2_000_000
@@ -76,7 +77,7 @@ class ChatJournal:
                        (cursor.lastrowid,info["word_count"],info["unique_word_count"],
                         json.dumps(info["keywords"],ensure_ascii=False),info["confidence"]))
             if role=="user":
-                for item in extract(text):
+                for item in candidates(text):
                     db.execute("INSERT INTO candidates(turn_id,kind,start,end,fingerprint,polarity,status) VALUES(?,?,?,?,?,?,?)",
                                (cursor.lastrowid,item["kind"],item["start"],item["end"],
                                 item["key"],item["polarity"],item["status"]))
@@ -108,8 +109,24 @@ class ChatJournal:
                    "key":r[4],"polarity":r[5],"status":r[6]}
                   for r in db.execute("SELECT turn_id,kind,start,end,fingerprint,polarity,status FROM candidates ORDER BY id DESC LIMIT 200")]
         rows.reverse()
-        return {"candidates":len(rows),"unverified":sum(x["status"]=="unverified" for x in rows),
-                "conflicts":compare(rows),"automatic_facts":0}
+        with self.lock,self._db() as db:
+            source={r[0]:(r[1],r[2]) for r in db.execute(
+                "SELECT id,text,digest FROM turns WHERE id IN (SELECT DISTINCT turn_id FROM candidates)")}
+        verified=[]
+        for item in rows:
+            record=source.get(item["turn_id"])
+            if record is None:
+                continue
+            text,stored_digest=record
+            if hashlib.sha256(text.encode("utf-8")).hexdigest()!=stored_digest:
+                continue
+            claim={k:item[k] for k in ("kind","start","end","key","polarity","status")}
+            if validate_claim(text,claim):
+                verified.append(item)
+        return {"candidates":len(verified),
+                "unverified":sum(x["status"]=="unverified" for x in verified),
+                "conflicts":compare(verified),"automatic_facts":0,
+                "invalid_evidence":len(rows)-len(verified)}
 
     def evidence(self,turn_id):
         """Read exact evidence locally, only when explicitly requested."""
