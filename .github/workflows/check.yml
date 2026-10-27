@@ -53,7 +53,10 @@ jobs:
       - name: Проверить обе независимые защитные регрессии параллельно
         run: python bootstrap/ci_timed.py --label 'Защитные регрессии параллельно' -- python bootstrap/ci_parallel_quick.py
 
-      - name: Сквозной экзамен достоверности ответов\n        run: python bootstrap/ci_timed.py --label 'Цепочка доказательств' -- python -m unittest discover -s tests -p 'test_evidence_chain.py' -v\n\n      - name: Проверить шесть инвариантов Лаборатории
+      - name: Сквозной экзамен достоверности ответов
+        run: python bootstrap/ci_timed.py --label 'Цепочка доказательств' -- python -m unittest discover -s tests -p 'test_evidence_chain.py' -v
+
+      - name: Проверить шесть инвариантов Лаборатории
         run: python bootstrap/ci_timed.py --label 'Метаморфные проверки' -- python bootstrap/brain_lab_metamorphic.py --check --output .runtime/quality-reports/brain-lab-metamorphic.json
       - name: Проверить блокировки принятия и SHA-пломбу инвариантов
         run: python bootstrap/ci_timed.py --label 'Контроль регрессий лаборатории' -- python -m unittest discover -s tests -p 'test_brain_lab_metamorphic.py' -v
