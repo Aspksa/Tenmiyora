@@ -1,0 +1,2 @@
+# Test-only PDF dependency. Keep runtime dependencies separate.
+pypdf>=5,<7
