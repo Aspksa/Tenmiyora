@@ -10,7 +10,7 @@ from chat_evidence import PATTERNS
 SENSITIVE = re.compile(
     r"(?i)(?:api[_ -]?key|bearer\s+[a-z0-9._-]+|password|пароль|секретный ключ|"
     r"токен\s*[:=]|sk-[a-z0-9_-]{12,}|[\w.+-]+@[\w.-]+\.[a-z]{2,})")
-SPLIT = re.compile(r"[;\n]|(?<=[.!?])\s+|,\s+(?=(?:я\s+|мне\s+))|\s+(?=(?:но|а)\s+(?:я\s+|мне\s+))", re.I)
+SPLIT = re.compile(r"[;\n]|(?<=[.!?])\s+|,\s+(?=(?:(?:а|но)\s+)?(?:я\s+|мне\s+))|\s+(?=(?:но|а)\s+(?:я\s+|мне\s+))", re.I)
 MAX_SEGMENTS=32
 
 def private(text):
