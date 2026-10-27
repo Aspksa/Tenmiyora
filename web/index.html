@@ -29,6 +29,7 @@
   <symbol id="i-send" viewBox="0 0 24 24"><path d="m12 4 7 8M12 4l-7 8M12 4v16"/></symbol>
   <symbol id="i-move" viewBox="0 0 24 24"><path d="m9 5 3-3 3 3m-3-3v20m-3-3 3 3 3-3M5 9l-3 3 3 3m-3-3h20m-3-3 3 3-3 3"/></symbol>
   <symbol id="i-reset" viewBox="0 0 24 24"><path d="M3 10a9 9 0 1 1 2 8M3 4v6h6"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z"/></symbol>
   <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 2.4 6.6L21 12l-6.6 2.4L12 21l-2.4-6.6L3 12l6.6-2.4Z"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
   <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol>
@@ -66,9 +67,9 @@
           <div><span class="metric-icon"><svg><use href="#i-chat"/></svg></span><strong id="brain-chat-count">0</strong><span>из чата</span></div>
         </div>
         <section class="module-panel brain-map-panel" aria-labelledby="brain-map-title">
-          <div class="panel-head"><div><h2 id="brain-map-title">Дерево знаний</h2><p class="module-muted brain-map-hint">Ядро в центре, вокруг ветки тем, точки вокруг веток — знания. Сияют ветки, выросшие за неделю. Нажмите на ветку, чтобы открыть её.</p></div><div class="brain-map-actions"><span id="brain-map-count" class="brain-pill"></span><button type="button" id="brain-map-replay" class="secondary-button"><svg><use href="#i-spark"/></svg>Показать рост</button></div></div>
+          <div class="panel-head"><div><h2 id="brain-map-title">Дерево знаний</h2><p class="module-muted brain-map-hint">Ядро в центре, вокруг ветки тем, точки вокруг веток — знания. Сияют ветки, выросшие за неделю, а дуги связывают похожие темы. Когда вы задаёте вопрос, по карте бегут импульсы. Нажмите на ветку, чтобы открыть её.</p></div><div class="brain-map-actions"><span id="brain-map-count" class="brain-pill"></span><button type="button" id="brain-map-sleep" class="icon-button" aria-pressed="false" aria-label="Режим сна" title="Режим сна: ночью включается сам"><svg><use href="#i-moon"/></svg></button><button type="button" id="brain-map-replay" class="secondary-button"><svg><use href="#i-spark"/></svg>Показать рост</button></div></div>
           <div id="brain-map" class="brain-map"></div>
-          <div class="brain-map-legend" aria-hidden="true"><span><i class="lg-core"></i>ядро</span><span><i class="lg-branch"></i>ветка темы</span><span><i class="lg-leaf"></i>знания</span><span><i class="lg-fresh"></i>рост за неделю</span></div>
+          <div class="brain-map-legend" aria-hidden="true"><span><i class="lg-core"></i>ядро</span><span><i class="lg-branch"></i>ветка темы</span><span><i class="lg-leaf"></i>знания</span><span><i class="lg-fresh"></i>рост за неделю</span><span><i class="lg-synapse"></i>связь тем</span><span><i class="lg-rest"></i>давно без дела</span></div>
         </section>
         <section class="module-panel brain-growth-panel" aria-labelledby="brain-growth-title">
           <div class="panel-head"><div><h2 id="brain-growth-title">Мозг растёт</h2><p id="brain-growth-summary" class="module-muted brain-growth-summary"></p></div><span class="brain-pill">30 дней</span></div>

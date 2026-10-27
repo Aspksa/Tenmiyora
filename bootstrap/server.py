@@ -370,7 +370,7 @@ class Workspace:
             local_model = api_host in ("127.0.0.1", "localhost", "::1")
             memory_allowed = local_model or os.environ.get(
                 "TENMIYORA_MEMORY_EXTERNAL_ENABLED", "0").strip().lower() in ("1", "true", "yes", "on")
-            found = self.knowledge.retrieve(content) if memory_allowed else []
+            found = self.knowledge.retrieve(content, origin="chat") if memory_allowed else []
             if found:
                 references = "\n".join(
                     f"[{i}] {item['branch']} | {item['locator']}: {item['excerpt']}"
@@ -555,7 +555,7 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/state":
             if self.authorized(browser=True):
                 self.json_reply(200, self.server.workspace.public())
-        elif path in ("/api/brain", "/api/brain/facts", "/api/brain/search", "/api/brain/growth", "/api/brain/lab", "/api/disk", "/api/disk/download", "/api/document"):
+        elif path in ("/api/brain", "/api/brain/facts", "/api/brain/search", "/api/brain/growth", "/api/brain/activity", "/api/brain/pulses", "/api/brain/lab", "/api/disk", "/api/disk/download", "/api/document"):
             if not self.authorized(browser=True):
                 return
             try:
@@ -569,6 +569,10 @@ class Handler(BaseHTTPRequestHandler):
                     self.json_reply(200, store.facts(int(value("branch"))))
                 elif path == "/api/brain/growth":
                     self.json_reply(200, store.brain_growth(value("days") or 30, value("offset") or 0))
+                elif path == "/api/brain/activity":
+                    self.json_reply(200, store.brain_activity())
+                elif path == "/api/brain/pulses":
+                    self.json_reply(200, store.brain_pulses(value("since") or 0))
                 elif path == "/api/brain/search":
                     self.json_reply(200, store.search_brain(value("q")))
                 elif path == "/api/brain/lab":
