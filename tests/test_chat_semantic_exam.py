@@ -1,6 +1,9 @@
 """Independent frozen dialogue fixtures; no provider calls or live personal data."""
 import tempfile
 import unittest
+import sys
+from pathlib import Path
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'bootstrap'))
 from chat_semantic import candidates,validate_claim
 from chat_journal import ChatJournal
 
