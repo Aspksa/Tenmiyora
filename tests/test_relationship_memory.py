@@ -39,7 +39,7 @@ class RelationshipMemoryTests(unittest.TestCase):
             ws.save()
             fresh=Workspace(temp)
             self.assertEqual(fresh.data["relationship"]["preferences"]["greeting"],"ласковое")
-            self.assertIn("Обращение",guidance(fresh.data["relationship"]))
+            self.assertIn("Приветствие",guidance(fresh.data["relationship"]))
 
 
 if __name__=="__main__":
