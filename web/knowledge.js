@@ -1309,6 +1309,9 @@
     try {
       const data = await request('brain/growth?' + new URLSearchParams({days: 30, offset: -new Date().getTimezoneOffset()}));
       growthTopics = data.topics || [];
+      growthBrain = data.brain || null;
+      renderStageLine();
+      renderOverview();
       renderBrainLevel(data.brain);
       renderGrowthChart(data.series);
       renderDiary(data.diary);
@@ -1777,6 +1780,9 @@
       'Сегодня запросов к модели: ' + data.cloud_used_today + ' из ' + s.cloud_daily + '. Тексты документов уходят в Cloud.ru только в этих пределах.';
     // Тот же набор вопросов не перерисовываем: иначе опрос стирал бы недописанный ответ.
     // Новая формулировка тех же вопросов ждёт, пока вы дописываете ответ.
+    updateBadges();
+    const overviewKey = data.questions.length + '|' + (data.questions[0]?.text || '');
+    if (overviewKey !== renderIdle.overviewKey) { renderIdle.overviewKey = overviewKey; renderOverview(); }
     const questions = $('brain-idle-questions'), ids = data.questions.map(q => q.id).join(',');
     const key = ids + '|' + data.questions.map(q => q.text + JSON.stringify(q.details || {})).join('|');
     const drafting = [...questions.querySelectorAll('textarea')].some(area => area.value.trim());
@@ -2127,6 +2133,97 @@
       if (!$('brain-view').hidden && box.clientWidth && (box.clientWidth < 640) !== Boolean(MAP.narrow)) renderMap();
     }, 200);
   });
+
+  // ---- Вкладки Мозга и «Главное» ----
+  const BRAIN_TAB_KEY = 'tenmiyora.brain.tab';
+  const brainTabs = [...document.querySelectorAll('[data-brain-tab]')];
+  let growthBrain = null;
+  function selectTab(name, focus) {
+    if (!brainTabs.some(tab => tab.dataset.brainTab === name)) name = 'overview';
+    for (const tab of brainTabs) {
+      const on = tab.dataset.brainTab === name;
+      tab.setAttribute('aria-selected', String(on));
+      tab.tabIndex = on ? 0 : -1;
+      $('brain-pane-' + tab.dataset.brainTab).hidden = !on;
+      if (on && focus) tab.focus();
+    }
+    try { localStorage.setItem(BRAIN_TAB_KEY, name); } catch { /* вкладка просто не запомнится */ }
+  }
+  function goTab(name) {
+    selectTab(name);
+    const bar = document.querySelector('.brain-tabs');
+    if (bar && bar.getBoundingClientRect().top < 0) bar.scrollIntoView({block: 'start'});
+  }
+  brainTabs.forEach((tab, index) => {
+    tab.addEventListener('click', () => selectTab(tab.dataset.brainTab));
+    tab.addEventListener('keydown', event => {
+      const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+      if (event.key === 'Home' || event.key === 'End') {
+        event.preventDefault();
+        selectTab(brainTabs[event.key === 'Home' ? 0 : brainTabs.length - 1].dataset.brainTab, true);
+      } else if (step) {
+        event.preventDefault();
+        selectTab(brainTabs[(index + step + brainTabs.length) % brainTabs.length].dataset.brainTab, true);
+      }
+    });
+  });
+  selectTab((() => { try { return localStorage.getItem(BRAIN_TAB_KEY); } catch { return null; } })() || 'overview');
+
+  // «Главное»: вопросы к вам, уровень Мозга и что он узнал последним.
+  function overviewCard(title, iconName, tab, className) {
+    const card = element('section', 'overview-card ' + (className || ''));
+    const head = element('div', 'overview-head');
+    const name = element('h2');
+    name.append(svgIcon(iconName), document.createTextNode(title));
+    head.append(name);
+    if (tab) {
+      const more = button('', () => goTab(tab), 'overview-more');
+      more.append(document.createTextNode('Открыть'), svgIcon('arrow'));
+      more.setAttribute('aria-label', 'Открыть вкладку «' + title + '»');
+      head.append(more);
+    }
+    card.append(head);
+    return card;
+  }
+  function renderOverview() {
+    const box = $('brain-overview');
+    if (!box) return;
+    box.replaceChildren();
+    const ask = overviewCard('Вопросы к вам', 'chat', 'idle', 'is-questions');
+    const questions = idleData?.questions || [];
+    ask.append(element('strong', 'overview-big', questions.length || '0'));
+    ask.append(element('p', 'overview-note', questions.length ? '«' + questions[0].text.slice(0, 140) + (questions[0].text.length > 140 ? '…' : '') + '»' :
+      'Мозг спросит, когда найдёт пробел или противоречие.'));
+    const level = overviewCard('Мозг сейчас', 'spark', 'growth', 'is-level');
+    if (growthBrain) {
+      const row = element('div', 'overview-level');
+      row.append(progressRing(76, 6, growthBrain.progress, growthBrain.level, '', 'ring-mini'));
+      const text = element('div');
+      text.append(element('strong', '', growthBrain.name), element('span', '', knowledgeCount(growthBrain.total) + ' · +' + growthBrain.week + ' за неделю'));
+      row.append(text);
+      level.append(row);
+    }
+    const recent = overviewCard('Последнее, что узнал', 'file', 'growth', 'is-recent');
+    const events = mergedEvents(brainData.recent).slice(0, 3);
+    if (!events.length) recent.append(element('p', 'overview-note', 'Пока ничего. Загрузите документ на Диск.'));
+    for (const event of events) {
+      const row = element('p', 'overview-event');
+      row.append(element('span', '', /^Сообщение/.test(event.name) ? 'Разговор в чате' : event.name), element('time', '', dayLabel(event.time).toLowerCase() + ' ' + clock(event.time)));
+      recent.append(row);
+    }
+    box.append(ask, level, recent);
+  }
+  function updateBadges() {
+    const badge = $('brain-badge-idle'), count = idleData?.questions?.length || 0;
+    badge.hidden = !count;
+    badge.textContent = count || '';
+  }
+  function renderStageLine() {
+    if (!growthBrain) return;
+    const parts = ['Уровень ' + growthBrain.level + ' · ' + growthBrain.name, knowledgeCount(growthBrain.total)];
+    if (growthBrain.week) parts.push('+' + growthBrain.week + ' за неделю');
+    $('brain-stage-line').textContent = parts.join(' · ');
+  }
 
   async function searchBrain(event) {
     event.preventDefault();

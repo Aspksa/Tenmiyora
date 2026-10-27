@@ -588,7 +588,7 @@ class KnowledgeStore:
             canonical = mapping.get(branch,branch)
             ids = [id_ for id_ in mapping if mapping[id_] == canonical] + [canonical]
             if source or query or subtree:
-                return {"facts": self._filtered_facts(conn, self._subtree(conn, ids), source, query)}
+                return {"facts": self._filtered_facts(conn, self._branch_subtree(conn, ids), source, query)}
             params = ",".join("?" for _ in ids)
             # All old IDs remain valid and their knowledge is readable.
             rows = conn.execute(f"""SELECT k.id,k.statement AS excerpt,k.locator,
@@ -603,7 +603,8 @@ class KnowledgeStore:
                     ORDER BY f.id DESC LIMIT 100""", ids).fetchall()
             return {"facts": [dict(row) for row in rows], "stats": self._branch_stats(conn, ids)}
 
-    def _subtree(self, conn, ids):
+    def _branch_subtree(self, conn, ids):
+        """Ветки с подветками. Не путать с _subtree папок Диска ниже."""
         ids = set(ids)
         while True:
             params = ",".join("?" for _ in ids)
@@ -643,7 +644,7 @@ class KnowledgeStore:
     def _branch_stats(self, conn, ids):
         """Откуда знания ветки вместе с подветками: все записи, не только первые 100 показанных."""
         from brain_growth import EFFECTIVE, SPARK_DAYS
-        ids = self._subtree(conn, ids)
+        ids = self._branch_subtree(conn, ids)
         params = ",".join("?" for _ in ids)
         rows = conn.execute(f"""SELECT e.source_type,e.source_id,d.name,COUNT(*) AS n,
               MIN(e.created) AS first,MAX(e.created) AS last FROM ({EFFECTIVE}) e
