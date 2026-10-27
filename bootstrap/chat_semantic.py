@@ -19,7 +19,7 @@ def private(text):
 def candidates(text):
     if not isinstance(text,str) or len(text)>2_000_000:
         return []
-    if private(text):
+    if private(text) or re.match(r"(?i)^\s*(?:например|если|допустим|предположим|в документе|он сказал|она сказала|цитата)\b",text):
         return []
     output=[]
     cursor=0
