@@ -47,7 +47,7 @@ try {
         $python=$cmd.Source
     }
     # Verify the original signed-by-content manifest before touching the server.
-    & $python -I -X utf8 (Join-Path $PSScriptRoot 'release_operator.py') verify --package $packageFull
+    & $python -X utf8 (Join-Path $PSScriptRoot 'release_operator.py') verify --package $packageFull
     if ($LASTEXITCODE -ne 0) { throw 'Update manifest rejected.' }
     $manifest=Get-Content -LiteralPath (Join-Path $packageFull 'manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     if (-not $manifest.files -or $manifest.files.Count -gt 1000) { throw 'Empty or oversized package.' }
