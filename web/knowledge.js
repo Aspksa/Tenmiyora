@@ -1043,7 +1043,10 @@
   let idleState = null, idleTask = '', idleData = null, idleSaving = false;
   const IDLE_TASKS = {exam: 'Самоэкзамен', gaps: 'Поиск пробелов', tidy: 'Порядок в темах', documents: 'Разбор документа моделью'};
   async function loadIdle() {
-    try { renderIdle(await request('brain/idle')); }
+    try {
+      const data = await request('brain/idle');
+      if (!idleSaving) renderIdle(data);  // Не перебиваем ещё не сохранённый выбор.
+    }
     catch (error) { $('brain-idle-state').textContent = error.message; }
   }
   function idleLine(data) {
@@ -1137,12 +1140,23 @@
     card.append(actions);
     return card;
   }
+  // Изменения во время сохранения не теряются: копятся и уходят следующим запросом.
+  let idlePending = null;
   async function saveIdle(change) {
+    idlePending = {...idlePending, ...change};
     if (idleSaving) return;
     idleSaving = true;
-    try { renderIdle(await request('brain/idle/settings', change)); }
-    catch (error) { message(error.message); if (idleData) renderIdle(idleData); }
-    finally { idleSaving = false; }
+    try {
+      while (idlePending) {
+        const next = idlePending;
+        idlePending = null;
+        try { idleData = await request('brain/idle/settings', next); }
+        catch (error) { message(error.message); }
+      }
+    } finally {
+      idleSaving = false;
+      if (idleData) renderIdle(idleData);
+    }
   }
   $('brain-idle-enabled').addEventListener('change', event => saveIdle({enabled: event.target.checked}));
   $('brain-idle-minutes').addEventListener('change', event => saveIdle({idle_minutes: Number(event.target.value)}));

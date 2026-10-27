@@ -115,6 +115,32 @@ class BrainIdleTests(unittest.TestCase):
         self.assertNotIn("Логистика склада", names)
         self.assertNotIn("Логистика склада товаров", names)
 
+    def test_merge_rejected_when_branch_id_now_names_another_topic(self):
+        with self.store.db() as db:
+            db.execute("INSERT INTO branches(parent,name,created) VALUES(NULL,'Звездоведение','2026-01-01')")
+            gone = db.execute("INSERT INTO branches(parent,name,created) VALUES(NULL,'Звездоведение планет','2026-01-01')").lastrowid
+        self.run_all()
+        merge = next(q for q in self.work.growth_status()["questions"] if q["kind"] == "merge")
+        with self.store.db() as db:
+            db.execute("UPDATE branches SET name='Биохимия' WHERE id=?", (gone,))
+        with self.assertRaises(server.AppError):
+            self.work.growth_question({"id": merge["id"], "action": "merge"})
+        self.assertIn("Биохимия", {row["name"] for row in self.store.branches()["branches"]})
+
+    def test_attempt_markers_kept_for_all_current_files(self):
+        self.store.upload("python.txt", PYTHON.encode())
+        with self.work.lock:
+            self.work.data["connection"].update(key="k", model="m")
+        self.work.growth_update({"cloud": True})
+        self.work.semantic_once = lambda fid, connection: None
+        with self.store.db() as db:
+            from brain_idle import _set_state, _state
+            _set_state(db, "documents_tried", ["gone:sha"] + [f"x{i}:y" for i in range(3)])
+        self.run_all()
+        with self.store.db() as db:
+            tried = _state(db, "documents_tried")
+        self.assertEqual(len(tried), 1)  # Устаревшие отметки убраны, текущая осталась.
+
     def test_old_documents_are_reached_after_failed_new_ones(self):
         from brain_idle import next_document, _set_state
         for i in range(60):

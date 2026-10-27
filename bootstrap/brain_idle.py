@@ -199,7 +199,7 @@ def tidy(store):
                 if _similar(na, nb) or shared.get((a, b), 0) >= 3 and _similar(na[:5], nb[:5]):
                     offered += _ask(db, "merge", roots[a],
                         f"Похоже, «{roots[a]}» и «{roots[b]}» — одна тема. Объединить их на карте?",
-                        {"keep": a, "merge": b}, key=f"{min(na, nb)}\0{max(na, nb)}")
+                        {"keep": a, "merge": b, "names": [roots[a], roots[b]]}, key=f"{min(na, nb)}\0{max(na, nb)}")
         repeats = db.execute("""SELECT COUNT(*) FROM (SELECT content_hash FROM knowledge_items
             GROUP BY content_hash HAVING COUNT(DISTINCT source_id)>1)""").fetchone()[0]
         _set_state(db, "tidy_at", clock())
@@ -209,11 +209,12 @@ def tidy(store):
     return summary.strip()
 
 
-def merge_topics(db, keep, merge):
+def merge_topics(db, keep, merge, names=None):
     """Подтверждённое пользователем объединение двух корневых тем (обратимо)."""
     rows = {r["id"]: r["name"] for r in db.execute(
         "SELECT id,name FROM branches WHERE parent IS NULL AND id IN (?,?)", (keep, merge))}
-    if len(rows) != 2:
+    # Номер удалённой темы может достаться новой — сверяем ещё и названия.
+    if len(rows) != 2 or (names and [rows[keep], rows[merge]] != list(names)):
         raise ValueError("Темы уже изменились. Обновите Мозг.")
     alias = normalize_label(rows[merge])
     if db.execute("SELECT 1 FROM topic_aliases WHERE alias_key IN (?,?)", (normalize_label(rows[keep]), alias)).fetchone():
@@ -245,7 +246,7 @@ def answer_question(store, qid, action, text=""):
         if action == "merge":
             if row["kind"] != "merge":
                 raise ValueError("Этот вопрос не про объединение тем.")
-            result["merged_into"] = merge_topics(db, payload["keep"], payload["merge"])
+            result["merged_into"] = merge_topics(db, payload["keep"], payload["merge"], payload.get("names"))
             status = "accepted"
         elif action == "dismiss":
             status = "dismissed"
@@ -363,7 +364,9 @@ class Grower:
         key = f"{document['id']}:{document['sha256']}"
         with self.store.lock, self.store.db() as db:
             tried = _state(db, "documents_tried", [])
-            _set_state(db, "documents_tried", (tried + [key])[-500:])
+            # Забываем только попытки по удалённым или заменённым файлам.
+            current = {f"{r['id']}:{r['sha256']}" for r in db.execute("SELECT id,sha256 FROM files")}
+            _set_state(db, "documents_tried", [k for k in tried if k in current] + [key])
         limit = self.workspace.growth_settings()["cloud_daily"]
         if not self.store.engine.reserve_semantic(limit):
             with self.store.lock, self.store.db() as db:
