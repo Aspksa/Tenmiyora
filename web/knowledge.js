@@ -318,52 +318,245 @@
     searchTimer = setTimeout(loadDisk, 220);
   });
 
+  // ---- Мозг ----
+  let brainData = {branches: [], recent: []};
+  let brainLoading = false, brainLoaded = false, factsRequest = 0;
+  const expanded = new Set();
+  function svgIcon(name) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    use.setAttribute('href', '#i-' + name);
+    svg.setAttribute('aria-hidden', 'true');
+    svg.append(use);
+    return svg;
+  }
+  function plural(count, one, few, many) {
+    const n = Math.abs(count) % 100, last = n % 10;
+    if (n > 10 && n < 20) return many;
+    if (last === 1) return one;
+    if (last > 1 && last < 5) return few;
+    return many;
+  }
+  function knowledgeCount(count) {
+    return count + ' ' + plural(count, 'знание', 'знания', 'знаний');
+  }
+  function dayLabel(value) {
+    const day = new Date(value);
+    if (Number.isNaN(day.getTime())) return '';
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const start = new Date(day); start.setHours(0, 0, 0, 0);
+    const diff = Math.round((today - start) / 86400000);
+    if (diff === 0) return 'Сегодня';
+    if (diff === 1) return 'Вчера';
+    return day.toLocaleDateString('ru-RU', {day: 'numeric', month: 'long', year: today.getFullYear() === day.getFullYear() ? undefined : 'numeric'});
+  }
+  function clock(value) {
+    const moment = new Date(value);
+    return Number.isNaN(moment.getTime()) ? '' : moment.toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'});
+  }
+  function emptyState(text, iconName) {
+    const box = element('div', 'brain-empty');
+    box.append(svgIcon(iconName || 'brain'), element('p', '', text));
+    return box;
+  }
+  function childrenOf(id) {
+    return brainData.branches.filter(item => item.parent === id);
+  }
+  function subtreeTotal(node) {
+    return childrenOf(node.id).reduce((sum, child) => sum + subtreeTotal(child), node.facts);
+  }
+  function ancestors(node) {
+    const byId = new Map(brainData.branches.map(item => [item.id, item]));
+    const chain = [];
+    for (let parent = byId.get(node.parent); parent && !chain.includes(parent); parent = byId.get(parent.parent)) chain.unshift(parent);
+    return chain;
+  }
+
+  // Карточка знания: цитата, источник, дата и переход к документу.
+  function knowledgeCard(fact, branchName) {
+    const card = element('article', 'brain-fact');
+    const head = element('div', 'brain-fact-head');
+    const fromFile = fact.source_type === 'file';
+    const badge = element('span', 'brain-source ' + (fromFile ? 'is-file' : 'is-chat'));
+    badge.append(svgIcon(fromFile ? 'file' : 'chat'), document.createTextNode(fromFile ? 'Файл' : 'Чат'));
+    head.append(badge);
+    if (branchName) {
+      const chip = button(branchName, () => openBranchByName(branchName), 'brain-chip');
+      chip.title = 'Открыть ветку «' + branchName + '»';
+      head.append(chip);
+    }
+    if (fact.created) head.append(element('time', 'brain-fact-date', date(fact.created)));
+    card.append(head);
+    const text = element('p', 'brain-fact-text', fact.excerpt);
+    card.append(text);
+    const foot = element('div', 'brain-fact-foot');
+    foot.append(element('small', 'brain-locator', fact.locator));
+    const actions = element('div', 'brain-fact-actions');
+    if (fact.excerpt.length > 320) {
+      text.classList.add('clamped');
+      const more = button('Полностью', () => {
+        const open = text.classList.toggle('clamped');
+        more.textContent = open ? 'Полностью' : 'Свернуть';
+      });
+      actions.append(more);
+    }
+    if (fromFile && fact.source_name) {
+      actions.append(button('Изучить документ', () => openDocument({id: fact.source_id, name: fact.source_name})));
+    }
+    const copy = button('Копировать', async () => {
+      try { await navigator.clipboard.writeText(fact.excerpt + '\n— ' + fact.locator); message('Цитата скопирована.'); }
+      catch { message('Не удалось скопировать цитату.'); }
+    });
+    actions.append(copy);
+    foot.append(actions);
+    card.append(foot);
+    return card;
+  }
+
+  function renderTree() {
+    const list = $('brain-tree');
+    const filter = $('brain-filter').value.trim().toLowerCase();
+    list.replaceChildren();
+    const branches = brainData.branches;
+    $('brain-tree-count').textContent = branches.length ? branches.length + ' ' + plural(branches.length, 'ветка', 'ветки', 'веток') : '';
+    if (!branches.length) {
+      list.append(emptyState('Пока нет знаний. Загрузите текстовый документ на Диск или поделитесь содержательной информацией в чате.'));
+      return;
+    }
+    const roots = branches.filter(item => item.parent === null || !branches.some(other => other.id === item.parent));
+    const totals = new Map();
+    const total = node => {
+      if (!totals.has(node.id)) totals.set(node.id, subtreeTotal(node));
+      return totals.get(node.id);
+    };
+    const largest = Math.max(1, ...roots.map(total));
+    const matches = node => !filter || node.name.toLowerCase().includes(filter) ||
+      childrenOf(node.id).some(matches);
+    function addNode(node, depth) {
+      if (!matches(node)) return;
+      const children = childrenOf(node.id);
+      const open = Boolean(filter) || expanded.has(node.id);
+      const row = element('div', 'brain-node' + (node.id === selectedBranch ? ' active' : ''));
+      row.style.setProperty('--depth', depth);
+      row.setAttribute('role', 'treeitem');
+      row.setAttribute('aria-level', depth + 1);
+      row.setAttribute('aria-selected', node.id === selectedBranch ? 'true' : 'false');
+      if (children.length) {
+        row.setAttribute('aria-expanded', open ? 'true' : 'false');
+        const caret = button('', () => {
+          if (expanded.has(node.id)) expanded.delete(node.id); else expanded.add(node.id);
+          renderTree();
+        }, 'brain-caret' + (open ? ' open' : ''));
+        caret.setAttribute('aria-label', (open ? 'Свернуть' : 'Развернуть') + ' «' + node.name + '»');
+        caret.append(svgIcon('chevron'));
+        row.append(caret);
+      } else {
+        row.append(element('span', 'brain-caret-space'));
+      }
+      const main = button('', () => selectBranch(node), 'brain-branch');
+      main.append(element('span', 'brain-branch-name', node.name));
+      const count = total(node);
+      main.title = node.name + ' · ' + knowledgeCount(count);
+      if (depth === 0) {
+        const bar = element('span', 'brain-weight');
+        bar.style.setProperty('--weight', Math.max(4, Math.round(count / largest * 100)) + '%');
+        main.append(bar);
+      }
+      main.append(element('small', '', count));
+      row.append(main);
+      list.append(row);
+      if (open) children.forEach(child => addNode(child, depth + 1));
+    }
+    roots.forEach(root => addNode(root, 0));
+    if (!list.children.length) list.append(element('p', 'module-muted brain-tree-none', 'Нет веток с таким названием.'));
+  }
+
+  function renderEvents() {
+    const events = $('brain-events');
+    events.replaceChildren();
+    if (!brainData.recent.length) {
+      events.append(emptyState('Рост памяти пока не начался.', 'spark'));
+      return;
+    }
+    let currentDay = null, group;
+    for (const event of brainData.recent) {
+      const label = dayLabel(event.time);
+      if (label !== currentDay) {
+        currentDay = label;
+        events.append(element('h3', 'brain-day', label));
+        group = element('ol', 'brain-day-events');
+        events.append(group);
+      }
+      const row = element('li', 'brain-event');
+      const body = element('div', 'brain-event-body');
+      body.append(element('strong', '', event.action), element('span', '', event.detail));
+      row.append(body, element('time', '', clock(event.time)));
+      group.append(row);
+    }
+  }
+
   let brainLabBusy=false;
-  function labRow(label,value) {
-    const row=element('div','brain-lab-row');
-    row.append(element('span','',label));
-    row.append(element('strong','',value));
-    return row;
+  function labTile(label, value, note) {
+    const tile = element('div', 'brain-lab-tile');
+    tile.append(element('span', '', label), element('strong', '', value));
+    if (note) tile.append(note);
+    return tile;
   }
   function renderLab(data) {
     const pane=$('brain-lab-content');
     if(!pane) return;
     pane.replaceChildren();
-    pane.append(labRow('Поколений с экзаменами',data.generation_count));
-    pane.append(labRow('Принятое контрольное поколение',
-      data.accepted_generation ? '#'+data.accepted_generation.id : 'Нет'));
+    const tiles = element('div', 'brain-lab-tiles');
+    tiles.append(labTile('Поколений с экзаменами', data.generation_count));
+    tiles.append(labTile('Принятое поколение', data.accepted_generation ? '#' + data.accepted_generation.id : 'Нет'));
     const current=data.latest_generation;
-    if(current) pane.append(labRow('Последний результат',
-      '#'+current.id+' · '+(current.quality_score*100).toFixed(1)+'% (синтетический корпус)'));
+    if(current) {
+      const score = Math.max(0, Math.min(1, Number(current.quality_score) || 0));
+      const meter = element('span', 'brain-meter');
+      meter.style.setProperty('--value', (score * 100).toFixed(1) + '%');
+      meter.setAttribute('role', 'img');
+      meter.setAttribute('aria-label', 'Качество ' + (score * 100).toFixed(1) + '%');
+      tiles.append(labTile('Последний результат #' + current.id, (score * 100).toFixed(1) + '%', meter));
+    } else {
+      tiles.append(labTile('Последний результат', '—'));
+    }
+    pane.append(tiles);
+
+    const names={
+      incomplete_document:'Неполное чтение документов',
+      weak_evidence:'Недостаточно подтверждений',
+      possible_conflict:'Возможные противоречия',
+      missing_origin:'Неизвестный первоисточник'};
     const gaps=Object.entries(data.gap_counts||{});
-    pane.append(element('h3','','Обнаруженные пробелы'));
-    if(!gaps.length) pane.append(element('p','module-muted',
-      'Пробелы ещё не обнаружены. Запустите локальную проверку.'));
-    for(const [kind,total] of gaps) {
-      const names={
-        incomplete_document:'Неполное чтение документов',
-        weak_evidence:'Недостаточно подтверждений',
-        possible_conflict:'Возможные противоречия',
-        missing_origin:'Неизвестный первоисточник'};
-      pane.append(labRow(names[kind]||kind,total));
+    const gapBlock = element('div', 'brain-lab-block');
+    gapBlock.append(element('h3','','Обнаруженные пробелы'));
+    if(!gaps.length) gapBlock.append(element('p','module-muted','Пробелы ещё не обнаружены. Нажмите «Найти пробелы».'));
+    else {
+      const chips = element('div', 'brain-lab-chips');
+      for(const [kind,total] of gaps) {
+        const chip = element('span', 'brain-lab-chip', names[kind]||kind);
+        chip.append(element('b', '', total));
+        chips.append(chip);
+      }
+      gapBlock.append(chips);
     }
     if(data.gaps?.length){
-      const examples=element('div','brain-lab-gaps');
-      for(const gap of data.gaps.slice(0,8)) {
-        const line=element('p','module-muted');
-        line.textContent=gap.detail || gap.kind;
-        examples.append(line);
-      }
-      pane.append(examples);
+      const examples=element('ul','brain-lab-gaps');
+      for(const gap of data.gaps.slice(0,8)) examples.append(element('li','',gap.detail || gap.kind));
+      gapBlock.append(examples);
     }
-    pane.append(element('h3','','Проверяемые навыки'));
-    if(!data.skills?.length) pane.append(element('p','module-muted',
+    const skillBlock = element('div', 'brain-lab-block');
+    skillBlock.append(element('h3','','Проверяемые навыки'));
+    if(!data.skills?.length) skillBlock.append(element('p','module-muted',
       'Навыки появятся как предложения после обнаружения подходящих проблем.'));
     for(const skill of data.skills || []){
-      pane.append(labRow(skill.name,skill.status==='proposed'?'Предложен':
-          skill.status==='approved'?'Одобрен':'Отключён'));
+      const row = element('div', 'brain-lab-row');
+      const label = skill.status==='proposed'?'Предложен':skill.status==='approved'?'Одобрен':'Отключён';
+      row.append(element('span','',skill.name), element('strong','brain-status is-' + skill.status, label));
+      skillBlock.append(row);
     }
-    pane.append(element('p','module-muted',
+    pane.append(gapBlock, skillBlock);
+    pane.append(element('p','module-muted brain-lab-note',
       'Лаборатория не меняет программу или веса модели. Оценки относятся только к контрольным синтетическим заданиям.'));
   }
   async function loadLab() {
@@ -377,6 +570,7 @@
     brainLabBusy=true;
     const scan=$('brain-lab-scan'),exam=$('brain-lab-exam');
     scan.disabled=true;exam.disabled=true;
+    $('brain-lab-status').classList.add('busy');
     $('brain-lab-status').textContent=
       action==='experiment'?'Локальные испытания выполняются…':'Проверяются источники и пробелы…';
     try {
@@ -388,57 +582,108 @@
         : 'Локальная проверка пробелов завершена.';
       await loadLab();
     } catch(error) { $('brain-lab-status').textContent=error.message; }
-    finally {brainLabBusy=false;scan.disabled=false;exam.disabled=false;}
+    finally {brainLabBusy=false;scan.disabled=false;exam.disabled=false;$('brain-lab-status').classList.remove('busy');}
   }
   $('brain-lab-scan').addEventListener('click',()=>runLab('scan'));
   $('brain-lab-exam').addEventListener('click',()=>runLab('experiment'));
 
   async function loadBrain() {
+    if (brainLoading) return;
+    brainLoading = true;
+    const refresh = $('brain-refresh');
+    refresh.classList.add('spinning'); refresh.disabled = true;
+    if (!brainLoaded) $('brain-tree').replaceChildren(...Array.from({length: 5}, () => element('div', 'brain-skeleton')));
     try {
       const data = await request('brain');
-      const branches = data.branches || [];
-      $('brain-branches-count').textContent = branches.length;
-      $('brain-facts-count').textContent = branches.reduce((count, row) => count + row.facts, 0);
-      $('brain-events-count').textContent = data.recent.length;
-      const list = $('brain-tree');
-      list.replaceChildren();
-      const roots = branches.filter(item => item.parent === null);
-      function addNode(node, depth) {
-        const item = button(node.name, () => selectBranch(node), 'brain-branch' + (depth ? ' child' : ''));
-        item.append(element('small', '', node.facts + ' записей'));
-        item.classList.toggle('active', node.id === selectedBranch);
-        list.append(item);
-        branches.filter(child => child.parent === node.id).forEach(child => addNode(child, depth + 1));
-      }
-      roots.forEach(root => addNode(root, 0));
-      if (!branches.length) list.append(element('p', 'module-muted', 'Пока нет знаний. Загрузите текстовый документ на Диск или поделитесь содержательной информацией в чате.'));
-      const events = $('brain-events'); events.replaceChildren();
-      if (!data.recent.length) events.append(element('p', 'module-muted', 'Рост памяти пока не начался.'));
-      for (const event of data.recent) {
-        const row = element('div', 'brain-event');
-        row.append(element('span', '', event.action + ': ' + event.detail));
-        row.append(element('time', '', date(event.time)));
-        events.append(row);
-      }
+      brainData = {branches: data.branches || [], recent: data.recent || []};
+      brainLoaded = true;
+      const stats = data.stats || {};
+      $('brain-branches-count').textContent = brainData.branches.length;
+      $('brain-facts-count').textContent = stats.facts ?? brainData.branches.reduce((count, row) => count + row.facts, 0);
+      $('brain-files-count').textContent = stats.files ?? 0;
+      $('brain-chat-count').textContent = stats.chat ?? 0;
+      if (selectedBranch !== null && !brainData.branches.some(item => item.id === selectedBranch)) resetDetail();
+      renderTree();
+      renderEvents();
       await loadLab();
     } catch (error) { message(error.message); }
+    finally { brainLoading = false; refresh.classList.remove('spinning'); refresh.disabled = false; }
   }
-  async function selectBranch(branch) {
+  function resetDetail() {
+    selectedBranch = null;
+    $('brain-detail-title').textContent = 'Содержимое ветки';
+    $('brain-detail-path').replaceChildren();
+    $('brain-detail-count').hidden = true;
+    $('brain-detail').replaceChildren(emptyState('Выберите ветку слева, чтобы увидеть знания и их источники.'));
+  }
+  function openBranchByName(name) {
+    const node = brainData.branches.find(item => item.name === name);
+    if (node) selectBranch(node, true);
+  }
+  async function selectBranch(branch, reveal) {
     selectedBranch = branch.id;
+    const chain = ancestors(branch);
+    chain.forEach(parent => expanded.add(parent.id));
+    renderTree();
     $('brain-detail-title').textContent = branch.name;
+    const path = $('brain-detail-path');
+    path.replaceChildren();
+    for (const parent of chain) {
+      path.append(button(parent.name, () => selectBranch(parent)), element('span', '', '›'));
+    }
+    const detail = $('brain-detail');
+    detail.replaceChildren(...Array.from({length: 3}, () => element('div', 'brain-skeleton tall')));
+    $('brain-detail-count').hidden = true;
+    const ticket = ++factsRequest;
+    if (reveal || matchMedia('(max-width:1100px)').matches) detail.closest('.module-panel').scrollIntoView({behavior: 'smooth', block: 'start'});
     try {
       const data = await request('brain/facts?branch=' + encodeURIComponent(branch.id));
-      const detail = $('brain-detail'); detail.replaceChildren();
-      if (!data.facts.length) detail.append(element('p', 'module-muted', 'В этой ветке пока нет прямых записей. Откройте её подразделы.'));
-      for (const fact of data.facts) {
-        const item = element('div', 'brain-fact');
-        item.append(element('p', '', fact.excerpt));
-        item.append(element('small', '', (fact.source_type === 'chat' ? 'Чат · ' : 'Файл · ') + fact.locator));
-        detail.append(item);
+      if (ticket !== factsRequest) return;
+      detail.replaceChildren();
+      const count = $('brain-detail-count');
+      count.textContent = data.facts.length >= 100 ? '100+ знаний' : knowledgeCount(data.facts.length);
+      count.hidden = false;
+      if (!data.facts.length) {
+        const children = childrenOf(branch.id);
+        detail.append(emptyState(children.length ? 'Прямых записей нет. Знания лежат в подразделах:' : 'В этой ветке пока нет записей.'));
+        if (children.length) {
+          const chips = element('div', 'brain-subbranches');
+          children.forEach(child => chips.append(button(child.name, () => selectBranch(child), 'brain-chip')));
+          detail.append(chips);
+        }
       }
-      await loadBrain();
-    } catch (error) { message(error.message); }
+      for (const fact of data.facts) detail.append(knowledgeCard(fact));
+    } catch (error) {
+      if (ticket === factsRequest) detail.replaceChildren(emptyState(error.message));
+    }
   }
+
+  async function searchBrain(event) {
+    event.preventDefault();
+    const query = $('brain-search-input').value.trim();
+    const panel = $('brain-search-results');
+    if (query.length < 2) { message('Введите хотя бы два символа.'); return; }
+    panel.hidden = false;
+    panel.replaceChildren(element('div', 'brain-skeleton tall'));
+    try {
+      const data = await request('brain/search?' + new URLSearchParams({q: query}));
+      const head = element('div', 'brain-search-head');
+      head.append(element('h2', '', data.results.length ?
+        'Найдено: ' + knowledgeCount(data.results.length) : 'Ничего не найдено'));
+      const close = button('', () => { panel.hidden = true; panel.replaceChildren(); }, 'icon-button');
+      close.setAttribute('aria-label', 'Закрыть результаты поиска');
+      close.append(svgIcon('close'));
+      head.append(close);
+      panel.replaceChildren(head);
+      if (!data.results.length) panel.append(element('p', 'module-muted',
+        'В Мозге нет знаний, достаточно точно подходящих под запрос «' + query + '». Попробуйте другие слова или загрузите документ на Диск.'));
+      for (const item of data.results) panel.append(knowledgeCard(item, item.branch));
+    } catch (error) {
+      panel.replaceChildren(emptyState(error.message, 'search'));
+    }
+  }
+  $('brain-search-form').addEventListener('submit', searchBrain);
+  $('brain-filter').addEventListener('input', renderTree);
   $('brain-refresh').addEventListener('click', loadBrain);
   window.TenmiyoraModules = {
     show(view) {
