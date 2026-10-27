@@ -140,6 +140,9 @@ jobs:
       - name: Проверить авторизованный жизненный цикл Windows
         run: python bootstrap/ci_timed.py --label 'Windows lifecycle health' -- python -m unittest discover -s tests -p 'test_windows_lifecycle_health.py' -v
 
+      - name: Проверить 16 защитных сценариев установки
+        run: python bootstrap/ci_timed.py --label '16 release gates' -- python -m unittest discover -s tests -p 'test_release_sixteen_gates.py' -v
+
       - name: Проверить шесть инвариантов Лаборатории
         run: python bootstrap/ci_timed.py --label 'Метаморфные проверки' -- python bootstrap/brain_lab_metamorphic.py --check --output .runtime/quality-reports/brain-lab-metamorphic.json
       - name: Проверить блокировки принятия и SHA-пломбу инвариантов
@@ -168,6 +171,8 @@ jobs:
           if ($errors.Count) { $errors | Format-List; exit 1 }
       - name: Сквозная офлайн-установка и откат в Windows
         run: python bootstrap/windows_release_smoke.py
+      - name: Проверить 16 сценариев обновления на Windows
+        run: python -m unittest discover -s tests -p 'test_release_sixteen_gates.py' -v
       - name: Реальный запуск BAT и проверка сервера Windows
         shell: powershell
         run: '& tests/windows-real-launch-smoke.ps1'
