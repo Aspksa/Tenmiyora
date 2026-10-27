@@ -11,8 +11,19 @@ STOP={"мне","тебе","нравится","предпочитаю","любл�
 WORDS=re.compile(r"[a-zа-яё0-9]{3,}",re.I)
 LIMIT=4
 
+# Conservative endings for Russian topic matching, not unrestricted stemming.
+ENDINGS=("иями","ями","ами","ого","ему","ыми","ими","иях","ах","ях","ов","ев","ей","ой","ий","ый","ая","ое","ые","ам","ям","ом","ем","у","ю","а","я","ы","и","е")
+def normalize(word):
+    word=word.casefold().replace("ё","е")
+    if len(word)<5 or not re.fullmatch(r"[а-я]+",word):
+        return word
+    for ending in ENDINGS:
+        if word.endswith(ending) and len(word)-len(ending)>=4:
+            return word[:-len(ending)]
+    return word
+
 def tokens(text):
-    return {x for x in (w.casefold() for w in WORDS.findall(text)) if x not in STOP}
+    return {normalize(x) for x in (w.casefold() for w in WORDS.findall(text)) if x not in STOP}
 
 def recall(journal,question,*,limit=LIMIT,exclude_turn_id=None):
     if not isinstance(question,str) or not 0<len(question)<=5000 or private(question):
