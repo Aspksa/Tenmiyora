@@ -30,6 +30,7 @@ from soul_maturation import maturation_guidance
 from soul_quality import quality_guidance
 from soul_failures import DEFAULT_FAILURES, validate_failures, record_failure, guidance as failure_guidance
 from soul_recovery import DEFAULT_RECOVERY, validate_recovery, record as recovery_record, guidance as recovery_guidance
+from soul_operation_audit import DEFAULT_AUDIT, validate_audit, observe_operation
 from relationship_memory import DEFAULT_RELATIONSHIP, validate_relationship, remember, guidance
 from soul_experience import DEFAULT_EXPERIENCE, validate_experience, observe, guidance as experience_guidance, verified_outcome
 from relation_suggestions import validate_candidates
@@ -51,7 +52,7 @@ STATIC = {
 PASSIVE = {"/api/brain/pulses", "/api/brain/idle", "/api/brain/activity"}
 DEFAULT = {
     "appearance": {"size": 340, "opacity": 100, "visible": True, "pinned": False, "motion": True},
-    "layout": {}, "messages": [], "soul": DEFAULT_SOUL, "relationship": DEFAULT_RELATIONSHIP, "experience": DEFAULT_EXPERIENCE, "failures": DEFAULT_FAILURES, "recovery": DEFAULT_RECOVERY,
+    "layout": {}, "messages": [], "soul": DEFAULT_SOUL, "relationship": DEFAULT_RELATIONSHIP, "experience": DEFAULT_EXPERIENCE, "failures": DEFAULT_FAILURES, "recovery": DEFAULT_RECOVERY, "operation_audit": DEFAULT_AUDIT,
     "connection": {"url": CLOUDRU_URL, "model": "", "key": "", "verified_at": None},
     "model_cache": {"url": "", "models": [], "details": [], "loaded_at": None},
     "growth": {"enabled": True, "cloud": False, "idle_minutes": 15, "cloud_daily": 10},
@@ -174,7 +175,8 @@ class Workspace:
                                  "relationship": validate_relationship(stored.get("relationship", DEFAULT_RELATIONSHIP)),
                                  "experience": validate_experience(stored.get("experience", DEFAULT_EXPERIENCE)),
                                  "failures": validate_failures(stored.get("failures", DEFAULT_FAILURES)),
-                                 "recovery": validate_recovery(stored.get("recovery", DEFAULT_RECOVERY))}
+                                 "recovery": validate_recovery(stored.get("recovery", DEFAULT_RECOVERY)),
+                                 "operation_audit": validate_audit(stored.get("operation_audit", DEFAULT_AUDIT))}
                 except (ValueError, KeyError, TypeError, AppError):
                     raise AppError("Файл .runtime/workspace.json повреждён. Сохраните его копию и уберите из рабочей папки для нового запуска.", 500) from None
 
@@ -556,6 +558,7 @@ class Workspace:
             with self.lock:
                 self.data["failures"] = record_failure(self.data["failures"], "disk_save_failed")
                 self.data["recovery"] = recovery_record(self.data["recovery"], "disk_save_failed", False)
+                self.data["operation_audit"] = observe_operation(self.data["operation_audit"], "disk_save", "not_checked", "failed", "backend_write")
                 self.save()
             raise
 
@@ -569,6 +572,7 @@ class Workspace:
             with self.lock:
                 self.data["experience"] = verified_outcome(self.data["experience"], "disk_saved")
                 self.data["recovery"] = recovery_record(self.data["recovery"], "disk_save_failed", True)
+                self.data["operation_audit"] = observe_operation(self.data["operation_audit"], "disk_save", "not_checked", "passed", "backend_write")
                 self.save()
         return result
 
@@ -604,6 +608,7 @@ class Workspace:
                     with self.lock:
                         self.data["failures"] = record_failure(self.data["failures"], "document_source_changed")
                         self.data["recovery"] = recovery_record(self.data["recovery"], "document_source_changed", False)
+                        self.data["operation_audit"] = observe_operation(self.data["operation_audit"], "document_hash_check", "source_reported", "failed", "compare_source_hash")
                         self.save()
                     raise AppError("Документ изменился во время анализа; результат не сохранён.",409)
             # Count only a completed, source-hash-verified analysis; not a
@@ -611,6 +616,7 @@ class Workspace:
             with self.lock:
                 self.data["experience"] = verified_outcome(self.data["experience"], "document_reviewed")
                 self.data["recovery"] = recovery_record(self.data["recovery"], "document_source_changed", True)
+                self.data["operation_audit"] = observe_operation(self.data["operation_audit"], "document_hash_check", "source_reported", "passed", "compare_source_hash")
                 self.save()
             return result
         finally:
