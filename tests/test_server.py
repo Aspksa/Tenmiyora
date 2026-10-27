@@ -92,6 +92,19 @@ class ServerTests(unittest.TestCase):
         self.assertNotIn(self.server.token.encode(), body)
         self.assertTrue(self.worker.is_alive())
 
+    def test_brain_payload_carries_chat_topics(self):
+        journal = self.server.workspace.chat_journal
+        journal.append("user", "Водитель получил путевой лист у диспетчера и проверил автомобиль перед рейсом.",
+                       "2026-10-27T10:00:00+00:00")
+        journal.append("assistant", "Хорошо, Хозяин.", "2026-10-27T10:00:01+00:00")
+        status, body, _ = self.request("/api/brain", headers=self.browser_headers())
+        self.assertEqual(status, 200)
+        data = json.loads(body)
+        self.assertEqual([topic["name"] for topic in data["chat"]["topics"]], ["Транспорт"])
+        self.assertEqual(data["chat"]["messages"], 1)
+        # Ответы Tenmiyora темами не становятся.
+        self.assertEqual(data["chat"]["topics"][0]["messages"], 1)
+
     def test_authenticated_shutdown(self):
         status, _, _ = self.request("/shutdown", "POST", {"X-Tenmiyora-Token": self.server.token})
         self.assertEqual(status, 200)
