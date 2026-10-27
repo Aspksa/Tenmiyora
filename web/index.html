@@ -69,19 +69,18 @@
               <div><strong id="brain-facts-count">0</strong><span>знаний</span></div>
               <div><strong id="brain-files-count">0</strong><span>документов</span></div>
               <div><strong id="brain-chat-count">0</strong><span>из чата</span></div>
+              <div><strong id="brain-talks-count">0</strong><span>тем в чате</span></div>
             </div>
           </div>
           <div class="stage-map">
             <div id="brain-map" class="brain-map"></div>
             <div class="brain-map-actions stage-actions"><span id="brain-map-count" class="brain-pill"></span><button type="button" id="brain-map-sleep" class="icon-button" aria-pressed="false" aria-label="Режим сна" title="Режим сна: ночью включается сам"><svg><use href="#i-moon"/></svg></button><button type="button" id="brain-map-replay" class="secondary-button"><svg><use href="#i-spark"/></svg>Показать рост</button><button class="icon-button" id="brain-refresh" aria-label="Обновить" title="Обновить"><svg><use href="#i-reset"/></svg></button></div>
           </div>
-          <form id="brain-search-form" class="brain-search" role="search"><svg><use href="#i-search"/></svg><label class="sr-only" for="brain-search-input">Спросить Мозг</label><input id="brain-search-input" type="search" maxlength="300" placeholder="Спросите Мозг: например, «сроки оплаты по договору»" autocomplete="off"><button class="primary-button" type="submit">Найти<svg><use href="#i-arrow"/></svg></button></form>
           <div id="brain-map-topics" class="brain-map-topics" aria-label="Темы на карте"></div>
           <details class="stage-legend"><summary>Как читать карту</summary><p class="module-muted brain-map-hint">У каждой темы свой цвет. По веткам от ядра текут токи знаний, а цветные дуги показывают, какие темы обмениваются знаниями: наведите на тему или дугу, чтобы увидеть её связи. Нажмите на ветку, чтобы открыть её.</p>
             <div class="brain-map-legend" aria-hidden="true"><span><i class="lg-core"></i>ядро</span><span><i class="lg-branch"></i>ветка, цвет — тема</span><span><i class="lg-leaf"></i>знания</span><span><i class="lg-current"></i>ток знаний</span><span><i class="lg-synapse"></i>обмен между темами</span><span><i class="lg-fresh"></i>рост за неделю</span><span><i class="lg-rest"></i>давно без дела</span></div>
           </details>
         </section>
-        <section id="brain-search-results" class="brain-search-results" aria-live="polite" hidden></section>
         <nav class="brain-tabs" role="tablist" aria-label="Разделы Мозга">
           <button type="button" role="tab" id="brain-tab-overview" data-brain-tab="overview" aria-controls="brain-pane-overview" aria-selected="true"><svg><use href="#i-home"/></svg>Главное</button>
           <button type="button" role="tab" id="brain-tab-growth" data-brain-tab="growth" aria-controls="brain-pane-growth" aria-selected="false" tabindex="-1"><svg><use href="#i-spark"/></svg>Рост</button>
@@ -97,6 +96,7 @@
               <div class="growth-main"><div id="brain-growth-stats" class="growth-stats"></div><div id="brain-growth-chart" class="brain-growth-chart"></div></div>
             </div>
           </section>
+          <div id="brain-charts" class="growth-charts" aria-label="Графики роста Мозга"></div>
           <div class="brain-growth-columns">
             <section class="module-panel" aria-labelledby="brain-diary-title"><div class="panel-head"><h2 id="brain-diary-title">Дневник развития</h2><span id="brain-diary-range" class="brain-pill"></span></div><div id="brain-diary" class="brain-diary"></div></section>
             <section class="module-panel" aria-labelledby="brain-levels-title"><div class="panel-head"><h2 id="brain-levels-title">Уровень по темам</h2><span class="module-muted">кольцо — путь до следующего уровня</span></div><div id="brain-levels" class="brain-levels"></div></section>
@@ -104,20 +104,31 @@
           <section class="module-panel activity-panel"><div class="panel-head"><h2>История роста</h2><span class="module-muted">что Мозг читал и запоминал</span></div><div id="brain-events" class="brain-timeline"></div></section>
         </div>
         <div id="brain-pane-idle" class="brain-pane" role="tabpanel" aria-labelledby="brain-tab-idle" hidden>
-          <section class="module-panel brain-idle-panel" aria-labelledby="brain-idle-title">
-            <div class="panel-head"><div><h2 id="brain-idle-title">Сам растёт, пока вы отдыхаете</h2><p id="brain-idle-state" class="brain-idle-state" aria-live="polite">Загрузка…</p></div><button type="button" id="brain-idle-run" class="secondary-button"><svg><use href="#i-spark"/></svg>Запустить сейчас</button></div>
-            <div class="brain-idle-settings">
-              <label class="brain-switch"><input type="checkbox" id="brain-idle-enabled"><span class="brain-switch-track" aria-hidden="true"></span><span>Расти, когда я не работаю</span></label>
-              <label class="brain-idle-field">Начинать через <select id="brain-idle-minutes"><option value="5">5</option><option value="10">10</option><option value="15">15</option><option value="30">30</option><option value="60">60</option></select> мин тишины</label>
-              <label class="brain-switch"><input type="checkbox" id="brain-idle-cloud"><span class="brain-switch-track" aria-hidden="true"></span><span>Разбирать документы моделью Cloud.ru</span></label>
-              <label class="brain-idle-field">Не больше <select id="brain-idle-daily"><option value="5">5</option><option value="10">10</option><option value="20">20</option><option value="30">30</option><option value="50">50</option></select> запросов в день</label>
+          <section class="module-panel idle-hero" aria-labelledby="brain-idle-title">
+            <div id="brain-idle-orb" class="idle-orb" aria-hidden="true"><i></i><i></i><i></i><b></b></div>
+            <div class="idle-hero-text"><span class="brain-eyebrow"><svg><use href="#i-moon"/></svg>Сам растёт, пока вы отдыхаете</span><h2 id="brain-idle-title">Загрузка…</h2><p id="brain-idle-state" class="brain-idle-state" aria-live="polite"></p></div>
+            <div class="idle-hero-actions">
+              <label class="brain-switch idle-main-switch"><input type="checkbox" id="brain-idle-enabled"><span class="brain-switch-track" aria-hidden="true"></span><span>Расти, когда я не работаю</span></label>
+              <button type="button" id="brain-idle-run" class="primary-button"><svg><use href="#i-spark"/></svg>Запустить сейчас</button>
+            </div>
+            <div id="brain-idle-stats" class="idle-stats"></div>
+          </section>
+          <nav class="idle-seg" role="tablist" aria-label="Что внутри">
+            <button type="button" role="tab" id="idle-tab-questions" data-idle-tab="questions" aria-controls="idle-pane-questions" aria-selected="true">Вопросы к вам<b id="idle-count-questions"></b></button>
+            <button type="button" role="tab" id="idle-tab-log" data-idle-tab="log" aria-controls="idle-pane-log" aria-selected="false" tabindex="-1">Что сделано<b id="idle-count-log"></b></button>
+            <button type="button" role="tab" id="idle-tab-insights" data-idle-tab="insights" aria-controls="idle-pane-insights" aria-selected="false" tabindex="-1">Выводы модели<b id="idle-count-insights"></b></button>
+            <button type="button" role="tab" id="idle-tab-settings" data-idle-tab="settings" aria-controls="idle-pane-settings" aria-selected="false" tabindex="-1">Настройки</button>
+          </nav>
+          <section id="idle-pane-questions" class="module-panel idle-pane" role="tabpanel" aria-labelledby="idle-tab-questions"><p class="module-muted idle-pane-note">Мозг нашёл пробелы и противоречия. Ответ своими словами он запомнит как сообщение из чата.</p><div id="brain-idle-questions" class="brain-idle-list"></div></section>
+          <section id="idle-pane-log" class="module-panel idle-pane" role="tabpanel" aria-labelledby="idle-tab-log" hidden><div id="brain-idle-log" class="idle-log"></div></section>
+          <section id="idle-pane-insights" class="module-panel idle-pane" role="tabpanel" aria-labelledby="idle-tab-insights" hidden><div id="brain-idle-insights"></div></section>
+          <section id="idle-pane-settings" class="module-panel idle-pane" role="tabpanel" aria-labelledby="idle-tab-settings" hidden>
+            <div class="idle-settings">
+              <label class="idle-setting"><span class="idle-setting-icon"><svg><use href="#i-moon"/></svg></span><span class="idle-setting-text"><strong>Когда начинать</strong><small>после тишины без ваших действий</small></span><select id="brain-idle-minutes"><option value="5">через 5 мин</option><option value="10">через 10 мин</option><option value="15">через 15 мин</option><option value="30">через 30 мин</option><option value="60">через 60 мин</option></select></label>
+              <label class="idle-setting"><span class="idle-setting-icon"><svg><use href="#i-file"/></svg></span><span class="idle-setting-text"><strong>Разбирать документы моделью</strong><small>Cloud.ru, может стоить денег</small></span><span class="brain-switch"><input type="checkbox" id="brain-idle-cloud"><span class="brain-switch-track" aria-hidden="true"></span></span></label>
+              <label class="idle-setting"><span class="idle-setting-icon"><svg><use href="#i-check"/></svg></span><span class="idle-setting-text"><strong>Лимит запросов</strong><small>к модели в день</small></span><select id="brain-idle-daily"><option value="5">5 в день</option><option value="10">10 в день</option><option value="20">20 в день</option><option value="30">30 в день</option><option value="50">50 в день</option></select></label>
             </div>
             <p id="brain-idle-note" class="module-muted brain-idle-note"></p>
-            <div class="brain-idle-columns">
-              <div><h3>Вопросы к вам</h3><div id="brain-idle-questions" class="brain-idle-list"></div></div>
-              <div><h3>Что сделано</h3><div id="brain-idle-log" class="brain-idle-list"></div></div>
-            </div>
-            <div id="brain-idle-insights"></div>
           </section>
         </div>
         <div id="brain-pane-lab" class="brain-pane" role="tabpanel" aria-labelledby="brain-tab-lab" hidden>
@@ -155,7 +166,6 @@
 <button id="avatar" class="avatar" data-state="idle" aria-label="Tenmiyora. Щелчок — чат, правый щелчок — меню. Можно перетаскивать." aria-haspopup="menu"><span class="avatar-aura" aria-hidden="true"></span><img src="/assets/tenmiyora-avatar.png" alt="Tenmiyora — бело-золотая многохвостая лисица" draggable="false"><span class="avatar-sparks" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span></button>
 <div id="avatar-menu" class="avatar-menu" role="menu" aria-label="Меню Tenmiyora" hidden>
   <button type="button" role="menuitem" data-menu="chat" aria-label="Чат" title="Чат"><svg><use href="#i-chat"/></svg></button>
-  <button type="button" role="menuitem" data-menu="ask" aria-label="Спросить Мозг" title="Спросить Мозг"><svg><use href="#i-search"/></svg></button>
   <button type="button" role="menuitem" data-menu="disk" aria-label="Диск" title="Диск"><svg><use href="#i-disk"/></svg></button>
   <button type="button" role="menuitem" data-menu="hide" aria-label="Скрыть аватар" title="Скрыть аватар"><svg><use href="#i-minus"/></svg></button>
   <button type="button" role="menuitem" data-menu="settings" aria-label="Настройки" title="Настройки"><svg><use href="#i-settings"/></svg></button>

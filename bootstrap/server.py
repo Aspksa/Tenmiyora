@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from knowledge import KnowledgeStore, MAX_UPLOAD
 from semantic import make_messages, parse_topics, samples_from_text
 from chat_journal import ChatJournal
+from chat_branches import chat_branches
 from chat_active_recall import recall as recall_chat, prompt_context as recall_context
 from soul_engine import DEFAULT_SOUL, validate_soul, evolve, persona_guidance
 from soul_maturation import maturation_guidance
@@ -796,7 +797,9 @@ class Handler(BaseHTTPRequestHandler):
                     return args.get(key, [""])[0]
                 store = self.server.workspace.knowledge
                 if path == "/api/brain":
-                    self.json_reply(200, store.branches())
+                    brain = store.branches()
+                    brain["chat"] = chat_branches(self.server.workspace.chat_journal.records(), value("offset") or 0)
+                    self.json_reply(200, brain)
                 elif path == "/api/brain/facts":
                     self.json_reply(200, store.facts(int(value("branch")), value("source")[:200] or None, value("q")[:200] or None, value("subtree") == "1"))
                 elif path == "/api/brain/growth":

@@ -133,7 +133,6 @@
   }
   const menuActions = {
     chat: () => openChat(),
-    ask: () => { location.hash = '#brain'; setTimeout(() => $('brain-search-input')?.focus({preventScroll: true}), 80); },
     disk: () => { location.hash = '#disk'; },
     hide: () => { state.appearance.visible = false; applyAppearance(); scheduleSave(); },
     settings: () => openSettings(),

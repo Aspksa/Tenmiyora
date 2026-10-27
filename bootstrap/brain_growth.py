@@ -172,7 +172,62 @@ def growth(db, days=30, offset_minutes=0):
     brain = {**brain_level(total), "week": diary["knowledge"], "streak": streak(per_day, today),
              "best_day": best if best and best["added"] else None, "topics": len(levels)}
     # Прирост за неделю по видимым веткам — для подсветки на карте знаний.
-    return {"series": series, "diary": diary, "topics": levels, "branches_week": fresh, "brain": brain}
+    return {"series": series, "diary": diary, "topics": levels, "branches_week": fresh, "brain": brain,
+            "charts": charts(db, shift, today, first, per_day, roots, levels, mapping)}
+
+
+HEATMAP_WEEKS = 12
+WEEKS = 8
+STREAM_TOPICS = 6
+
+
+def charts(db, shift, today, first, per_day, roots, levels, mapping):
+    """Данные для графиков вкладки «Рост»: календарь, ритм, источники, темы, ветки."""
+    start = today - timedelta(days=HEATMAP_WEEKS * 7 - 1)
+    heatmap = [{"date": (start + timedelta(days=i)).isoformat(),
+                "added": per_day.get((start + timedelta(days=i)).isoformat(), 0)}
+               for i in range(HEATMAP_WEEKS * 7)]
+    weeks = []
+    for index in range(WEEKS - 1, -1, -1):
+        until = today - timedelta(days=index * 7)
+        since = until - timedelta(days=6)
+        weeks.append({"since": since.isoformat(), "until": until.isoformat(),
+                      "added": sum(n for d, n in per_day.items() if d and since.isoformat() <= d <= until.isoformat())})
+    hours, weekdays = [0] * 24, [0] * 7
+    for row in db.execute(f"""SELECT strftime('%H',created,?) AS h,strftime('%w',created,?) AS w,COUNT(*) AS n
+            FROM ({EFFECTIVE}) GROUP BY h,w""", (shift, shift)):
+        if row["h"] is None:
+            continue
+        hours[int(row["h"])] += row["n"]
+        weekdays[(int(row["w"]) + 6) % 7] += row["n"]  # Неделя с понедельника.
+    sources = {row["source_type"]: row["n"] for row in db.execute(
+        f"SELECT source_type,COUNT(*) AS n FROM ({EFFECTIVE}) GROUP BY source_type")}
+    # Поток тем: по дням окна для самых крупных тем.
+    top = [item["id"] for item in sorted(levels, key=lambda item: -item["count"])[:STREAM_TOPICS]]
+    stream = {tid: [0] * ((today - first).days + 1) for tid in top}
+    for row in db.execute(f"SELECT branch,date(created,?) AS d FROM ({EFFECTIVE}) WHERE date(created,?)>=?",
+                          (shift, shift, first.isoformat())):
+        root = roots.get(row["branch"])
+        if root and root[0] in stream and row["d"]:
+            index = (date.fromisoformat(row["d"]) - first).days
+            if 0 <= index < len(stream[root[0]]):
+                stream[root[0]][index] += 1
+    names = {item["id"]: item["name"] for item in levels}
+    # Ветвление: сколько видимых веток было к концу каждого дня окна.
+    created = sorted(row["d"] for row in db.execute("SELECT id,date(created,?) AS d FROM branches", (shift,))
+                     if row["d"] and mapping.get(row["id"], row["id"]) == row["id"])
+    branch_series, count, cursor = [], 0, 0
+    for index in range((today - first).days + 1):
+        day = (first + timedelta(days=index)).isoformat()
+        while cursor < len(created) and created[cursor] <= day:
+            count += 1
+            cursor += 1
+        branch_series.append({"date": day, "total": count})
+    return {"heatmap": heatmap, "weeks": weeks, "hours": hours, "weekdays": weekdays,
+            "sources": {"file": sources.get("file", 0), "chat": sources.get("chat", 0),
+                        "other": sum(n for kind, n in sources.items() if kind not in ("file", "chat"))},
+            "stream": [{"id": tid, "name": names.get(tid, ""), "days": stream[tid]} for tid in top],
+            "branches": branch_series}
 
 
 def diary_days(db, shift, since, mapping):
