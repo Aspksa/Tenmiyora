@@ -27,6 +27,7 @@ from knowledge import KnowledgeStore, MAX_UPLOAD
 from semantic import make_messages, parse_topics, samples_from_text
 from soul_engine import DEFAULT_SOUL, validate_soul, evolve, persona_guidance
 from soul_maturation import maturation_guidance
+from soul_romance import DEFAULT_ROMANCE, validate as validate_romance, progress as romance_progress, guidance as romance_guidance
 from soul_reflection import DEFAULT_REFLECTION, validate as validate_reflection, reflect as soul_reflect, guidance as reflection_guidance
 from soul_continuity import DEFAULT_CONTINUITY, validate as validate_continuity, observe as observe_continuity
 from soul_quality import quality_guidance
@@ -60,7 +61,7 @@ STATIC = {
 PASSIVE = {"/api/brain/pulses", "/api/brain/idle", "/api/brain/activity"}
 DEFAULT = {
     "appearance": {"size": 340, "opacity": 100, "visible": True, "pinned": False, "motion": True},
-    "layout": {}, "messages": [], "soul": DEFAULT_SOUL, "relationship": DEFAULT_RELATIONSHIP, "experience": DEFAULT_EXPERIENCE, "soul_reflection": DEFAULT_REFLECTION, "soul_continuity": DEFAULT_CONTINUITY, "failures": DEFAULT_FAILURES, "recovery": DEFAULT_RECOVERY, "operation_audit": DEFAULT_AUDIT, "evolution_ledger": DEFAULT_LEDGER, "improvements": DEFAULT_IMPROVEMENTS, "improvement_gate": DEFAULT_GATE,
+    "layout": {}, "messages": [], "soul": DEFAULT_SOUL, "romance": DEFAULT_ROMANCE, "relationship": DEFAULT_RELATIONSHIP, "experience": DEFAULT_EXPERIENCE, "soul_reflection": DEFAULT_REFLECTION, "soul_continuity": DEFAULT_CONTINUITY, "failures": DEFAULT_FAILURES, "recovery": DEFAULT_RECOVERY, "operation_audit": DEFAULT_AUDIT, "evolution_ledger": DEFAULT_LEDGER, "improvements": DEFAULT_IMPROVEMENTS, "improvement_gate": DEFAULT_GATE,
     "connection": {"url": CLOUDRU_URL, "model": "", "key": "", "verified_at": None},
     "model_cache": {"url": "", "models": [], "details": [], "loaded_at": None},
     "growth": {"enabled": True, "cloud": False, "idle_minutes": 15, "cloud_daily": 10},
@@ -180,6 +181,7 @@ class Workspace:
                                  "model_cache": stored.get("model_cache", deepcopy(DEFAULT["model_cache"])),
                                  "growth": validate_growth(stored.get("growth")),
                                  "soul": validate_soul(stored.get("soul", DEFAULT_SOUL)),
+                                 "romance": validate_romance(stored.get("romance", DEFAULT_ROMANCE)),
                                  "relationship": validate_relationship(stored.get("relationship", DEFAULT_RELATIONSHIP)),
                                  "experience": validate_experience(stored.get("experience", DEFAULT_EXPERIENCE)),
                                  "soul_reflection": validate_reflection(stored.get("soul_reflection", DEFAULT_REFLECTION)),
@@ -489,6 +491,7 @@ class Workspace:
                 before_experience = deepcopy(self.data["experience"])
                 self.data["soul"] = evolve(self.data["soul"], content)
                 self.data["relationship"] = remember(self.data["relationship"], content)
+                self.data["romance"] = romance_progress(self.data["romance"], content)
                 self.data["experience"] = observe(self.data["experience"], content)
                 self.data["soul_reflection"] = soul_reflect(self.data["soul_reflection"], self.data["experience"])
                 self.data["soul_continuity"] = observe_continuity(
@@ -543,6 +546,7 @@ class Workspace:
                 "согласие, конфиденциальность и проверку источников. Не навязывай "
                 "романтические реплики, не используй чувство вины и не требуй исключительности."})
             context[0]["content"] += " " + persona_guidance(self.data["soul"])
+            context[0]["content"] += " " + romance_guidance(self.data["romance"])
             # Only explicit, non-sensitive preferences; external providers receive
             # no raw relationship history or private conversation excerpts.
             context[0]["content"] += " " + guidance(self.data["relationship"])
