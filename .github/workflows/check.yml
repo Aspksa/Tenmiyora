@@ -143,6 +143,9 @@ jobs:
       - name: Проверить 16 защитных сценариев установки
         run: python bootstrap/ci_timed.py --label '16 release gates' -- python -m unittest discover -s tests -p 'test_release_sixteen_gates.py' -v
 
+      - name: Проверить непрерывность Души и откат характера
+        run: python bootstrap/ci_timed.py --label 'Soul continuity' -- python -m unittest discover -s tests -p 'test_soul_continuity.py' -v
+
       - name: Проверить шесть инвариантов Лаборатории
         run: python bootstrap/ci_timed.py --label 'Метаморфные проверки' -- python bootstrap/brain_lab_metamorphic.py --check --output .runtime/quality-reports/brain-lab-metamorphic.json
       - name: Проверить блокировки принятия и SHA-пломбу инвариантов

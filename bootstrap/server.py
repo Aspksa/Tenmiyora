@@ -27,6 +27,7 @@ from knowledge import KnowledgeStore, MAX_UPLOAD
 from semantic import make_messages, parse_topics, samples_from_text
 from soul_engine import DEFAULT_SOUL, validate_soul, evolve, persona_guidance
 from soul_maturation import maturation_guidance
+from soul_continuity import DEFAULT_CONTINUITY, validate as validate_continuity, observe as observe_continuity
 from soul_quality import quality_guidance
 from soul_failures import DEFAULT_FAILURES, validate_failures, record_failure, guidance as failure_guidance
 from soul_recovery import DEFAULT_RECOVERY, validate_recovery, record as recovery_record, guidance as recovery_guidance
@@ -58,7 +59,7 @@ STATIC = {
 PASSIVE = {"/api/brain/pulses", "/api/brain/idle", "/api/brain/activity"}
 DEFAULT = {
     "appearance": {"size": 340, "opacity": 100, "visible": True, "pinned": False, "motion": True},
-    "layout": {}, "messages": [], "soul": DEFAULT_SOUL, "relationship": DEFAULT_RELATIONSHIP, "experience": DEFAULT_EXPERIENCE, "failures": DEFAULT_FAILURES, "recovery": DEFAULT_RECOVERY, "operation_audit": DEFAULT_AUDIT, "evolution_ledger": DEFAULT_LEDGER, "improvements": DEFAULT_IMPROVEMENTS, "improvement_gate": DEFAULT_GATE,
+    "layout": {}, "messages": [], "soul": DEFAULT_SOUL, "relationship": DEFAULT_RELATIONSHIP, "experience": DEFAULT_EXPERIENCE, "soul_continuity": DEFAULT_CONTINUITY, "failures": DEFAULT_FAILURES, "recovery": DEFAULT_RECOVERY, "operation_audit": DEFAULT_AUDIT, "evolution_ledger": DEFAULT_LEDGER, "improvements": DEFAULT_IMPROVEMENTS, "improvement_gate": DEFAULT_GATE,
     "connection": {"url": CLOUDRU_URL, "model": "", "key": "", "verified_at": None},
     "model_cache": {"url": "", "models": [], "details": [], "loaded_at": None},
     "growth": {"enabled": True, "cloud": False, "idle_minutes": 15, "cloud_daily": 10},
@@ -180,6 +181,7 @@ class Workspace:
                                  "soul": validate_soul(stored.get("soul", DEFAULT_SOUL)),
                                  "relationship": validate_relationship(stored.get("relationship", DEFAULT_RELATIONSHIP)),
                                  "experience": validate_experience(stored.get("experience", DEFAULT_EXPERIENCE)),
+                                 "soul_continuity": validate_continuity(stored.get("soul_continuity", DEFAULT_CONTINUITY)),
                                  "failures": validate_failures(stored.get("failures", DEFAULT_FAILURES)),
                                  "recovery": validate_recovery(stored.get("recovery", DEFAULT_RECOVERY)),
                                  "operation_audit": validate_audit(stored.get("operation_audit", DEFAULT_AUDIT)),
@@ -481,9 +483,14 @@ class Workspace:
                     raise AppError("Подключите модель в настройках Tenmiyora.", 409)
                 user_message = {"role": "user", "content": content.strip(), "time": datetime.now(timezone.utc).isoformat()}
                 self.data["messages"].append(user_message)
+                before_soul = deepcopy(self.data["soul"])
+                before_experience = deepcopy(self.data["experience"])
                 self.data["soul"] = evolve(self.data["soul"], content)
                 self.data["relationship"] = remember(self.data["relationship"], content)
                 self.data["experience"] = observe(self.data["experience"], content)
+                self.data["soul_continuity"] = observe_continuity(
+                    self.data["soul_continuity"], before_soul, before_experience,
+                    self.data["soul"], self.data["experience"])
                 self.save()
                 context = [{"role": message["role"], "content": message["content"]} for message in self.data["messages"] if message["role"] in ("user", "assistant")]
             api_host = urllib.parse.urlsplit(connection["url"]).hostname
