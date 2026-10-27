@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from html import unescape
 from html.parser import HTMLParser
 import hashlib
@@ -505,7 +505,7 @@ class KnowledgeStore:
                     root["facts"] = 0
                     visible[target_id] = root
                 visible[target_id]["facts"] += item["facts"]
-            recent = conn.execute("SELECT time,action,detail FROM journal ORDER BY id DESC LIMIT 15").fetchall()
+            recent = conn.execute("SELECT time,action,detail FROM journal ORDER BY id DESC LIMIT 40").fetchall()
             nodes = sorted(visible.values(), key=lambda item: (item["parent"] or 0,item["name"]))
             return {"branches": nodes, "recent": [dict(row) for row in recent],
                     "stats": self._brain_stats(conn)}
@@ -578,7 +578,39 @@ class KnowledgeStore:
                     LEFT JOIN files d ON f.source_type='file' AND d.id=f.source_id
                     WHERE f.branch IN ({params})
                     ORDER BY f.id DESC LIMIT 100""", ids).fetchall()
-            return {"facts": [dict(row) for row in rows]}
+            return {"facts": [dict(row) for row in rows], "stats": self._branch_stats(conn, ids)}
+
+    def _branch_stats(self, conn, ids):
+        """Откуда знания ветки вместе с подветками: все записи, не только первые 100 показанных."""
+        from brain_growth import EFFECTIVE, SPARK_DAYS
+        ids = set(ids)
+        while True:
+            params = ",".join("?" for _ in ids)
+            more = {row[0] for row in conn.execute(f"SELECT id FROM branches WHERE parent IN ({params})", tuple(ids))} - ids
+            if not more:
+                break
+            ids |= more
+        ids = tuple(ids)
+        params = ",".join("?" for _ in ids)
+        rows = conn.execute(f"""SELECT e.source_type,e.source_id,d.name,COUNT(*) AS n,
+              MIN(e.created) AS first,MAX(e.created) AS last FROM ({EFFECTIVE}) e
+            LEFT JOIN files d ON e.source_type='file' AND d.id=e.source_id
+            WHERE e.branch IN ({params}) GROUP BY e.source_type,e.source_id
+            ORDER BY n DESC,last DESC""", ids).fetchall()
+        start = datetime.now(timezone.utc).date() - timedelta(days=SPARK_DAYS - 1)
+        spark = [0] * SPARK_DAYS
+        for row in conn.execute(f"""SELECT date(created) AS d,COUNT(*) AS n FROM ({EFFECTIVE})
+                WHERE branch IN ({params}) AND date(created)>=? GROUP BY d""", (*ids, start.isoformat())):
+            index = (date.fromisoformat(row["d"]) - start).days
+            if 0 <= index < SPARK_DAYS:
+                spark[index] += row["n"]
+        chat = sum(row["n"] for row in rows if row["source_type"] == "chat")
+        sources = [{"type": row["source_type"], "id": row["source_id"], "name": row["name"] or "Документ удалён",
+                    "count": row["n"], "last": row["last"]} for row in rows if row["source_type"] == "file"][:12]
+        return {"total": sum(row["n"] for row in rows), "chat": chat,
+                "documents": sum(1 for row in rows if row["source_type"] == "file"), "sources": sources,
+                "first": min((row["first"] for row in rows if row["first"]), default=None),
+                "last": max((row["last"] for row in rows if row["last"]), default=None), "spark": spark}
 
     def retrieve(self, question, limit=6, origin=None):
         found = self.engine.search(question, limit)

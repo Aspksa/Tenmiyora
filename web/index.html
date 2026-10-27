@@ -68,9 +68,10 @@
           <div><span class="metric-icon"><svg><use href="#i-chat"/></svg></span><strong id="brain-chat-count">0</strong><span>из чата</span></div>
         </div>
         <section class="module-panel brain-map-panel" aria-labelledby="brain-map-title">
-          <div class="panel-head"><div><h2 id="brain-map-title">Дерево знаний</h2><p class="module-muted brain-map-hint">Ядро в центре, вокруг ветки тем, точки вокруг веток — знания. Сияют ветки, выросшие за неделю, а дуги связывают похожие темы. Когда вы задаёте вопрос, по карте бегут импульсы. Нажмите на ветку, чтобы открыть её.</p></div><div class="brain-map-actions"><span id="brain-map-count" class="brain-pill"></span><button type="button" id="brain-map-sleep" class="icon-button" aria-pressed="false" aria-label="Режим сна" title="Режим сна: ночью включается сам"><svg><use href="#i-moon"/></svg></button><button type="button" id="brain-map-replay" class="secondary-button"><svg><use href="#i-spark"/></svg>Показать рост</button></div></div>
+          <div class="panel-head"><div><h2 id="brain-map-title">Дерево знаний</h2><p class="module-muted brain-map-hint">У каждой темы свой цвет. По веткам от ядра текут токи знаний, а цветные дуги показывают, какие темы обмениваются знаниями: наведите на тему или дугу, чтобы увидеть её связи. Нажмите на ветку, чтобы открыть её.</p></div><div class="brain-map-actions"><span id="brain-map-count" class="brain-pill"></span><button type="button" id="brain-map-sleep" class="icon-button" aria-pressed="false" aria-label="Режим сна" title="Режим сна: ночью включается сам"><svg><use href="#i-moon"/></svg></button><button type="button" id="brain-map-replay" class="secondary-button"><svg><use href="#i-spark"/></svg>Показать рост</button></div></div>
           <div id="brain-map" class="brain-map"></div>
-          <div class="brain-map-legend" aria-hidden="true"><span><i class="lg-core"></i>ядро</span><span><i class="lg-branch"></i>ветка темы</span><span><i class="lg-leaf"></i>знания</span><span><i class="lg-fresh"></i>рост за неделю</span><span><i class="lg-synapse"></i>связь тем</span><span><i class="lg-rest"></i>давно без дела</span></div>
+          <div id="brain-map-topics" class="brain-map-topics" aria-label="Темы на карте"></div>
+          <div class="brain-map-legend" aria-hidden="true"><span><i class="lg-core"></i>ядро</span><span><i class="lg-branch"></i>ветка, цвет — тема</span><span><i class="lg-leaf"></i>знания</span><span><i class="lg-current"></i>ток знаний</span><span><i class="lg-synapse"></i>обмен между темами</span><span><i class="lg-fresh"></i>рост за неделю</span><span><i class="lg-rest"></i>давно без дела</span></div>
         </section>
         <section class="module-panel brain-idle-panel" aria-labelledby="brain-idle-title">
           <div class="panel-head"><div><h2 id="brain-idle-title">Сам растёт, пока вы отдыхаете</h2><p id="brain-idle-state" class="brain-idle-state" aria-live="polite">Загрузка…</p></div><button type="button" id="brain-idle-run" class="secondary-button"><svg><use href="#i-spark"/></svg>Запустить сейчас</button></div>
@@ -89,13 +90,16 @@
         </section>
         <section class="module-panel brain-growth-panel" aria-labelledby="brain-growth-title">
           <div class="panel-head"><div><h2 id="brain-growth-title">Мозг растёт</h2><p id="brain-growth-summary" class="module-muted brain-growth-summary"></p></div><span class="brain-pill">30 дней</span></div>
-          <div id="brain-growth-chart" class="brain-growth-chart"></div>
+          <div class="growth-hero">
+            <div id="brain-level" class="brain-level"></div>
+            <div class="growth-main"><div id="brain-growth-stats" class="growth-stats"></div><div id="brain-growth-chart" class="brain-growth-chart"></div></div>
+          </div>
         </section>
         <div class="brain-growth-columns">
           <section class="module-panel" aria-labelledby="brain-diary-title"><div class="panel-head"><h2 id="brain-diary-title">Дневник развития</h2><span id="brain-diary-range" class="brain-pill"></span></div><div id="brain-diary" class="brain-diary"></div></section>
-          <section class="module-panel" aria-labelledby="brain-levels-title"><div class="panel-head"><h2 id="brain-levels-title">Уровень по темам</h2><span class="module-muted">объём и число источников</span></div><div id="brain-levels" class="brain-levels"></div></section>
+          <section class="module-panel" aria-labelledby="brain-levels-title"><div class="panel-head"><h2 id="brain-levels-title">Уровень по темам</h2><span class="module-muted">кольцо — путь до следующего уровня</span></div><div id="brain-levels" class="brain-levels"></div></section>
         </div>
-        <section class="module-panel activity-panel"><div class="panel-head"><h2>История роста</h2><span class="module-muted">последние события</span></div><div id="brain-events" class="brain-timeline"></div></section>
+        <section class="module-panel activity-panel"><div class="panel-head"><h2>История роста</h2><span class="module-muted">что Мозг читал и запоминал</span></div><div id="brain-events" class="brain-timeline"></div></section>
         <section class="module-panel brain-lab-panel" aria-labelledby="brain-lab-title">
           <div class="brain-lab-head"><div><h2 id="brain-lab-title">Лаборатория развития</h2><p class="module-muted">Поколения, проверочные задачи, пробелы и навыки. Только локально, без изменения кода или весов модели.</p></div>
           <div class="brain-lab-actions"><button type="button" id="brain-lab-scan" class="secondary-button"><svg><use href="#i-search"/></svg>Найти пробелы</button><button type="button" id="brain-lab-exam" class="secondary-button"><svg><use href="#i-check"/></svg>Провести экзамен</button></div></div>

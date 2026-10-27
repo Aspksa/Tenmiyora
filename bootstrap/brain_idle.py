@@ -91,13 +91,16 @@ def _log(db, task, summary, cloud=False):
 def _ask(db, kind, topic, text, payload=None, key=None):
     """Вопрос пользователю; повтор того же вопроса не создаётся, скрытый не возвращается."""
     fingerprint = hashlib.sha256(f"{kind}\0{key or topic}".encode("utf-8")).hexdigest()
+    # Открытый вопрос того же смысла получает свежую, более понятную формулировку.
+    db.execute("UPDATE brain_idle_questions SET text=?,payload=? WHERE fingerprint=? AND status='open'",
+               (text[:600], json.dumps(payload or {}, ensure_ascii=False), fingerprint))
     opened = db.execute("SELECT COUNT(*) FROM brain_idle_questions WHERE status='open'").fetchone()[0]
     if opened >= MAX_OPEN_QUESTIONS:
         return False
     when = clock()
     cursor = db.execute("""INSERT OR IGNORE INTO brain_idle_questions
         (fingerprint,kind,topic,text,payload,status,created,changed) VALUES(?,?,?,?,?,'open',?,?)""",
-        (fingerprint, kind, topic[:120], text[:400], json.dumps(payload or {}, ensure_ascii=False), when, when))
+        (fingerprint, kind, topic[:120], text[:600], json.dumps(payload or {}, ensure_ascii=False), when, when))
     return bool(cursor.rowcount)
 
 
@@ -121,6 +124,7 @@ def exam(store):
     results, touched = [], set()
     for (root_id, name), items in sorted(by_root.items(), key=lambda x: x[0][1]):
         asked = recalled = 0
+        missed = []
         for row in picker.sample(items, min(QUESTIONS_PER_TOPIC, len(items))):
             question = _keywords(row["statement"])
             if not question:
@@ -129,9 +133,11 @@ def exam(store):
             found = store.engine.search(question, 3)
             if any(item.get("excerpt", "").strip() == row["statement"].strip() for item in found):
                 recalled += 1
+            elif len(missed) < 2:
+                missed.append(row["statement"][:220])
             touched.update(mapping.get(item.get("branch_id"), item.get("branch_id")) for item in found)
         if asked:
-            results.append({"id": root_id, "name": name, "asked": asked, "recalled": recalled})
+            results.append({"id": root_id, "name": name, "asked": asked, "recalled": recalled, "missed": missed})
     with store.lock, store.db() as db:
         _set_state(db, "exam", {"time": clock(), "topics": results})
         _set_state(db, "exam_at", clock())
@@ -146,6 +152,18 @@ def exam(store):
     return summary
 
 
+def _topic_sample(db, roots, topic_id):
+    """Одно знание темы и его документ — чтобы вопрос был про конкретное."""
+    branches = [b for b, root in roots.items() if root[0] == topic_id]
+    if not branches:
+        return None
+    marks = ",".join("?" for _ in branches)
+    row = db.execute(f"""SELECT k.statement,f.name FROM knowledge_items k
+        LEFT JOIN files f ON k.source_type='file' AND f.id=k.source_id
+        WHERE k.branch_id IN ({marks}) ORDER BY length(k.statement) DESC LIMIT 1""", branches).fetchone()
+    return {"statement": row["statement"][:220], "source": row["name"]} if row else None
+
+
 def gaps(store):
     """Пробелы превращаются в понятные вопросы к пользователю."""
     with store.lock, store.db() as db:
@@ -154,21 +172,42 @@ def gaps(store):
         created = 0
         for item in result["topics"]:
             if item["recalled"] * 2 < item["asked"]:
-                created += _ask(db, "weak_recall", item["name"],
-                    f"По теме «{item['name']}» я плохо нахожу собственные знания. Расскажите о ней своими словами "
-                    "или загрузите понятный документ.", {"topic_id": item["id"]})
+                missed = (item.get("missed") or [""])[0]
+                text = (f"Я проверил себя по теме «{item['name']}» и не смог вспомнить "
+                        + ("вот это знание. Объясните своими словами, что здесь главное и когда это нужно?" if missed
+                           else "свои же знания. Расскажите, что в этой теме главное?"))
+                created += _ask(db, "weak_recall", item["name"], text, {
+                    "topic_id": item["id"], "quote": missed,
+                    "why": f"При самопроверке я нашёл ответ только на {item['recalled']} из {item['asked']} "
+                           f"{plural(item['asked'], 'вопроса', 'вопросов', 'вопросов')}. Ваше объяснение станет новым "
+                           "знанием, и в следующий раз я найду ответ.",
+                    "example": "Например: «Это значит, что… Обычно это нужно, когда… Важно не забыть, что…»"})
+        roots = _roots(db)
         for topic in topics:
             if topic["level"] <= 2 and topic["sources"] <= 1:
-                created += _ask(db, "single_source", topic["name"],
-                    f"Тема «{topic['name']}» держится на одном источнике "
-                    f"({topic['count']} {plural(topic['count'], 'знание', 'знания', 'знаний')}). "
-                    "Есть ещё материалы или что можете добавить?", {"topic_id": topic["id"]})
-        for row in db.execute("""SELECT c.id,a.statement AS first,b.statement AS second FROM potential_conflicts c
+                sample = _topic_sample(db, roots, topic["id"])
+                source = sample["source"] if sample else None
+                text = (f"Всё, что я знаю о теме «{topic['name']}», взято "
+                        + (f"из одного документа «{source}»." if source else "из одного источника.")
+                        + " Это ещё верно? Что можете добавить сами?")
+                created += _ask(db, "single_source", topic["name"], text, {
+                    "topic_id": topic["id"], "quote": sample["statement"] if sample else "", "source": source,
+                    "why": f"По теме {topic['count']} {plural(topic['count'], 'знание', 'знания', 'знаний')} и всего один "
+                           "источник. Когда знание подтверждают двое, уровень темы растёт, а ответы надёжнее.",
+                    "example": "Например: цифры и сроки, кто за это отвечает, что изменилось с тех пор."})
+        for row in db.execute("""SELECT c.id,a.statement AS first,b.statement AS second,
+              fa.name AS first_source,fb.name AS second_source FROM potential_conflicts c
               JOIN knowledge_items a ON a.id=c.first_id JOIN knowledge_items b ON b.id=c.second_id
+              LEFT JOIN files fa ON a.source_type='file' AND fa.id=a.source_id
+              LEFT JOIN files fb ON b.source_type='file' AND fb.id=b.source_id
               WHERE c.status='possible' ORDER BY c.id DESC LIMIT 5"""):
             created += _ask(db, "conflict", "Противоречие",
-                f"Источники расходятся: «{row['first'][:140]}» и «{row['second'][:140]}». Как правильно?",
-                {"conflict_id": row["id"]}, key=str(row["id"]))
+                "Два источника говорят по-разному. Какой вариант правильный?",
+                {"conflict_id": row["id"], "options": [
+                    {"text": row["first"][:300], "source": row["first_source"] or "чат"},
+                    {"text": row["second"][:300], "source": row["second_source"] or "чат"}],
+                 "why": "Пока я не знаю, чему верить, я покажу в ответе оба варианта.",
+                 "example": "Выберите вариант ниже или напишите, как на самом деле."}, key=str(row["id"]))
         summary = f"Нашёл новых вопросов к вам: {created}." if created else "Новых пробелов не нашёл."
         _log(db, "gaps", summary)
     return summary
@@ -199,7 +238,9 @@ def tidy(store):
                 if _similar(na, nb) or shared.get((a, b), 0) >= 3 and _similar(na[:5], nb[:5]):
                     offered += _ask(db, "merge", roots[a],
                         f"Похоже, «{roots[a]}» и «{roots[b]}» — одна тема. Объединить их на карте?",
-                        {"keep": a, "merge": b, "names": [roots[a], roots[b]]}, key=f"{min(na, nb)}\0{max(na, nb)}")
+                        {"keep": a, "merge": b, "names": [roots[a], roots[b]],
+                         "why": "Названия почти совпадают. После объединения знания обеих тем лежат в одной ветке; "
+                                "ничего не удаляется, объединение можно отменить."}, key=f"{min(na, nb)}\0{max(na, nb)}")
         repeats = db.execute("""SELECT COUNT(*) FROM (SELECT content_hash FROM knowledge_items
             GROUP BY content_hash HAVING COUNT(DISTINCT source_id)>1)""").fetchone()[0]
         _set_state(db, "tidy_at", clock())
@@ -277,8 +318,13 @@ def answer_question(store, qid, action, text=""):
 def report(store):
     with store.lock, store.db() as db:
         log = [dict(r) for r in db.execute("SELECT time,task,summary,cloud FROM brain_idle_log ORDER BY id DESC LIMIT 20")]
-        questions = [dict(r, payload=None) for r in db.execute(
-            "SELECT id,kind,topic,text,created FROM brain_idle_questions WHERE status='open' ORDER BY id DESC")]
+        questions = []
+        for r in db.execute("SELECT id,kind,topic,text,payload,created FROM brain_idle_questions WHERE status='open' ORDER BY id DESC"):
+            payload = json.loads(r["payload"] or "{}")
+            # Наружу — только то, что нужно для понятного вопроса; служебные id остаются на сервере.
+            details = {k: payload[k] for k in ("quote", "source", "why", "example", "options") if payload.get(k)}
+            questions.append({"id": r["id"], "kind": r["kind"], "topic": r["topic"], "text": r["text"],
+                              "created": r["created"], "details": details})
         insights = [dict(r) for r in db.execute("""SELECT i.kind,i.text,i.quote,i.locator,i.created,f.name AS file
             FROM brain_idle_insights i JOIN files f ON f.id=i.file_id AND f.sha256=i.file_sha
             ORDER BY i.id DESC LIMIT 12""")]

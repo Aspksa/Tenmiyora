@@ -46,7 +46,12 @@ class BrainIdleTests(unittest.TestCase):
         self.assertEqual([item["task"] for item in status["log"]], ["tidy", "gaps", "exam"])
         self.assertTrue(status["exam"]["topics"])
         self.assertTrue(all(t["asked"] >= t["recalled"] for t in status["exam"]["topics"]))
-        self.assertTrue(any(q["kind"] == "single_source" for q in status["questions"]))
+        single = next(q for q in status["questions"] if q["kind"] == "single_source")
+        # Вопрос конкретный: цитата и документ, откуда она, и зачем Мозг спрашивает.
+        self.assertIn(single["details"]["source"], single["text"])
+        self.assertTrue(single["details"]["quote"])
+        self.assertTrue(single["details"]["why"])
+        self.assertNotIn("topic_id", single["details"])
         # Локальные задачи сами знания не меняют.
         self.assertEqual(self.store.branches()["stats"]["facts"], knowledge)
         self.assertGreater(self.store.brain_pulses()["last"], 0)
