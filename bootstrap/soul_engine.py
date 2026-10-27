@@ -50,7 +50,7 @@ def validate_soul(data):
     if not isinstance(raw_feedback, dict):
         raw_feedback = {}
     result["feedback"] = {
-        key: value if type(value) is int and 0 <= value <= 1000 else 0
+        key: value if type(value) is int and (-2 <= value <= 2 if key == "initiative_votes" else 0 <= value <= 1000) else 0
         for key, value in (
             ("helpful", raw_feedback.get("helpful")),
             ("unhelpful", raw_feedback.get("unhelpful")),
