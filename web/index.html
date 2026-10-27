@@ -69,6 +69,14 @@
           <section class="module-panel brain-tree-panel"><div class="panel-head"><h2>Дерево знаний</h2><span id="brain-tree-count" class="brain-pill"></span></div><label class="sr-only" for="brain-filter">Фильтр веток</label><input id="brain-filter" class="brain-filter" type="search" placeholder="Фильтр веток" autocomplete="off"><div id="brain-tree" class="brain-tree" role="tree" aria-label="Ветки знаний"></div></section>
           <section class="module-panel brain-detail-panel"><div class="panel-head"><div><nav id="brain-detail-path" class="brain-path" aria-label="Путь к ветке"></nav><h2 id="brain-detail-title">Содержимое ветки</h2></div><span id="brain-detail-count" class="brain-pill" hidden></span></div><div id="brain-detail" class="brain-detail"><div class="brain-empty"><svg><use href="#i-brain"/></svg><p>Выберите ветку слева, чтобы увидеть знания и их источники.</p></div></div></section>
         </div>
+        <section class="module-panel brain-growth-panel" aria-labelledby="brain-growth-title">
+          <div class="panel-head"><div><h2 id="brain-growth-title">Мозг растёт</h2><p id="brain-growth-summary" class="module-muted brain-growth-summary"></p></div><span class="brain-pill">30 дней</span></div>
+          <div id="brain-growth-chart" class="brain-growth-chart"></div>
+        </section>
+        <div class="brain-growth-columns">
+          <section class="module-panel" aria-labelledby="brain-diary-title"><div class="panel-head"><h2 id="brain-diary-title">Дневник развития</h2><span id="brain-diary-range" class="brain-pill"></span></div><div id="brain-diary" class="brain-diary"></div></section>
+          <section class="module-panel" aria-labelledby="brain-levels-title"><div class="panel-head"><h2 id="brain-levels-title">Уровень по темам</h2><span class="module-muted">объём и число источников</span></div><div id="brain-levels" class="brain-levels"></div></section>
+        </div>
         <section class="module-panel activity-panel"><div class="panel-head"><h2>История роста</h2><span class="module-muted">последние события</span></div><div id="brain-events" class="brain-timeline"></div></section>
         <section class="module-panel brain-lab-panel" aria-labelledby="brain-lab-title">
           <div class="brain-lab-head"><div><h2 id="brain-lab-title">Лаборатория развития</h2><p class="module-muted">Поколения, проверочные задачи, пробелы и навыки. Только локально, без изменения кода или весов модели.</p></div>
