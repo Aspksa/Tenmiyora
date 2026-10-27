@@ -27,7 +27,7 @@
   const LIST = /^\s*([-*+]|\d{1,3}[.)])\s+(.*)$/;
   const MAX_DEPTH = 6, indentOf = (line) => line.match(/^ */)[0].length;
   function blocks(source, depth = 0) {
-    const lines = String(source).replace(/\r\n?/g, '\n').split('\n').map((row) => row.trimEnd()), out = [];
+    const raw = String(source).replace(/\r\n?/g, '\n').split('\n'), lines = raw.map((row) => row.trimEnd()), out = [];
     let i = 0;
     while (i < lines.length) {
       const line = lines[i];
@@ -35,7 +35,7 @@
       const fence = line.match(/^(\s*)```\s*([\w+#.-]*)$/);
       if (fence) {
         const code = []; i++;
-        while (i < lines.length && !/^\s*```$/.test(lines[i])) code.push(lines[i++].startsWith(fence[1]) ? lines[i - 1].slice(fence[1].length) : lines[i - 1]);
+        while (i < lines.length && !/^\s*```$/.test(lines[i])) code.push(raw[i++].startsWith(fence[1]) ? raw[i - 1].slice(fence[1].length) : raw[i - 1]);
         i++;
         out.push({t: 'codeblock', lang: fence[2], v: code.join('\n')});
         continue;
@@ -66,8 +66,8 @@
             let j = i;
             while (j < lines.length && !lines[j].trim()) j++;
             if (j >= lines.length || indentOf(lines[j]) <= base) break;
-            while (i < j) children.push(lines[i++]);
-            children.push(lines[i++]);
+            while (i < j) children.push(raw[i++]);
+            children.push(raw[i++]);
           }
           const cut = children.reduce((min, row) => row.trim() ? Math.min(min, indentOf(row)) : min, Infinity);
           const body = children.map((row) => row.slice(Math.min(cut, indentOf(row)))).join('\n');

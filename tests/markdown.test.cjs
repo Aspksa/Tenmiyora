@@ -84,3 +84,8 @@ test('every block opener followed by long whitespace runs parses quickly', () =>
     }
   }
 });
+test('trailing whitespace inside fenced code is preserved, also within list items', () => {
+  assert.equal(parse('```\nfirst  \nsecond\n```')[0].v, 'first  \nsecond');
+  const [list] = parse('1. шаг\n   ```\n   first  \n   second\n   ```');
+  assert.equal(list.items[0].children[0].v, 'first  \nsecond');
+});
