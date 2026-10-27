@@ -162,35 +162,60 @@ def _xlsx(raw,items):
 
 
 def _pdf(raw,items):
+    """Read PDF pages independently, preserving page locators and partial failures."""
     try:
         from pypdf import PdfReader
     except ImportError:
         return ["Требуется необязательный пакет pypdf для чтения PDF."]
-    reader=PdfReader(io.BytesIO(raw))
+    reader=PdfReader(io.BytesIO(raw), strict=False)
     notes=[]
     use_ocr=os.environ.get("TENMIYORA_OCR_ENABLED","0").strip().lower() in ("1","true","yes")
-    for index,page in enumerate(reader.pages):
+    # OCR rendering is expensive; only initialise the renderer on demand.
+    pdf_renderer=None
+    total_pages=len(reader.pages)
+    for index in range(total_pages):
         if len(items)>=MAX_SEGMENTS:
             notes.append("PDF обработан не полностью: предел количества блоков.")
             break
-        text=page.extract_text() or ""
+        try:
+            text=reader.pages[index].extract_text() or ""
+        except Exception as error:
+            text=""
+            notes.append("Ошибка текстового слоя страницы "+str(index+1)+": "+type(error).__name__)
         if not text.strip() and use_ocr and index<MAX_OCR_PAGES:
             try:
                 import pypdfium2
                 import pytesseract
-                pdf=pypdfium2.PdfDocument(raw)
-                image=pdf[index].render(scale=1.5).to_pil()
+                if pdf_renderer is None:
+                    pdf_renderer=pypdfium2.PdfDocument(raw)
+                image=pdf_renderer[index].render(scale=1.5).to_pil()
                 text=pytesseract.image_to_string(image,lang="rus+eng",timeout=15)
-            except (ImportError,RuntimeError,OSError,ValueError,Exception) as error:
+            except Exception as error:
                 notes.append("OCR страницы "+str(index+1)+" не выполнен: "+type(error).__name__)
         if not text.strip():
             notes.append(f"Страница {index+1} не содержит доступного текста.")
-        for block_no,block in enumerate(re.split(r"\n\s*\n",text),1):
-            _append(items,"page",f"Страница {index+1}, блок {block_no}",block)
-    if len(reader.pages)>MAX_OCR_PAGES and use_ocr:
+            continue
+        # Split long single-block pages so the question matcher can find facts
+        # in the middle and end, not just at the beginning of a page.
+        blocks=re.split(r"\n\s*\n",text)
+        number=0
+        for block in blocks:
+            block=block.strip()
+            if not block:
+                continue
+            # No truncation: preserve every character in independently indexed
+            # segments until the global document coverage limit is reached.
+            for start in range(0,len(block),1800):
+                number+=1
+                _append(items,"page",f"Страница {index+1}, блок {number}",block[start:start+1800])
+                if len(items)>=MAX_SEGMENTS:
+                    notes.append("PDF обработан не полностью: предел количества блоков.")
+                    break
+            if len(items)>=MAX_SEGMENTS:
+                break
+    if total_pages>MAX_OCR_PAGES and use_ocr:
         notes.append("OCR ограничен первыми 25 страницами; остальные страницы доступны при наличии текстового слоя.")
     return notes
-
 
 def extract_segments(name,raw):
     """Output: exact text excerpts + coverage notes, never guessed contents."""
