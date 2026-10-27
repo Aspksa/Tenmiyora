@@ -23,7 +23,7 @@ def validate_recovery(raw):
         if type(failures) is int and 0<=failures<=100000:
             result["attempts"][key]["failures"]=failures
         if type(recovered) is int and 0<=recovered<=100000:
-            result["attempts"][key]["verified_recoveries"]=min(recovered,failures)
+            result["attempts"][key]["verified_recoveries"]=min(recovered,result["attempts"][key]["failures"])
         if result["attempts"][key]["verified_recoveries"]>=2:
             result["attempts"][key]["status"]="evidence_supported"
     return result
