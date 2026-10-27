@@ -14,7 +14,7 @@ LIMIT=4
 def tokens(text):
     return {x for x in (w.casefold() for w in WORDS.findall(text)) if x not in STOP}
 
-def recall(journal,question,*,limit=LIMIT):
+def recall(journal,question,*,limit=LIMIT,exclude_turn_id=None):
     if not isinstance(question,str) or not 0<len(question)<=5000 or private(question):
         return []
     terms=tokens(question)
@@ -28,7 +28,7 @@ def recall(journal,question,*,limit=LIMIT):
     scored=[]
     for turn,kind,start,end,key,polarity,status,original,digest,role in rows:
         claim={"kind":kind,"start":start,"end":end,"key":key,"polarity":polarity,"status":status}
-        if role!="user" or status!="unverified":
+        if role!="user" or status!="unverified" or turn==exclude_turn_id:
             continue
         if hashlib.sha256(original.encode("utf-8")).hexdigest()!=digest or not validate_claim(original,claim):
             continue
