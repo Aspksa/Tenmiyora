@@ -54,6 +54,17 @@ class BrainGrowthTests(unittest.TestCase):
         visible = {row["id"] for row in self.store.branches()["branches"] if row["parent"] is None}
         self.assertTrue({topic["id"] for topic in data["topics"]} <= visible)
 
+    def test_copies_of_one_document_are_one_source(self):
+        text = "\n\n".join(f"Python модуль номер {i} позволяет тестировать код с помощью "
+                           f"unittest и pytest, библиотека версии {i}." for i in range(20))
+        for name in ("a.txt", "b.txt", "c.txt"):
+            self.store.upload(name, text.encode())
+        self.store.capture_chat("Python позволяет тестировать код с помощью unittest и pytest, "
+                                "это стандартная библиотека для проверки программ в проекте.")
+        topic = next(t for t in self.store.brain_growth()["topics"] if t["name"] == "Программирование")
+        self.assertEqual(topic["sources"], 2)
+        self.assertLess(topic["level"], 4)
+
     def test_levels_need_volume_and_independent_sources(self):
         self.assertEqual(level(3, 3)[0], 1)
         self.assertEqual(level(30, 1)[0], 2)

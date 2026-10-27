@@ -580,7 +580,7 @@
         ? ('Поколение №'+result.generation+' · '+result.verdict+' · '
           +result.trials+' испытания; без изменения весов и кода.')
         : 'Локальная проверка пробелов завершена.';
-      await loadLab();
+      await Promise.all([loadLab(), loadGrowth()]);
     } catch(error) { $('brain-lab-status').textContent=error.message; }
     finally {brainLabBusy=false;scan.disabled=false;exam.disabled=false;$('brain-lab-status').classList.remove('busy');}
   }

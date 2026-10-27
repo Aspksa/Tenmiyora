@@ -5,6 +5,7 @@ knowledge_items, а для веток без них — старые facts.
 """
 from datetime import date, timedelta
 
+from source_provenance import group_sources
 from topic_aliases import projection
 
 EFFECTIVE = """SELECT branch_id AS branch,source_type,source_id,created FROM knowledge_items
@@ -24,6 +25,13 @@ def level(count, sources):
     if count < 40 or sources < 3:
         return LEVELS[2]
     return LEVELS[3]
+
+
+def independent_sources(db, sources):
+    """Копии и заимствования одного документа — один источник; весь чат — один."""
+    files = [{"source_id": source_id} for kind, source_id in sources if kind == "file"]
+    groups, _ = group_sources(db, files)
+    return len(groups) + any(kind != "file" for kind, _ in sources)
 
 
 def _roots(db):
@@ -78,7 +86,7 @@ def growth(db, days=30, offset_minutes=0):
         item["updated"] = max(item["updated"], row["d"] or "")
     levels = []
     for item in topics.values():
-        sources = len(item.pop("sources"))
+        sources = independent_sources(db, item.pop("sources"))
         rank, label = level(item["count"], sources)
         levels.append({**item, "sources": sources, "level": rank, "level_name": label})
     levels.sort(key=lambda item: (-item["level"], -item["count"], item["name"]))
