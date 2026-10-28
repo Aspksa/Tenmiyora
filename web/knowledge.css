@@ -823,3 +823,11 @@ body.drawer-open{overflow:hidden}
 .map-node.ghost .map-node-body{opacity:.4;filter:saturate(.35)}
 .map-node.ghost:hover .map-node-body,.map-node.ghost:focus-visible .map-node-body,.map-node.ghost.lit .map-node-body{opacity:1;filter:none}
 .map-link.ghost{stroke-opacity:.12}
+
+/* Диск: более ясная навигация и удобные элементы управления. */
+#disk-view .disk-toolbar{padding:14px 16px;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+#disk-breadcrumbs{min-width:0;overflow-x:auto;white-space:nowrap}
+#disk-filter{min-height:38px;max-width:100%}
+#disk-list[aria-busy="true"]{opacity:.55;pointer-events:none}
+#disk-view button:focus-visible,#disk-view select:focus-visible,#disk-view input:focus-visible,#disk-view summary:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+@media(max-width:470px){#disk-filter{flex:1;min-width:120px}.disk-view-controls{flex-wrap:wrap}}
