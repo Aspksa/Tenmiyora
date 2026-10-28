@@ -1783,6 +1783,8 @@
   const SVG_NS = 'http://www.w3.org/2000/svg';
   const MAP = {width: 1000, height: 640, rx: 1.5, ring: 150};
   let mapNodes = new Map(), mapFresh = {}, mapPlayed = false, openNodeId = null, mapTotal = 0, growthRun = 0;
+  // Все ветки дерева, даже не нарисованные: по ним открывается панель ветки из знаний и уровней.
+  let mapAll = new Map();
   let mapTopics = [], mapActivity = {synapses: [], alive: {}}, mapSynapses = [], mapBorn = new Set(), pulseSeen = null, sleepMode = null;
   const KNOWN_KEY = 'tenmiyora.brain.known', DAY = 864e5;
   async function loadActivity() {
@@ -1842,11 +1844,13 @@
     // Чем больше тем, тем шире круг: иначе узлы слипаются у ядра.
     const ring = MAP.ring = Math.max(92, Math.min(252, 128 + roots.length * 7, outer - extra));
     const deepest = MAP.narrow ? 2 : 3;
+    mapAll = new Map();
     // Дерево ветки строится целиком, даже если часть узлов на карте не рисуется:
     // панель ветки должна показывать все подветки и их знания, что бы ни было видно.
     const model = (node, parent) => {
       const item = {node, depth: parent ? parent.depth + 1 : 1, parent, total: subtreeTotal(node),
                     children: [], hidden: 0, ghost: false, angle: 0, x: 0, y: 0, size: 0};
+      mapAll.set(node.id, item);
       item.children = childrenOf(node.id).map(kid => model(kid, item));
       return item;
     };
@@ -2785,9 +2789,18 @@
     close.focus({preventScroll: true});
   }
   function openBranch(id) {
-    const entry = mapNodes.get(id);
-    if (!entry) { message('Ветка не найдена. Нажмите «Обновить».'); return; }
-    openMapCard(entry.item);
+    let item = mapNodes.get(id)?.item || mapAll.get(id);
+    if (!item) { message('Ветка не найдена. Нажмите «Обновить».'); return; }
+    // Ветка под свёрнутой темой: раскрываем её тему, чтобы ветку было видно и на карте.
+    if (!mapNodes.has(id)) {
+      let top = item;
+      while (top.parent) top = top.parent;
+      if (top.node.id !== openTopic) {
+        toggleTopic(top.node.id);
+        item = mapNodes.get(id)?.item || mapAll.get(id) || item;
+      }
+    }
+    openMapCard(item);
   }
   // Панель ветки закрывается крестиком, Escape или нажатием на затемнённый фон: фон перекрывает всю страницу,
   // поэтому отдельный обработчик «клика снаружи» не нужен и не закрывает панель, открытую с меток или уровней.
