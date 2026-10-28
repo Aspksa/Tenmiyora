@@ -2634,11 +2634,23 @@
     scroll.append(sources);
     const linked = mapSynapses.filter(link => link.a === item.node.id || link.b === item.node.id)
       .map(link => mapNodes.get(link.a === item.node.id ? link.b : link.a)?.item).filter(Boolean);
+    // Все подветки доступны из панели, даже если на карте их столько не рисуется.
     const chipsSection = (title, items) => {
       if (!items.length) return;
       const section = element('section', 'drawer-section');
       const row = element('div', 'brain-subbranches');
-      items.slice(0, 10).forEach(other => row.append(button(other.node.name, () => openMapCard(other), 'brain-chip')));
+      const ordered = [...items].sort((a, b) => b.total - a.total);
+      let limit = 10;
+      const more = button('', () => { limit += 20; paintChips(); }, 'secondary-button map-card-more');
+      const paintChips = () => {
+        row.replaceChildren(...ordered.slice(0, limit).map(other =>
+          button(other.node.name, () => openMapCard(other), 'brain-chip')));
+        if (ordered.length > limit) {
+          more.textContent = 'Показать ещё (' + (ordered.length - limit) + ')';
+          row.append(more);
+        }
+      };
+      paintChips();
       section.append(element('h4', '', title), row);
       scroll.append(section);
     };
