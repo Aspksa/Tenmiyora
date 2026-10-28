@@ -757,6 +757,7 @@
     if (entries.length) upload(entries);
   });
   $('disk-upload-button').addEventListener('click', () => $('disk-file-input').click());
+  $('disk-pick-files').addEventListener('click', () => $('disk-file-input').click());
   $('disk-folder-pick').addEventListener('click', event => {
     event.stopPropagation();
     $('disk-folder-input').click();
@@ -765,11 +766,6 @@
   $('disk-new-file').addEventListener('click', () => openFileDialog());
   if (matchMedia('(max-width: 960px)').matches) $('disk-tree-details').open = false;
   const dropzone = $('disk-dropzone');
-  dropzone.addEventListener('click', () => $('disk-file-input').click());
-  dropzone.addEventListener('keydown', event => {
-    if (event.target !== dropzone) return;
-    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); $('disk-file-input').click(); }
-  });
   for (const target of [dropzone, $('disk-view')]) {
     target.addEventListener('dragover', event => {
       if (!event.dataTransfer?.types.includes('Files')) return;
