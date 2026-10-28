@@ -1842,32 +1842,38 @@
     // Чем больше тем, тем шире круг: иначе узлы слипаются у ядра.
     const ring = MAP.ring = Math.max(92, Math.min(252, 128 + roots.length * 7, outer - extra));
     const deepest = MAP.narrow ? 2 : 3;
-    const place = (node, depth, from, to, parent) => {
+    // Дерево ветки строится целиком, даже если часть узлов на карте не рисуется:
+    // панель ветки должна показывать все подветки и их знания, что бы ни было видно.
+    const model = (node, parent) => {
+      const item = {node, depth: parent ? parent.depth + 1 : 1, parent, total: subtreeTotal(node),
+                    children: [], hidden: 0, ghost: false, angle: 0, x: 0, y: 0, size: 0};
+      item.children = childrenOf(node.id).map(kid => model(kid, item));
+      return item;
+    };
+    const place = (item, from, to) => {
+      const depth = item.depth;
       const angle = (from + to) / 2;
       const radius = [0, ring, ring + 78, ring + 134][Math.min(depth, 3)];
-      const total = subtreeTotal(node);
       // Пока одна тема раскрыта, остальные отступают в тень точками: место — раскрытой.
-      const ghost = deep && depth === 1 && node.id !== openTopic;
-      const size = ghost ? 6 : depth === 1 ? Math.min(28, 10 + Math.sqrt(total) * 2.6)
-        : Math.min(15, 5 + Math.sqrt(total) * 1.6);
-      const [x, y] = polar(angle, radius);
-      const kids = childrenOf(node.id);
-      const item = {node, depth, angle, x, y, size, total, parent, children: [], hidden: 0, ghost};
+      item.ghost = deep && depth === 1 && item.node.id !== openTopic;
+      item.size = item.ghost ? 6 : depth === 1 ? Math.min(28, 10 + Math.sqrt(item.total) * 2.6)
+        : Math.min(15, 5 + Math.sqrt(item.total) * 1.6);
+      item.angle = angle;
+      [item.x, item.y] = polar(angle, radius);
       placed.push(item);
-      if (parent) parent.children.push(item);
       // Подветки рисуются только у раскрытой темы и только два уровня вглубь.
-      if (depth >= deepest || (depth === 1 && node.id !== openTopic)) {
-        item.hidden = kids.length;
+      if (depth >= deepest || (depth === 1 && item.node.id !== openTopic)) {
+        item.hidden = item.children.length;
         return;
       }
-      const shown = [...kids].sort((a, b) => subtreeTotal(b) - subtreeTotal(a))
+      const shown = [...item.children].sort((a, b) => b.total - a.total)
         .slice(0, depth === 1 ? (MAP.narrow ? 8 : 12) : 6);
-      item.hidden = kids.length - shown.length;
-      const weight = shown.reduce((sum, kid) => sum + Math.sqrt(subtreeTotal(kid) + 1), 0) || 1;
+      item.hidden = item.children.length - shown.length;
+      const weight = shown.reduce((sum, kid) => sum + Math.sqrt(kid.total + 1), 0) || 1;
       let start = from;
-      for (const kid of shown.sort((a, b) => a.name.localeCompare(b.name, 'ru'))) {
-        const share = (to - from) * Math.sqrt(subtreeTotal(kid) + 1) / weight;
-        place(kid, depth + 1, start, start + share, item);
+      for (const kid of shown.sort((a, b) => a.node.name.localeCompare(b.node.name, 'ru'))) {
+        const share = (to - from) * Math.sqrt(kid.total + 1) / weight;
+        place(kid, start, start + share);
         start += share;
       }
     };
@@ -1883,7 +1889,7 @@
     }
     roots.forEach((root, index) => {
       const share = Math.PI * 2 * weights[index] / sum;
-      place(root, 1, cursor, cursor + share, null);
+      place(model(root, null), cursor, cursor + share);
       cursor += share;
     });
     return placed;
