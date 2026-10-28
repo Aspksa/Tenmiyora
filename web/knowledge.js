@@ -2247,10 +2247,12 @@
     flash(core);
     const step = calm() ? 0 : 420, lit = new Set();
     for (const id of ids) {
-      const entry = mapNodes.get(id);
-      if (!entry) continue;
+      const item = mapNodes.get(id)?.item || mapAll.get(id);
+      if (!item) continue;
+      // Ветка под свёрнутой темой не нарисована: тогда зажигаются её видимые предки.
       const chain = [];
-      for (let cur = entry.item; cur; cur = cur.parent) chain.unshift(cur);
+      for (let cur = item; cur; cur = cur.parent) if (mapNodes.has(cur.node.id)) chain.unshift(cur);
+      if (!chain.length) continue;
       chain.forEach((item, depth) => {
         const target = mapNodes.get(item.node.id);
         if (!calm()) setTimeout(() => {
