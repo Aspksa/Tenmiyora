@@ -1207,105 +1207,12 @@
   function quoteList(names) {
     return names.map(name => '«' + name + '»').join(', ');
   }
-  function diaryEntry(day) {
-    const entry = element('li', 'diary-day');
-    const date = new Date(day.date + 'T12:00:00');
-    const stamp = element('div', 'diary-stamp');
-    stamp.append(element('strong', '', date.getDate()),
-      element('span', '', date.toLocaleDateString('ru-RU', {month: 'short'}).replace('.', '')),
-      element('small', '', dayLabel(date.toISOString()) === 'Сегодня' ? 'сегодня' : date.toLocaleDateString('ru-RU', {weekday: 'short'})));
-    const body = element('div', 'diary-body');
-    const say = (icon, html) => {
-      const line = element('p', 'diary-note');
-      const mark = element('span', 'diary-note-icon');
-      mark.append(svgIcon(icon));
-      const text = element('span', 'diary-text');
-      text.append(...html);
-      line.append(mark, text);
-      body.append(line);
-    };
-    const strong = text => element('strong', '', text);
-    const plain = text => document.createTextNode(text);
-    if (day.knowledge) say('spark', [plain('Узнал '), strong(knowledgeCount(day.knowledge)),
-      plain(day.chat ? (day.chat === day.knowledge ? ' из разговора с вами.' : ', из них ' + day.chat + ' из разговора с вами.') : '.')]);
-    if (day.documents.length) say('file', [plain(day.documents.length > 1 ? 'Прочитал документы ' : 'Прочитал документ '), strong(quoteList(day.documents)), plain('.')]);
-    if (day.branches.length) {
-      const chips = element('span', 'diary-chips');
-      day.branches.forEach(name => chips.append(element('span', 'diary-chip', name)));
-      say('brain', [plain(day.branches.length > 1 ? 'Выросли новые ветки: ' : 'Выросла новая ветка: '), chips]);
-    }
-    if (day.exam != null) say('check', [plain('Сдал экзамен на '), strong((day.exam * 100).toFixed(1) + '%'), plain('.')]);
-    if (day.self.length) {
-      const list = element('ul', 'diary-self');
-      day.self.forEach(item => list.append(element('li', '', item.summary)));
-      say('moon', [plain('Пока вы отдыхали:'), list]);
-    }
-    entry.append(stamp, body);
-    return entry;
-  }
-  function renderDiary(diary) {
-    const box = $('brain-diary');
-    box.replaceChildren();
-    $('brain-diary-range').textContent = shortDay(diary.since, true) + ' – ' + shortDay(diary.until, true);
-    const summary = element('div', 'diary-summary');
-    const big = (value, label) => {
-      const cell = element('div', 'diary-big' + (value ? '' : ' zero'));
-      cell.append(element('strong', '', value), element('span', '', label));
-      summary.append(cell);
-    };
-    big('+' + diary.knowledge, plural(diary.knowledge, 'знание', 'знания', 'знаний'));
-    big(diary.documents, plural(diary.documents, 'документ', 'документа', 'документов'));
-    big(diary.branches, plural(diary.branches, 'новая ветка', 'новые ветки', 'новых веток'));
-    big(diary.exams, plural(diary.exams, 'экзамен', 'экзамена', 'экзаменов'));
-    box.append(summary);
-    if (diary.top_topics.length) {
-      const fast = element('p', 'diary-fast');
-      fast.append(element('span', '', 'Быстрее всего росли'));
-      diary.top_topics.forEach(topic => fast.append(element('span', 'diary-chip', topic.name + ' +' + topic.week)));
-      box.append(fast);
-    }
-    const days = (diary.days || []).filter(day => day.knowledge || day.documents.length || day.branches.length || day.self.length || day.exam != null);
-    if (!days.length) { box.append(emptyState('За эту неделю Мозг ничего нового не узнал. Новые документы и сообщения в чате появятся здесь.', 'spark')); return; }
-    const list = element('ol', 'diary-days');
-    days.forEach((day, index) => { const entry = diaryEntry(day); entry.style.setProperty('--i', index); list.append(entry); });
-    box.append(list);
-    const extra = [];
-    if (diary.gaps) extra.push('найдено пробелов: ' + diary.gaps + ' (см. Лабораторию)');
-    for (const skill of diary.skills) extra.push('навык «' + skill.name + '» ' +
-      (skill.status === 'approved' ? 'одобрен' : skill.status === 'proposed' ? 'предложен' : 'отключён'));
-    if (extra.length) box.append(element('p', 'module-muted diary-extra', 'Ещё за неделю: ' + extra.join('; ') + '.'));
-  }
   function levelHint(topic) {
     if (!topic.next) return 'Высший уровень темы';
     const parts = [];
     if (topic.next.count) parts.push('+' + knowledgeCount(topic.next.count));
     if (topic.next.sources) parts.push('ещё ' + topic.next.sources + ' ' + plural(topic.next.sources, 'источник', 'источника', 'источников'));
     return 'До «' + topic.next.name + '»: ' + parts.join(' и ');
-  }
-  function renderLevels(topics) {
-    const box = $('brain-levels');
-    box.replaceChildren();
-    if (!topics.length) { box.append(emptyState('Темы появятся, когда в Мозге будут знания.')); return; }
-    topics.forEach((topic, index) => {
-      const card = element('div', 'level-card level-' + topic.level);
-      card.style.setProperty('--i', index);
-      const ring = progressRing(58, 5, topic.next ? topic.next.progress : 1, topic.level, '', 'ring-topic');
-      ring.title = topic.next ? 'Прогресс до уровня «' + topic.next.name + '»: ' + Math.round(topic.next.progress * 100) + '%' : 'Высший уровень';
-      const body = element('div', 'level-body');
-      const head = element('div', 'level-head');
-      const name = button(topic.name, () => openBranch(topic.id), 'level-name');
-      name.title = 'Открыть ветку «' + topic.name + '»';
-      head.append(name, element('span', 'level-badge', topic.level_name));
-      const meta = element('small', 'level-meta', knowledgeCount(topic.count) + ' · ' + topic.sources + ' ' +
-        plural(topic.sources, 'источник', 'источника', 'источников') + (topic.week ? ' · +' + topic.week + ' за неделю' : ''));
-      const foot = element('div', 'level-foot');
-      foot.append(element('span', 'level-hint', levelHint(topic)), sparkline(topic.spark || []));
-      body.append(head, meta, foot);
-      card.append(ring, body);
-      box.append(card);
-    });
-    box.append(element('p', 'module-muted level-note',
-      'Число в кольце — уровень темы, кольцо — путь до следующего. Уровень растёт с объёмом знаний и числом независимых источников. Это мера покрытия, а не проверка истинности.'));
   }
   // ---- Графики роста: одиннадцать разных взглядов на то, как растёт Мозг ----
   let growthData = null, chartNarrow = false;
@@ -1314,6 +1221,7 @@
   let chartsSparse = false, chartsWait = '';
   function sparseStop(body) {
     if (!chartsSparse) return false;
+    body.closest('.chart-card')?.classList.add('is-waiting');
     chartEmpty(body, chartsWait);
     return true;
   }
@@ -1779,8 +1687,6 @@
       renderOverview();
       renderBrainLevel(data.brain);
       renderGrowthChart(data.series);
-      renderDiary(data.diary);
-      renderLevels(growthTopics);
       mapFresh = data.branches_week || {};
     } catch (error) {
       $('brain-growth-chart').replaceChildren(emptyState(error.message, 'spark'));
@@ -1809,17 +1715,12 @@
       const data = await request('brain?' + new URLSearchParams({offset: -new Date().getTimezoneOffset()}));
       const real = data.branches || [], chat = data.chat || {topics: [], series: [], messages: 0};
       brainData = {branches: real.concat(chatBranches(chat)), real, recent: data.recent || [], chat};
-      const stats = data.stats || {};
-      $('brain-branches-count').textContent = real.length;
-      $('brain-talks-count').textContent = chat.topics.length;
-      $('brain-facts-count').textContent = stats.facts ?? real.reduce((count, row) => count + row.facts, 0);
-      $('brain-files-count').textContent = stats.files ?? 0;
-      $('brain-chat-count').textContent = stats.chat ?? 0;
       renderEvents();
       await Promise.all([loadLab(), loadGrowth(), loadActivity(), loadIdle()]);
       mapBorn = newBranches(brainData.branches.map(row => row.id));
       renderMap();
       renderCharts();
+      liveCounts = new Map(real.map(row => [row.id, row.facts || 0]));
     } catch (error) { message(error.message); }
     finally { brainLoading = false; refresh.classList.remove('spinning'); refresh.disabled = false; }
   }
@@ -1827,9 +1728,11 @@
   const SVG_NS = 'http://www.w3.org/2000/svg';
   const MAP = {width: 1000, height: 640, rx: 1.5, ring: 150};
   let mapNodes = new Map(), mapFresh = {}, mapPlayed = false, openNodeId = null, mapTotal = 0, growthRun = 0;
+  // Состояние живого роста: сколько знаний было в каждой ветке и что прибавилось.
+  let liveCounts = null, liveBusy = false, growthFlash = null;
   // Все ветки дерева, даже не нарисованные: по ним открывается панель ветки из знаний и уровней.
   let mapAll = new Map(), topicRows = new Map();
-  let mapTopics = [], mapActivity = {synapses: [], alive: {}}, mapSynapses = [], mapBorn = new Set(), pulseSeen = null, sleepMode = null;
+  let mapTopics = [], mapActivity = {synapses: [], alive: {}}, mapSynapses = [], mapBorn = new Set(), pulseSeen = null;
   const KNOWN_KEY = 'tenmiyora.brain.known', DAY = 864e5;
   async function loadActivity() {
     try {
@@ -2063,7 +1966,6 @@
     box.replaceChildren();
     mapNodes = new Map();
     growthRun++;  // Старый показ роста относится к прежней карте.
-    $('brain-map-replay').disabled = false;
     const placed = layoutMap();
     const labelled = [];
     // Свой цвет у каждой темы: ветка, её подветки, знания и токи окрашены одинаково.
@@ -2080,7 +1982,6 @@
     }
     const total = mapTotal = brainData.real.reduce((sum, item) => sum + item.facts, 0);
     const shown = brainData.branches.filter(item => item.id !== CHAT_ROOT).length;
-    $('brain-map-count').textContent = shown ? shown + ' ' + plural(shown, 'ветка', 'ветки', 'веток') : '';
     const root = svg('svg', {viewBox: `0 0 ${MAP.width} ${MAP.height}`, role: 'group', 'aria-label': 'Карта знаний Мозга'}, 'brain-map-svg');
     const defs = svg('defs');
     defs.innerHTML = '<radialGradient id="map-core"><stop offset="0" stop-color="#fff3cf"/><stop offset=".45" stop-color="#ecca7c"/><stop offset="1" stop-color="#9c7a3a"/></radialGradient>' +
@@ -2252,8 +2153,9 @@
     if (!placed.length) box.append(element('p', 'brain-map-empty', 'Загрузите документ на Диск или расскажите что-нибудь в чате — здесь вырастут первые ветки.'));
     hideCrowdedLabels(labelled);
     renderLegend(tops);
-    updateSleep();
     if (!mapPlayed && placed.length) { mapPlayed = true; playGrowth(); }
+    else if (growthFlash) { flashGrowth(growthFlash); }
+    growthFlash = null;
   }
   // Раскрытие темы: карта перерисовывается, выбранная тема получает больше места.
   // Карта и список тем рисуются заново, поэтому фокус возвращается на ту же тему —
@@ -2383,26 +2285,63 @@
     } catch { /* следующий опрос попробует снова */ }
   }
   setInterval(pollPulses, 4000);
-  // Ночью (23:00–7:00) Мозг «спит»: карта темнеет, по ней идут медленные волны.
-  function updateSleep() {
-    const box = $('brain-map'), hour = new Date().getHours();
-    // sleepMode — ручной выбор кнопкой с луной; null — по часам.
-    const asleep = sleepMode ?? (hour >= 23 || hour < 7 || idleState === 'working' || idleState === 'resting');
-    box.classList.toggle('sleeping', asleep);
-    let badge = box.querySelector('.brain-map-sleep');
-    if (asleep && !badge) {
-      badge = element('p', 'brain-map-sleep');
-      box.append(badge);
-    }
-    if (badge) badge.textContent = idleState === 'working' && idleTask ? 'Мозг спит и работает: ' + idleTask.toLowerCase() : 'Мозг спит и перебирает знания';
-    if (!asleep) badge?.remove();
-    const toggle = $('brain-map-sleep');
-    toggle.setAttribute('aria-pressed', String(asleep));
+
+  // Живой рост. Пока раздел открыт, Мозг может пополняться сам: фоновые задачи
+  // «Сам растёт», загрузка документа в другом окне, сообщение в чате. Сверяем
+  // объём каждой ветки и показываем прибавку прямо на карте, без обновления страницы.
+  async function pollGrowth() {
+    if ($('brain-view').hidden || document.hidden || brainLoading || liveBusy || !liveCounts) return;
+    liveBusy = true;
+    try {
+      const data = await request('brain?' + new URLSearchParams({offset: -new Date().getTimezoneOffset()}));
+      const real = data.branches || [];
+      const gained = real
+        .filter(row => (row.facts || 0) > (liveCounts.get(row.id) ?? (row.facts || 0)))
+        .map(row => ({id: row.id, add: (row.facts || 0) - liveCounts.get(row.id)}));
+      const born = real.some(row => !liveCounts.has(row.id));
+      if (gained.length || born) {
+        growthFlash = gained;
+        await loadBrain();
+      } else {
+        liveCounts = new Map(real.map(row => [row.id, row.facts || 0]));
+      }
+    } catch { /* следующая проверка попробует снова */ }
+    finally { liveBusy = false; }
   }
-  setInterval(updateSleep, 60000);
+  setInterval(pollGrowth, 7000);
+
+  // Прибавка на глазах: ветка вспыхивает, над ней всплывает «+N»,
+  // а счётчик в ядре досчитывает до нового значения.
+  function flashGrowth(gained) {
+    let sum = 0;
+    for (const item of gained) {
+      sum += item.add;
+      const node = mapNodes.get(item.id);
+      if (!node) continue;
+      node.group.classList.add('grown');
+      setTimeout(() => node.group.classList.remove('grown'), 2600);
+      const rise = svg('text', {y: -(node.item.size || 16) - 13}, 'map-gain');
+      rise.textContent = '+' + item.add;
+      node.group.append(rise);
+      setTimeout(() => rise.remove(), 2600);
+    }
+    countUp($('brain-map').querySelector('.map-core-count'), mapTotal - sum, mapTotal);
+    if (gained.length) firePulse(gained.map(item => item.id));
+  }
+  function countUp(node, from, to) {
+    if (!node) return;
+    if (calm() || from >= to) { node.textContent = to; return; }
+    const started = performance.now(), span = 1100;
+    const step = now => {
+      const k = Math.min(1, (now - started) / span);
+      node.textContent = Math.round(from + (to - from) * (1 - (1 - k) ** 3));
+      if (k < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
 
   // Самостоятельный рост: настройки, состояние, вопросы к пользователю и журнал.
-  let idleState = null, idleTask = '', idleData = null, idleSaving = false;
+  let idleState = null, idleData = null, idleSaving = false;
   const IDLE_TASKS = {exam: 'Самоэкзамен', gaps: 'Поиск пробелов', tidy: 'Порядок в темах', documents: 'Разбор документа моделью'};
   async function loadIdle() {
     try {
@@ -2493,8 +2432,7 @@
   function renderIdle(data) {
     idleData = data;
     const previous = idleState;
-    idleState = data.state; idleTask = IDLE_TASKS[data.task] || '';
-    if (previous !== idleState) updateSleep();
+    idleState = data.state;
     const s = data.settings;
     $('brain-idle-title').textContent = IDLE_HEAD[data.state] || 'Сам растёт';
     $('brain-idle-state').textContent = idleLine(data);
@@ -2661,7 +2599,6 @@
     order.forEach(entry => { entry.group.classList.remove('shown'); entry.path.classList.remove('shown'); });
     svgRoot.classList.add('replaying');
     counter.textContent = 0;
-    $('brain-map-replay').disabled = true;
     let count = 0;
     order.forEach((entry, index) => setTimeout(() => {
       if (run !== growthRun) return;
@@ -2679,7 +2616,6 @@
       svgRoot.classList.remove('replaying');
       counter.textContent = mapTotal;
       story.replaceChildren(document.createTextNode('Сегодня: ' + knowledgeCount(mapTotal) + ' в ' + order.length + ' ' + plural(order.length, 'ветке', 'ветках', 'ветках')));
-      $('brain-map-replay').disabled = false;
       setTimeout(() => { if (run === growthRun) story.classList.add('done'); }, 2500);
     }, 300 + order.length * step + 700);
   }
@@ -2931,8 +2867,6 @@
   // Панель ветки закрывается крестиком, Escape или нажатием на затемнённый фон: фон перекрывает всю страницу,
   // поэтому отдельный обработчик «клика снаружи» не нужен и не закрывает панель, открытую с меток или уровней.
   $('brain-topics-filter').addEventListener('input', paintTopics);
-  $('brain-map-replay').addEventListener('click', playGrowth);
-  $('brain-map-sleep').addEventListener('click', () => { sleepMode = !$('brain-map').classList.contains('sleeping'); updateSleep(); });
   let mapResize;
   addEventListener('resize', () => {
     clearTimeout(mapResize);
