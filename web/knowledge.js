@@ -1781,9 +1781,11 @@
   }
   // Живая карта знаний: ядро, ветки по кругу, знания-листья, потоки и рост.
   const SVG_NS = 'http://www.w3.org/2000/svg';
-  const MAP = {width: 1000, height: 640, rx: 1.5};
+  const MAP = {width: 1000, height: 640, rx: 1.5, ring: 150};
   let mapNodes = new Map(), mapFresh = {}, mapPlayed = false, openNodeId = null, mapTotal = 0, growthRun = 0;
-  let mapActivity = {synapses: [], alive: {}}, mapSynapses = [], mapBorn = new Set(), pulseSeen = null, sleepMode = null;
+  // Все ветки дерева, даже не нарисованные: по ним открывается панель ветки из знаний и уровней.
+  let mapAll = new Map(), topicRows = new Map();
+  let mapTopics = [], mapActivity = {synapses: [], alive: {}}, mapSynapses = [], mapBorn = new Set(), pulseSeen = null, sleepMode = null;
   const KNOWN_KEY = 'tenmiyora.brain.known', DAY = 864e5;
   async function loadActivity() {
     try {
@@ -1825,43 +1827,81 @@
   function polar(angle, radius) {
     return [MAP.width / 2 + Math.cos(angle) * radius * MAP.rx, MAP.height / 2 + Math.sin(angle) * radius];
   }
-  // Радиальная раскладка: сектор ветки пропорционален числу её листьев.
+  // Карта по уровням: сначала только главные темы, подветки — у раскрытой темы.
+  // Так карта не превращается в кашу, когда веток становятся сотни.
+  let openTopic = null;
   function layoutMap() {
     const branches = brainData.branches;
     const known = new Set(branches.map(item => item.id));
-    const roots = branches.filter(item => item.parent === null || !known.has(item.parent));
-    const leaves = node => { const kids = childrenOf(node.id); return kids.length ? kids.reduce((sum, kid) => sum + leaves(kid), 0) : 1; };
-    const totalLeaves = roots.reduce((sum, root) => sum + leaves(root), 0) || 1;
+    const roots = branches.filter(item => item.parent === null || !known.has(item.parent))
+      .sort((a, b) => subtreeTotal(b) - subtreeTotal(a));
+    if (openTopic !== null && !roots.some(root => root.id === openTopic)) openTopic = null;
     const placed = [];
-    let cursor = -Math.PI / 2;
-    const place = (node, depth, from, to, parent) => {
+    // Раскрытой теме нужно место под два внешних кольца, иначе подветки срежет край карты.
+    const deep = openTopic !== null;
+    const extra = deep ? (MAP.narrow ? 78 : 134) : 0;
+    const outer = Math.min((MAP.width / 2 - 56) / MAP.rx, MAP.height / 2 - 52);
+    // Чем больше тем, тем шире круг: иначе узлы слипаются у ядра.
+    const ring = MAP.ring = Math.max(92, Math.min(252, 128 + roots.length * 7, outer - extra));
+    const deepest = MAP.narrow ? 2 : 3;
+    mapAll = new Map();
+    // Дерево ветки строится целиком, даже если часть узлов на карте не рисуется:
+    // панель ветки должна показывать все подветки и их знания, что бы ни было видно.
+    const model = (node, parent) => {
+      const item = {node, depth: parent ? parent.depth + 1 : 1, parent, total: subtreeTotal(node),
+                    children: [], hidden: 0, ghost: false, angle: 0, x: 0, y: 0, size: 0};
+      mapAll.set(node.id, item);
+      item.children = childrenOf(node.id).map(kid => model(kid, item));
+      return item;
+    };
+    const place = (item, from, to) => {
+      const depth = item.depth;
       const angle = (from + to) / 2;
-      const radius = [0, 125, 205, 262, 300][Math.min(depth, 4)];
-      const total = subtreeTotal(node);
-      const size = depth === 1 ? Math.min(26, 9 + Math.sqrt(total) * 2.6) : Math.min(14, 4.5 + Math.sqrt(total) * 1.6);
-      const [x, y] = polar(angle, radius);
-      const item = {node, depth, angle, x, y, size, total, parent, children: []};
+      const radius = [0, ring, ring + 78, ring + 134][Math.min(depth, 3)];
+      // Пока одна тема раскрыта, остальные отступают в тень точками: место — раскрытой.
+      item.ghost = deep && depth === 1 && item.node.id !== openTopic;
+      item.size = item.ghost ? 6 : depth === 1 ? Math.min(28, 10 + Math.sqrt(item.total) * 2.6)
+        : Math.min(15, 5 + Math.sqrt(item.total) * 1.6);
+      item.angle = angle;
+      [item.x, item.y] = polar(angle, radius);
       placed.push(item);
-      if (parent) parent.children.push(item);
-      const kids = childrenOf(node.id).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
-      const span = to - from, weight = kids.reduce((sum, kid) => sum + leaves(kid), 0) || 1;
+      // Подветки рисуются только у раскрытой темы и только два уровня вглубь.
+      if (depth >= deepest || (depth === 1 && item.node.id !== openTopic)) {
+        item.hidden = item.children.length;
+        return;
+      }
+      // У ветки разговоров тем немного и другого пути к ним нет: показываем все.
+      const room = depth > 1 ? 6 : item.node.chat ? item.children.length : MAP.narrow ? 8 : 12;
+      const shown = [...item.children].sort((a, b) => b.total - a.total).slice(0, room);
+      item.hidden = item.children.length - shown.length;
+      const weight = shown.reduce((sum, kid) => sum + Math.sqrt(kid.total + 1), 0) || 1;
       let start = from;
-      for (const kid of kids) {
-        const share = span * leaves(kid) / weight;
-        place(kid, depth + 1, start, start + share, item);
+      for (const kid of shown.sort((a, b) => a.node.name.localeCompare(b.node.name, 'ru'))) {
+        const share = (to - from) * Math.sqrt(kid.total + 1) / weight;
+        place(kid, start, start + share);
         start += share;
       }
     };
-    for (const root of roots.sort((a, b) => subtreeTotal(b) - subtreeTotal(a))) {
-      const share = Math.PI * 2 * leaves(root) / totalLeaves;
-      place(root, 1, cursor, cursor + share, null);
-      cursor += share;
+    // Темы делят круг поровну: большая тема не прижимает соседей друг к другу.
+    const weights = roots.map(root => root.id === openTopic ? Math.max(roots.length * .7, 6) : 1);
+    const sum = weights.reduce((a, b) => a + b, 0) || 1;
+    // Раскрытая тема всегда разворачивается вправо: там больше всего места под подветки.
+    let cursor = -Math.PI / 2;
+    if (deep) {
+      const index = roots.findIndex(root => root.id === openTopic);
+      const before = weights.slice(0, index).reduce((a, b) => a + b, 0) + weights[index] / 2;
+      cursor = -Math.PI * 2 * before / sum;
     }
+    roots.forEach((root, index) => {
+      const share = Math.PI * 2 * weights[index] / sum;
+      place(model(root, null), cursor, cursor + share);
+      cursor += share;
+    });
     return placed;
   }
   function linkPath(from, to) {
     const [cx, cy] = from ? [from.x, from.y] : [MAP.width / 2, MAP.height / 2];
-    const bend = polar(to.angle, ([0, 70, 165, 235, 285][Math.min(to.depth, 4)]));
+    const bend = polar(to.angle, [0, MAP.ring * .5, MAP.ring + 30, MAP.ring + 100][Math.min(to.depth, 3)]);
     return `M${cx.toFixed(1)},${cy.toFixed(1)} Q${bend[0].toFixed(1)},${bend[1].toFixed(1)} ${to.x.toFixed(1)},${to.y.toFixed(1)}`;
   }
   // Подпись ветки: короткая, в одну-две строки, и не вылезает за край карты.
@@ -1912,6 +1952,18 @@
       span.textContent = text;
       return span;
     }));
+    // Место, которое подпись займёт на карте: по нему потом убираются наложения.
+    const width = Math.max(...lines.map(text => text.length)) * char;
+    const shift = anchor === 'middle' ? -width / 2 : anchor === 'end' ? -width : 0;
+    return {x1: item.x + x + shift, x2: item.x + x + shift + width,
+            y1: item.y + first - font, y2: item.y + first + (lines.length - 1) * step + 3};
+  }
+  // Подписи, которые налезают на соседние, прячутся: крупная тема важнее мелкой ветки.
+  // Спрятанная подпись возвращается при наведении и когда ветка открыта.
+  function hideCrowdedLabels(labelled) {
+    const boxes = labelled.map(entry => Object.assign({rank: entry.item.depth * 1e6 - entry.item.total}, entry.box));
+    const hidden = TenmiyoraLayout.crowded(boxes);
+    labelled.forEach((entry, index) => { if (hidden.has(index)) entry.group.classList.add('quiet'); });
   }
 
   function renderMap() {
@@ -1925,6 +1977,7 @@
     growthRun++;  // Старый показ роста относится к прежней карте.
     $('brain-map-replay').disabled = false;
     const placed = layoutMap();
+    const labelled = [];
     // Свой цвет у каждой темы: ветка, её подветки, знания и токи окрашены одинаково.
     const tops = placed.filter(item => item.depth === 1).sort((a, b) => Number(Boolean(a.node.chat)) - Number(Boolean(b.node.chat)) || a.node.id - b.node.id);
     tops.forEach(item => { item.color = item.node.chat ? CHAT_COLOR : topicColor(item.node.id); });
@@ -1941,7 +1994,7 @@
     root.append(defs);
     // Фон: орбиты и мерцающие звёзды.
     const sky = svg('g', {}, 'map-sky');
-    for (const radius of [125, 205, 262]) sky.append(svg('ellipse', {cx: MAP.width / 2, cy: MAP.height / 2, rx: radius * MAP.rx, ry: radius}, 'map-orbit'));
+    for (const radius of [MAP.ring * .55, MAP.ring, MAP.ring + 78]) sky.append(svg('ellipse', {cx: MAP.width / 2, cy: MAP.height / 2, rx: radius * MAP.rx, ry: radius}, 'map-orbit'));
     for (let i = 0; i < 46; i++) {
       const star = svg('circle', {cx: (i * 211 % MAP.width), cy: (i * 137 % MAP.height), r: i % 5 ? .8 : 1.4}, 'map-star');
       star.style.setProperty('--d', (i % 7) * .6 + 's');
@@ -1970,14 +2023,14 @@
       const alive = lastAlive(item), idle = alive ? (now - alive) / DAY : 0;
       item.idleDays = Math.floor(idle);
       const rest = fresh || born ? '' : idle > 45 ? ' dormant' : idle > 14 ? ' resting' : '';
-      const chatty = item.node.chat ? ' chat' : '';
+      const chatty = (item.node.chat ? ' chat' : '') + (item.ghost ? ' ghost' : '');
       const path = svg('path', {d: linkPath(item.parent, item), id: 'map-link-' + index}, 'map-link depth-' + item.depth + (fresh ? ' fresh' : '') + (born ? ' born' : '') + rest + chatty);
       path.style.setProperty('--w', Math.max(.8, Math.min(4, Math.sqrt(item.total) * (item.depth === 1 ? .9 : .5))));
       path.style.setProperty('--o', item.order);
       links.append(path);
       path.style.setProperty('--c', item.color);
       // Нейронные токи: светящийся штрих плавно течёт от ядра к ветке. Больше знаний — больше токов.
-      if (!calm() && (item.depth === 1 || fresh) && item.total) {
+      if (!calm() && !item.ghost && (item.depth === 1 || fresh) && item.total) {
         const currents = item.depth === 1 ? Math.min(3, 1 + Math.floor(item.total / 15)) : 1;
         for (let p = 0; p < currents; p++) {
           const current = svg('path', {d: path.getAttribute('d'), pathLength: 100}, 'map-current' + (fresh ? ' fresh' : ''));
@@ -2002,7 +2055,7 @@
       // Листья-знания вращаются вокруг ветки.
       const orbit = svg('g', {}, 'map-leaves');
       orbit.style.setProperty('--spin', (18 + (index % 5) * 6) + 's');
-      const leaves = Math.min(item.depth === 1 ? 14 : 7, item.node.facts);
+      const leaves = item.ghost ? 0 : Math.min(item.depth === 1 ? 14 : 7, item.node.facts);
       for (let l = 0; l < leaves; l++) {
         const a = l / leaves * Math.PI * 2, r = item.size + 5 + (l % 2) * 3;
         orbit.append(svg('circle', {cx: (Math.cos(a) * r).toFixed(1), cy: (Math.sin(a) * r).toFixed(1), r: item.depth === 1 ? 1.8 : 1.3}, 'map-leaf'));
@@ -2013,7 +2066,7 @@
         // Ветка разговоров отмечена облачком реплики.
         inner.append(svg('path', {d: 'M-7 -5h14a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3h-7l-5 4v-4h-2a3 3 0 0 1-3-3v-6a3 3 0 0 1 3-3z', transform: `translate(${-item.size * .9} ${item.size * .8}) scale(.8)`}, 'map-chat-mark'));
       }
-      if (item.depth === 1) {
+      if (item.depth === 1 && !item.ghost) {
         const count = svg('text', {y: 4}, 'map-count');
         count.textContent = item.total;
         inner.append(count);
@@ -2022,15 +2075,28 @@
       tip.textContent = item.node.name;
       group.append(tip);
       const label = svg('text', {}, 'map-label' + (item.depth === 1 ? ' root' : ''));
-      placeLabel(label, item);
+      const box = placeLabel(label, item);
+      // Имя притухшей темы не занимает место на карте: оно есть в панели тем и в подсказке.
+      if (item.ghost) group.classList.add('quiet'); else labelled.push({item, group, box});
       inner.append(label);
-      if (fresh || born) {
+      // «новая» — только у самых свежих веток: когда новыми стали все, метка ничего не говорит.
+      const newest = born && (mapBorn.size <= 6 || item.depth === 1);
+      if ((fresh || newest) && !item.ghost) {
         const badge = svg('text', {x: 0, y: item.size + (item.depth === 1 ? 16 : 13), 'text-anchor': 'middle'}, 'map-fresh');
-        badge.textContent = born ? 'новая' : '+' + fresh;
+        badge.textContent = newest ? 'новая' : '+' + fresh;
         inner.append(badge);
       }
+      // Сколько подветок спрятано под этой темой.
+      if (item.hidden && !item.ghost) {
+        const more = svg('g', {transform: `translate(0 ${(item.size + (item.depth === 1 ? 2 : 1)).toFixed(1)})`}, 'map-more');
+        const text = svg('text', {y: 15, 'text-anchor': 'middle'}, 'map-more-count');
+        text.textContent = '+' + item.hidden;
+        more.append(text);
+        inner.append(more);
+      }
       group.append(inner);
-      const open = () => openMapCard(item);
+      // Нажатие на тему раскрывает её подветки, на подветку — открывает панель.
+      const open = () => { if (item.depth === 1 && childrenOf(item.node.id).length) toggleTopic(item.node.id); else openMapCard(item); };
       group.addEventListener('click', open);
       group.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); open(); } });
       group.addEventListener('mouseenter', () => highlightChain(item, true));
@@ -2088,9 +2154,22 @@
     box.append(root);
     root.style.setProperty('--count', placed.length || 1);
     if (!placed.length) box.append(element('p', 'brain-map-empty', 'Загрузите документ на Диск или расскажите что-нибудь в чате — здесь вырастут первые ветки.'));
+    hideCrowdedLabels(labelled);
     renderLegend(tops);
     updateSleep();
     if (!mapPlayed && placed.length) { mapPlayed = true; playGrowth(); }
+  }
+  // Раскрытие темы: карта перерисовывается, выбранная тема получает больше места.
+  // Карта и список тем рисуются заново, поэтому фокус возвращается на ту же тему —
+  // и когда её раскрыли, и когда свернули, иначе обход с клавиатуры начинается сначала.
+  function toggleTopic(id, from) {
+    openTopic = openTopic === id ? null : id;
+    mapPlayed = true;  // Повтор роста при раскрытии не нужен.
+    renderMap();
+    const back = from === 'panel' ? topicRows.get(id) : mapNodes.get(id)?.group;
+    back?.focus({preventScroll: true});
+    // На узком экране карта выше списка тем: показываем её, иначе раскрытие не видно.
+    if (openTopic !== null && MAP.narrow) $('brain-map').scrollIntoView({block: 'center', behavior: calm() ? 'auto' : 'smooth'});
   }
   function highlightChain(item, on, partner) {
     const box = $('brain-map');
@@ -2113,16 +2192,44 @@
   function renderLegend(tops) {
     const box = $('brain-map-topics');
     if (!box) return;
+    mapTopics = [...tops].sort((a, b) => b.total - a.total);
+    $('brain-topics-count').textContent = mapTopics.length ? mapTopics.length + ' ' + plural(mapTopics.length, 'тема', 'темы', 'тем') : '';
+    const filter = $('brain-topics-filter');
+    // Скрытый поиск не должен втихую отфильтровывать список: прячем только пустым.
+    if (mapTopics.length < 8) { filter.value = ''; filter.hidden = true; } else filter.hidden = false;
+    paintTopics();
+  }
+  // Список тем рядом с картой: цвет, название, доля знаний. Нажатие раскрывает тему.
+  function paintTopics() {
+    const box = $('brain-map-topics');
+    if (!box) return;
+    const query = $('brain-topics-filter').value.trim().toLowerCase();
+    const shown = query ? mapTopics.filter(item => item.node.name.toLowerCase().includes(query)) : mapTopics;
+    const largest = Math.max(...mapTopics.map(item => item.total), 1);
     box.replaceChildren();
-    for (const item of tops) {
-      const chip = button('', () => openMapCard(item), 'map-topic-chip');
-      chip.style.setProperty('--c', item.color);
-      chip.append(element('i'), element('span', '', item.node.name));
-      chip.addEventListener('mouseenter', () => highlightChain(item, true));
-      chip.addEventListener('mouseleave', () => highlightChain(item, false));
-      chip.addEventListener('focus', () => highlightChain(item, true));
-      chip.addEventListener('blur', () => highlightChain(item, false));
-      box.append(chip);
+    topicRows = new Map();
+    if (!shown.length) { box.append(element('p', 'module-muted topics-empty', query ? 'Такой темы нет.' : 'Темы появятся с первыми знаниями.')); return; }
+    for (const item of shown) {
+      // Ветка разговоров в списке открывает сводку по чату; на карте она, как и темы, раскрывается.
+      const row = button('', () => {
+        if (!item.node.chat && childrenOf(item.node.id).length) toggleTopic(item.node.id, 'panel');
+        else openMapCard(item);
+      }, 'topic-row');
+      topicRows.set(item.node.id, row);
+      row.setAttribute('role', 'listitem');
+      row.style.setProperty('--c', item.color);
+      row.style.setProperty('--share', Math.max(3, item.total / largest * 100) + '%');
+      row.classList.toggle('open', item.node.id === openTopic);
+      const kids = childrenOf(item.node.id).length;
+      row.append(element('i', 'topic-dot'), element('span', 'topic-name', item.node.name),
+        element('b', 'topic-count', item.node.chat ? item.total + ' ✉' : item.total));
+      row.title = item.node.chat ? item.node.name + ' · все темы чата'
+        : item.node.name + (kids ? ' · ' + kids + ' ' + plural(kids, 'подветка', 'подветки', 'подветок') : '');
+      row.addEventListener('mouseenter', () => highlightChain(item, true));
+      row.addEventListener('mouseleave', () => highlightChain(item, false));
+      row.addEventListener('focus', () => highlightChain(item, true));
+      row.addEventListener('blur', () => highlightChain(item, false));
+      box.append(row);
     }
   }
   // Импульс вопроса: искра бежит от ядра по цепочке веток, ветки вспыхивают и просыпаются.
@@ -2140,10 +2247,12 @@
     flash(core);
     const step = calm() ? 0 : 420, lit = new Set();
     for (const id of ids) {
-      const entry = mapNodes.get(id);
-      if (!entry) continue;
+      const item = mapNodes.get(id)?.item || mapAll.get(id);
+      if (!item) continue;
+      // Ветка под свёрнутой темой не нарисована: тогда зажигаются её видимые предки.
       const chain = [];
-      for (let cur = entry.item; cur; cur = cur.parent) chain.unshift(cur);
+      for (let cur = item; cur; cur = cur.parent) if (mapNodes.has(cur.node.id)) chain.unshift(cur);
+      if (!chain.length) continue;
       chain.forEach((item, depth) => {
         const target = mapNodes.get(item.node.id);
         if (!calm()) setTimeout(() => {
@@ -2527,11 +2636,23 @@
     scroll.append(sources);
     const linked = mapSynapses.filter(link => link.a === item.node.id || link.b === item.node.id)
       .map(link => mapNodes.get(link.a === item.node.id ? link.b : link.a)?.item).filter(Boolean);
+    // Все подветки доступны из панели, даже если на карте их столько не рисуется.
     const chipsSection = (title, items) => {
       if (!items.length) return;
       const section = element('section', 'drawer-section');
       const row = element('div', 'brain-subbranches');
-      items.slice(0, 10).forEach(other => row.append(button(other.node.name, () => openMapCard(other), 'brain-chip')));
+      const ordered = [...items].sort((a, b) => b.total - a.total);
+      let limit = 10;
+      const more = button('', () => { limit += 20; paintChips(); }, 'secondary-button map-card-more');
+      const paintChips = () => {
+        row.replaceChildren(...ordered.slice(0, limit).map(other =>
+          button(other.node.name, () => openMapCard(other), 'brain-chip')));
+        if (ordered.length > limit) {
+          more.textContent = 'Показать ещё (' + (ordered.length - limit) + ')';
+          row.append(more);
+        }
+      };
+      paintChips();
       section.append(element('h4', '', title), row);
       scroll.append(section);
     };
@@ -2695,12 +2816,22 @@
     close.focus({preventScroll: true});
   }
   function openBranch(id) {
-    const entry = mapNodes.get(id);
-    if (!entry) { message('Ветка не найдена. Нажмите «Обновить».'); return; }
-    openMapCard(entry.item);
+    let item = mapNodes.get(id)?.item || mapAll.get(id);
+    if (!item) { message('Ветка не найдена. Нажмите «Обновить».'); return; }
+    // Ветка под свёрнутой темой: раскрываем её тему, чтобы ветку было видно и на карте.
+    if (!mapNodes.has(id)) {
+      let top = item;
+      while (top.parent) top = top.parent;
+      if (top.node.id !== openTopic) {
+        toggleTopic(top.node.id);
+        item = mapNodes.get(id)?.item || mapAll.get(id) || item;
+      }
+    }
+    openMapCard(item);
   }
   // Панель ветки закрывается крестиком, Escape или нажатием на затемнённый фон: фон перекрывает всю страницу,
   // поэтому отдельный обработчик «клика снаружи» не нужен и не закрывает панель, открытую с меток или уровней.
+  $('brain-topics-filter').addEventListener('input', paintTopics);
   $('brain-map-replay').addEventListener('click', playGrowth);
   $('brain-map-sleep').addEventListener('click', () => { sleepMode = !$('brain-map').classList.contains('sleeping'); updateSleep(); });
   let mapResize;
