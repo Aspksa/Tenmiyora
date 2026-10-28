@@ -73,12 +73,16 @@
             </div>
           </div>
           <div class="stage-map">
+            <aside class="map-topics-panel" aria-labelledby="brain-topics-title">
+              <div class="topics-head"><h2 id="brain-topics-title">Темы</h2><span id="brain-topics-count" class="module-muted"></span></div>
+              <input id="brain-topics-filter" type="search" class="topics-filter" placeholder="Найти тему" aria-label="Найти тему">
+              <div id="brain-map-topics" class="topics-list" role="list"></div>
+            </aside>
             <div id="brain-map" class="brain-map"></div>
             <div class="brain-map-actions stage-actions"><span id="brain-map-count" class="brain-pill"></span><button type="button" id="brain-map-sleep" class="icon-button" aria-pressed="false" aria-label="Режим сна" title="Режим сна: ночью включается сам"><svg><use href="#i-moon"/></svg></button><button type="button" id="brain-map-replay" class="secondary-button"><svg><use href="#i-spark"/></svg>Показать рост</button><button class="icon-button" id="brain-refresh" aria-label="Обновить" title="Обновить"><svg><use href="#i-reset"/></svg></button></div>
           </div>
-          <div id="brain-map-topics" class="brain-map-topics" aria-label="Темы на карте"></div>
-          <details class="stage-legend"><summary>Как читать карту</summary><p class="module-muted brain-map-hint">У каждой темы свой цвет. По веткам от ядра текут токи знаний, а цветные дуги показывают, какие темы обмениваются знаниями: наведите на тему или дугу, чтобы увидеть её связи. Нажмите на ветку, чтобы открыть её.</p>
-            <div class="brain-map-legend" aria-hidden="true"><span><i class="lg-core"></i>ядро</span><span><i class="lg-branch"></i>ветка, цвет — тема</span><span><i class="lg-leaf"></i>знания</span><span><i class="lg-current"></i>ток знаний</span><span><i class="lg-synapse"></i>обмен между темами</span><span><i class="lg-fresh"></i>рост за неделю</span><span><i class="lg-rest"></i>давно без дела</span></div>
+          <details class="stage-legend"><summary>Как читать карту</summary><p class="module-muted brain-map-hint">У каждой темы свой цвет. По веткам от ядра текут токи знаний, а цветные дуги показывают, какие темы обмениваются знаниями: наведите на тему или дугу, чтобы увидеть её связи. Нажмите на тему, чтобы раскрыть её подветки, и ещё раз — чтобы свернуть. Подпись, которая не помещается, появляется при наведении.</p>
+            <div class="brain-map-legend" aria-hidden="true"><span><i class="lg-core"></i>ядро</span><span><i class="lg-branch"></i>ветка, цвет — тема</span><span><i class="lg-leaf"></i>знания</span><span><i class="lg-current"></i>ток знаний</span><span><i class="lg-synapse"></i>обмен между темами</span><span><i class="lg-fresh"></i>рост за неделю</span><span><i class="lg-rest"></i>давно без дела</span><span><i class="lg-more"></i>число подветок</span></div>
           </details>
         </section>
         <nav class="brain-tabs" role="tablist" aria-label="Разделы Мозга">
