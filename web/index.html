@@ -63,27 +63,23 @@
       <section id="brain-view" class="view knowledge-view brain-view" hidden>
         <section class="brain-stage" aria-labelledby="brain-title">
           <div class="stage-top">
-            <div class="stage-title"><span class="brain-eyebrow"><svg><use href="#i-brain"/></svg>Память Tenmiyora</span><h1 id="brain-title">Мозг</h1><p id="brain-stage-line" class="stage-line">Знания из документов на Диске и сообщений чата. У каждого знания сохраняется источник.</p></div>
-            <div class="brain-metrics stage-metrics" aria-label="Показатели памяти">
-              <div><strong id="brain-branches-count">0</strong><span>веток</span></div>
-              <div><strong id="brain-facts-count">0</strong><span>знаний</span></div>
-              <div><strong id="brain-files-count">0</strong><span>документов</span></div>
-              <div><strong id="brain-chat-count">0</strong><span>из чата</span></div>
-              <div><strong id="brain-talks-count">0</strong><span>тем в чате</span></div>
-            </div>
+            <div class="stage-title"><span class="brain-eyebrow"><svg><use href="#i-brain"/></svg>Память Tenmiyora</span><h1 id="brain-title" class="sr-only">Мозг</h1><p id="brain-stage-line" class="stage-line">Знания из документов на Диске и сообщений чата. У каждого знания сохраняется источник.</p></div>
           </div>
-          <div class="stage-map">
+          <div class="stage-map" id="brain-stage-map">
             <aside class="map-topics-panel" aria-labelledby="brain-topics-title">
               <div class="topics-head"><h2 id="brain-topics-title">Темы</h2><span id="brain-topics-count" class="module-muted"></span></div>
               <input id="brain-topics-filter" type="search" class="topics-filter" placeholder="Найти тему" aria-label="Найти тему">
               <div id="brain-map-topics" class="topics-list" role="list"></div>
             </aside>
             <div id="brain-map" class="brain-map"></div>
-            <div class="brain-map-actions stage-actions"><span id="brain-map-count" class="brain-pill"></span><button type="button" id="brain-map-sleep" class="icon-button" aria-pressed="false" aria-label="Режим сна" title="Режим сна: ночью включается сам"><svg><use href="#i-moon"/></svg></button><button type="button" id="brain-map-replay" class="secondary-button"><svg><use href="#i-spark"/></svg>Показать рост</button><button class="icon-button" id="brain-refresh" aria-label="Обновить" title="Обновить"><svg><use href="#i-reset"/></svg></button></div>
+            <div class="brain-map-actions stage-actions"><button class="icon-button" id="brain-refresh" aria-label="Обновить" title="Обновить"><svg><use href="#i-reset"/></svg></button></div>
           </div>
-          <details class="stage-legend"><summary>Как читать карту</summary><p class="module-muted brain-map-hint">У каждой темы свой цвет. По веткам от ядра текут токи знаний, а цветные дуги показывают, какие темы обмениваются знаниями: наведите на тему или дугу, чтобы увидеть её связи. Нажмите на тему, чтобы раскрыть её подветки, и ещё раз — чтобы свернуть. Подпись, которая не помещается, появляется при наведении.</p>
-            <div class="brain-map-legend" aria-hidden="true"><span><i class="lg-core"></i>ядро</span><span><i class="lg-branch"></i>ветка, цвет — тема</span><span><i class="lg-leaf"></i>знания</span><span><i class="lg-current"></i>ток знаний</span><span><i class="lg-synapse"></i>обмен между темами</span><span><i class="lg-fresh"></i>рост за неделю</span><span><i class="lg-rest"></i>давно без дела</span><span><i class="lg-more"></i>число подветок</span></div>
+          <div class="stage-foot">
+            <button type="button" id="brain-stage-toggle" class="stage-toggle" aria-expanded="true" aria-controls="brain-stage-map"><svg><use href="#i-brain"/></svg><span>Свернуть карту</span></button>
+            <details class="stage-legend"><summary>Как читать карту</summary><p class="module-muted brain-map-hint">У каждой темы свой цвет. По веткам от ядра текут токи знаний, а цветные дуги показывают, какие темы обмениваются знаниями: наведите на тему или дугу, чтобы увидеть её связи. Нажмите на тему, чтобы раскрыть её подветки, и ещё раз — чтобы свернуть. Подпись, которая не помещается, появляется при наведении.</p>
+            <div class="brain-map-legend"><span><i class="lg-core"></i>ядро</span><span><i class="lg-branch"></i>ветка, цвет — тема</span><span><i class="lg-leaf"></i>знания</span><span><i class="lg-current"></i>ток знаний</span><span><i class="lg-synapse"></i>обмен между темами</span><span><i class="lg-fresh"></i>рост за неделю</span><span><i class="lg-rest"></i>давно без дела</span><span><i class="lg-more"></i>число подветок</span></div>
           </details>
+          </div>
         </section>
         <nav class="brain-tabs" role="tablist" aria-label="Разделы Мозга">
           <button type="button" role="tab" id="brain-tab-overview" data-brain-tab="overview" aria-controls="brain-pane-overview" aria-selected="true"><svg><use href="#i-home"/></svg>Главное</button>
@@ -101,10 +97,6 @@
             </div>
           </section>
           <div id="brain-charts" class="growth-charts" aria-label="Графики роста Мозга"></div>
-          <div class="brain-growth-columns">
-            <section class="module-panel" aria-labelledby="brain-diary-title"><div class="panel-head"><h2 id="brain-diary-title">Дневник развития</h2><span id="brain-diary-range" class="brain-pill"></span></div><div id="brain-diary" class="brain-diary"></div></section>
-            <section class="module-panel" aria-labelledby="brain-levels-title"><div class="panel-head"><h2 id="brain-levels-title">Уровень по темам</h2><span class="module-muted">кольцо — путь до следующего уровня</span></div><div id="brain-levels" class="brain-levels"></div></section>
-          </div>
           <section class="module-panel activity-panel"><div class="panel-head"><h2>История роста</h2><span class="module-muted">что Мозг читал и запоминал</span></div><div id="brain-events" class="brain-timeline"></div></section>
         </div>
         <div id="brain-pane-idle" class="brain-pane" role="tabpanel" aria-labelledby="brain-tab-idle" hidden>

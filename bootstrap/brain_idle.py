@@ -23,6 +23,8 @@ import random
 import re
 import threading
 
+import brain_questions
+import term_weights
 from brain_growth import _roots, growth
 from brain_pulse import record as record_pulse
 from topic_aliases import normalize_label, projection
@@ -104,50 +106,120 @@ def _ask(db, kind, topic, text, payload=None, key=None):
     return bool(cursor.rowcount)
 
 
-def _keywords(statement):
-    words = sorted(set(WORD.findall(statement.lower())), key=len, reverse=True)
-    return " ".join(words[:5])
-
-
-def exam(store):
-    """Мозг задаёт себе вопросы по своим знаниям и проверяет, находит ли ответ."""
-    with store.lock, store.db() as db:
-        roots = _roots(db)
-        mapping = projection(db)
-        rows = db.execute("SELECT id,branch_id,statement FROM knowledge_items").fetchall()
-    by_root = {}
+def _build_questions(rows, roots, picker, df=None, sources=0):
+    """Вопросы экзамена по темам: вид чередуется, четверть уходит в контроль."""
+    by_source, by_root = {}, {}
     for row in rows:
+        by_source.setdefault((row["source_type"], row["source_id"]), []).append(row)
         root = roots.get(row["branch_id"])
         if root:
             by_root.setdefault(root, []).append(row)
-    picker = random.Random(datetime.now(timezone.utc).strftime("%Y-%m-%d-%H"))
-    results, touched = [], set()
-    for (root_id, name), items in sorted(by_root.items(), key=lambda x: x[0][1]):
-        asked = recalled = 0
-        missed = []
-        for row in picker.sample(items, min(QUESTIONS_PER_TOPIC, len(items))):
-            question = _keywords(row["statement"])
-            if not question:
+    study, control = [], []
+    for (root_id, name), items in sorted(by_root.items(), key=lambda pair: pair[0][1]):
+        for index, row in enumerate(picker.sample(items, min(QUESTIONS_PER_TOPIC, len(items)))):
+            kind = brain_questions.KINDS[index % len(brain_questions.KINDS)]
+            neighbour = None
+            if kind == "neighbour":
+                # Соседнее утверждение должно указывать на свой документ, иначе
+                # вопрос остался бы без верного ответа.
+                family = [other["statement"] for other in by_source[(row["source_type"], row["source_id"])]
+                          if other["id"] != row["id"]
+                          and brain_questions.recognisable(other["statement"], df, sources)]
+                neighbour = picker.choice(family) if family else None
+            terms = brain_questions.build(kind, row["statement"], neighbour)
+            if not terms:
                 continue
-            asked += 1
-            found = store.engine.search(question, 3)
-            if any(item.get("excerpt", "").strip() == row["statement"].strip() for item in found):
-                recalled += 1
-            elif len(missed) < 2:
-                missed.append(row["statement"][:220])
-            touched.update(mapping.get(item.get("branch_id"), item.get("branch_id")) for item in found)
-        if asked:
-            results.append({"id": root_id, "name": name, "asked": asked, "recalled": recalled, "missed": missed})
+            question = {"kind": kind, "terms": terms, "statement": row["statement"],
+                        "source": (row["source_type"], row["source_id"]),
+                        "root": root_id, "name": name}
+            (control if brain_questions.is_holdout(row["id"]) else study).append(question)
+    return study, control
+
+
+def _run(store, questions):
+    """Задаёт вопросы и возвращает результат каждого. Поиск сам читает веса."""
+    answers = []
+    for question in questions:
+        found = store.engine.search(question["terms"], 3)
+        good = brain_questions.hit(question["kind"], found, question["statement"], question["source"])
+        answers.append((question, found, good))
+    return answers
+
+
+def _share(answers):
+    return sum(1 for _, _, good in answers if good) / len(answers) if answers else None
+
+
+def exam(store):
+    """Мозг задаёт себе вопросы и учится на тех, где не нашёл ответ.
+
+    Вопрос намеренно не повторяет искомое утверждение, поэтому экзамен может
+    провалиться — иначе учиться было бы нечему. Опыт применяется только если
+    на отложенной четверти вопросов результат не упал.
+    """
     with store.lock, store.db() as db:
-        _set_state(db, "exam", {"time": clock(), "topics": results})
+        roots = _roots(db)
+        mapping = projection(db)
+        rows = db.execute("""SELECT id,branch_id,source_type,source_id,statement
+                             FROM knowledge_items""").fetchall()
+        report = term_weights.rebuild(db)
+        df = {row[0]: row[1] for row in db.execute("SELECT term, df FROM term_weights")}
+    picker = random.Random(datetime.now(timezone.utc).strftime("%Y-%m-%d-%H"))
+    study, control = _build_questions(rows, roots, picker, df, report["sources"])
+    if not study and not control:
+        with store.lock, store.db() as db:
+            _set_state(db, "exam", {"time": clock(), "topics": []})
+            _set_state(db, "exam_at", clock())
+            _log(db, "exam", "Пока не о чем себя спрашивать.")
+        return "Пока не о чем себя спрашивать."
+
+    before = _share(_run(store, control))
+    answers = _run(store, study)
+
+    helped, misled, touched = [], [], set()
+    stats = {}
+    for question, found, good in answers:
+        key = (question["root"], question["name"])
+        entry = stats.setdefault(key, {"asked": 0, "recalled": 0, "missed": []})
+        entry["asked"] += 1
+        entry["recalled"] += 1 if good else 0
+        if not good and len(entry["missed"]) < 2:
+            entry["missed"].append(question["statement"][:220])
+        good_terms, bad_terms = brain_questions.signals(
+            question["terms"].split(), found, question["statement"], good)
+        helped.extend(good_terms)
+        misled.extend(bad_terms)
+        touched.update(mapping.get(item.get("branch_id"), item.get("branch_id")) for item in found)
+
+    learned = False
+    if helped or misled:
+        with store.lock, store.db() as db:
+            saved = term_weights.snapshot(db)
+            term_weights.learn(db, helped, misled)
+        after = _share(_run(store, control))
+        # Отложенная четверть — единственное основание принять опыт.
+        if before is not None and after is not None and after < before:
+            with store.lock, store.db() as db:
+                term_weights.restore(db, saved)
+        else:
+            learned = True
+
+    results = [{"id": root_id, "name": name, **entry} for (root_id, name), entry in
+               sorted(stats.items(), key=lambda pair: pair[0][1])]
+    asked = sum(item["asked"] for item in results)
+    recalled = sum(item["recalled"] for item in results)
+    weak = [item["name"] for item in results if item["recalled"] * 2 < item["asked"]]
+    with store.lock, store.db() as db:
+        _set_state(db, "exam", {"time": clock(), "topics": results,
+                                "holdout": {"before": before, "after": _share(_run(store, control)),
+                                            "questions": len(control), "learned": learned}})
         _set_state(db, "exam_at", clock())
         record_pulse(db, touched, "idle", clock())
-        asked = sum(item["asked"] for item in results)
-        recalled = sum(item["recalled"] for item in results)
-        weak = [item["name"] for item in results if item["recalled"] * 2 < item["asked"]]
         summary = (f"Задал себе {asked} {plural(asked, 'вопрос', 'вопроса', 'вопросов')} "
-                   f"по {len(results)} {plural(len(results), 'теме', 'темам', 'темам')}, нашёл ответ на {recalled}."
-                   + (" Слабые темы: " + ", ".join(weak[:4]) + "." if weak else "")) if asked else "Пока не о чем себя спрашивать."
+                   f"по {len(results)} {plural(len(results), 'теме', 'темам', 'темам')}, "
+                   f"нашёл ответ на {recalled}."
+                   + (" Слабые темы: " + ", ".join(weak[:4]) + "." if weak else "")
+                   + (" Веса слов обновлены." if learned else "")) if asked else "Пока не о чем себя спрашивать."
         _log(db, "exam", summary)
     return summary
 

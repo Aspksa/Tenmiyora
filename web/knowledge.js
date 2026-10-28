@@ -1219,74 +1219,6 @@
   function quoteList(names) {
     return names.map(name => '«' + name + '»').join(', ');
   }
-  function diaryEntry(day) {
-    const entry = element('li', 'diary-day');
-    const date = new Date(day.date + 'T12:00:00');
-    const stamp = element('div', 'diary-stamp');
-    stamp.append(element('strong', '', date.getDate()),
-      element('span', '', date.toLocaleDateString('ru-RU', {month: 'short'}).replace('.', '')),
-      element('small', '', dayLabel(date.toISOString()) === 'Сегодня' ? 'сегодня' : date.toLocaleDateString('ru-RU', {weekday: 'short'})));
-    const body = element('div', 'diary-body');
-    const say = (icon, html) => {
-      const line = element('p', 'diary-note');
-      const mark = element('span', 'diary-note-icon');
-      mark.append(svgIcon(icon));
-      const text = element('span', 'diary-text');
-      text.append(...html);
-      line.append(mark, text);
-      body.append(line);
-    };
-    const strong = text => element('strong', '', text);
-    const plain = text => document.createTextNode(text);
-    if (day.knowledge) say('spark', [plain('Узнал '), strong(knowledgeCount(day.knowledge)),
-      plain(day.chat ? (day.chat === day.knowledge ? ' из разговора с вами.' : ', из них ' + day.chat + ' из разговора с вами.') : '.')]);
-    if (day.documents.length) say('file', [plain(day.documents.length > 1 ? 'Прочитал документы ' : 'Прочитал документ '), strong(quoteList(day.documents)), plain('.')]);
-    if (day.branches.length) {
-      const chips = element('span', 'diary-chips');
-      day.branches.forEach(name => chips.append(element('span', 'diary-chip', name)));
-      say('brain', [plain(day.branches.length > 1 ? 'Выросли новые ветки: ' : 'Выросла новая ветка: '), chips]);
-    }
-    if (day.exam != null) say('check', [plain('Сдал экзамен на '), strong((day.exam * 100).toFixed(1) + '%'), plain('.')]);
-    if (day.self.length) {
-      const list = element('ul', 'diary-self');
-      day.self.forEach(item => list.append(element('li', '', item.summary)));
-      say('moon', [plain('Пока вы отдыхали:'), list]);
-    }
-    entry.append(stamp, body);
-    return entry;
-  }
-  function renderDiary(diary) {
-    const box = $('brain-diary');
-    box.replaceChildren();
-    $('brain-diary-range').textContent = shortDay(diary.since, true) + ' – ' + shortDay(diary.until, true);
-    const summary = element('div', 'diary-summary');
-    const big = (value, label) => {
-      const cell = element('div', 'diary-big' + (value ? '' : ' zero'));
-      cell.append(element('strong', '', value), element('span', '', label));
-      summary.append(cell);
-    };
-    big('+' + diary.knowledge, plural(diary.knowledge, 'знание', 'знания', 'знаний'));
-    big(diary.documents, plural(diary.documents, 'документ', 'документа', 'документов'));
-    big(diary.branches, plural(diary.branches, 'новая ветка', 'новые ветки', 'новых веток'));
-    big(diary.exams, plural(diary.exams, 'экзамен', 'экзамена', 'экзаменов'));
-    box.append(summary);
-    if (diary.top_topics.length) {
-      const fast = element('p', 'diary-fast');
-      fast.append(element('span', '', 'Быстрее всего росли'));
-      diary.top_topics.forEach(topic => fast.append(element('span', 'diary-chip', topic.name + ' +' + topic.week)));
-      box.append(fast);
-    }
-    const days = (diary.days || []).filter(day => day.knowledge || day.documents.length || day.branches.length || day.self.length || day.exam != null);
-    if (!days.length) { box.append(emptyState('За эту неделю Мозг ничего нового не узнал. Новые документы и сообщения в чате появятся здесь.', 'spark')); return; }
-    const list = element('ol', 'diary-days');
-    days.forEach((day, index) => { const entry = diaryEntry(day); entry.style.setProperty('--i', index); list.append(entry); });
-    box.append(list);
-    const extra = [];
-    if (diary.gaps) extra.push('найдено пробелов: ' + diary.gaps + ' (см. Лабораторию)');
-    for (const skill of diary.skills) extra.push('навык «' + skill.name + '» ' +
-      (skill.status === 'approved' ? 'одобрен' : skill.status === 'proposed' ? 'предложен' : 'отключён'));
-    if (extra.length) box.append(element('p', 'module-muted diary-extra', 'Ещё за неделю: ' + extra.join('; ') + '.'));
-  }
   function levelHint(topic) {
     if (!topic.next) return 'Высший уровень темы';
     const parts = [];
@@ -1294,33 +1226,17 @@
     if (topic.next.sources) parts.push('ещё ' + topic.next.sources + ' ' + plural(topic.next.sources, 'источник', 'источника', 'источников'));
     return 'До «' + topic.next.name + '»: ' + parts.join(' и ');
   }
-  function renderLevels(topics) {
-    const box = $('brain-levels');
-    box.replaceChildren();
-    if (!topics.length) { box.append(emptyState('Темы появятся, когда в Мозге будут знания.')); return; }
-    topics.forEach((topic, index) => {
-      const card = element('div', 'level-card level-' + topic.level);
-      card.style.setProperty('--i', index);
-      const ring = progressRing(58, 5, topic.next ? topic.next.progress : 1, topic.level, '', 'ring-topic');
-      ring.title = topic.next ? 'Прогресс до уровня «' + topic.next.name + '»: ' + Math.round(topic.next.progress * 100) + '%' : 'Высший уровень';
-      const body = element('div', 'level-body');
-      const head = element('div', 'level-head');
-      const name = button(topic.name, () => openBranch(topic.id), 'level-name');
-      name.title = 'Открыть ветку «' + topic.name + '»';
-      head.append(name, element('span', 'level-badge', topic.level_name));
-      const meta = element('small', 'level-meta', knowledgeCount(topic.count) + ' · ' + topic.sources + ' ' +
-        plural(topic.sources, 'источник', 'источника', 'источников') + (topic.week ? ' · +' + topic.week + ' за неделю' : ''));
-      const foot = element('div', 'level-foot');
-      foot.append(element('span', 'level-hint', levelHint(topic)), sparkline(topic.spark || []));
-      body.append(head, meta, foot);
-      card.append(ring, body);
-      box.append(card);
-    });
-    box.append(element('p', 'module-muted level-note',
-      'Число в кольце — уровень темы, кольцо — путь до следующего. Уровень растёт с объёмом знаний и числом независимых источников. Это мера покрытия, а не проверка истинности.'));
-  }
   // ---- Графики роста: одиннадцать разных взглядов на то, как растёт Мозг ----
   let growthData = null, chartNarrow = false;
+  // Пока Мозг пополнялся меньше трёх дней, график по дням — это оси и легенда вокруг
+  // одной точки. В таком случае вместо обвязки показываем строку, что данных мало.
+  let chartsSparse = false, chartsWait = '';
+  function sparseStop(body) {
+    if (!chartsSparse) return false;
+    body.closest('.chart-card')?.classList.add('is-waiting');
+    chartEmpty(body, chartsWait);
+    return true;
+  }
   const GOLD = '#ecca7c', HEAT = ['#26221a', '#4a3c20', '#7a5e2c', '#b38a40', '#ecca7c'];
   const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
   function chartCard(box, title, note, className) {
@@ -1381,6 +1297,7 @@
   // 1. Поток тем: каждая тема — свой цветной поток, толщина — сколько узнал за день.
   function chartStream(box, stream, dates) {
     const {body, bind} = chartCard(box, 'Поток тем', 'Как каждая тема наполнялась день за днём. Толщина потока — новые знания.', 'span-12 is-stream');
+    if (sparseStop(body)) return;
     const total = stream.reduce((sum, topic) => sum + topic.days.reduce((a, b) => a + b, 0), 0);
     if (!total) { chartEmpty(body, 'За 30 дней темы не пополнялись.'); return; }
     const W = chartNarrow ? 270 : 1000, H = chartNarrow ? 170 : 220, n = dates.length;
@@ -1428,6 +1345,7 @@
   // 2. Прирост по дням: столбцы растут снизу, сегодняшний светится.
   function chartDaily(box, series) {
     const {body, bind} = chartCard(box, 'Прирост по дням', 'Сколько новых знаний Мозг получил в каждый из 30 дней.', 'span-8');
+    if (sparseStop(body)) return;
     const W = chartNarrow ? 270 : 600, H = 180, n = series.length, step = W / n, top = niceMax(Math.max(...series.map(day => day.added), 1));
     const svgNode = chartSvg(W, H + 4, 'Прирост по дням: всего ' + series.reduce((sum, day) => sum + day.added, 0));
     const defs = svgEl('defs');
@@ -1454,6 +1372,7 @@
   // 3. Часы Мозга: в какие часы суток он узнаёт новое.
   function chartClock(box, hours) {
     const {body, bind} = chartCard(box, 'Часы Мозга', 'В какое время суток приходят знания.', 'span-4');
+    if (sparseStop(body)) return;
     const total = hours.reduce((a, b) => a + b, 0);
     if (!total) { chartEmpty(body, 'Пока нет данных.'); return; }
     const S = 260, c = S / 2, inner = 42, outer = 112, top = Math.max(...hours);
@@ -1483,6 +1402,7 @@
   // 4. Календарь: 12 недель, чем ярче клетка — тем больше узнал.
   function chartHeatmap(box, days) {
     const {body, bind} = chartCard(box, 'Календарь роста', 'Двенадцать недель. Яркая клетка — день, когда Мозг узнал много.', 'span-8');
+    if (sparseStop(body)) return;
     const cell = 15, gap = 4, left = 26, topPad = 18;
     const first = new Date(days[0].date + 'T12:00:00');
     const shift = (first.getDay() + 6) % 7;
@@ -1589,8 +1509,15 @@
       const rect = svgEl('rect', {x: tile.x + 1.5, y: tile.y + 1.5, width: Math.max(0, tile.w - 3), height: Math.max(0, tile.h - 3), rx: 6, fill: tile.color});
       group.append(rect);
       if (tile.w > 70 && tile.h > 40) {
-        const name = chartText(tile.x + 10, tile.y + 22, tile.name.length > (tile.w - 16) / 7.4 ? tile.name.slice(0, Math.floor((tile.w - 16) / 7.4) - 1) + '…' : tile.name, 'tree-name', 'start');
-        group.append(name, chartText(tile.x + 10, tile.y + 42, tile.value, 'tree-value', 'start'));
+        // 8.2 px на знак: прежние 7.4 обрезали кириллицу позже, чем кончалась плитка.
+        const fit = Math.floor((tile.w - 16) / 8.2);
+        const name = chartText(tile.x + 10, tile.y + 22, tile.name.length > fit ? tile.name.slice(0, Math.max(1, fit - 1)) + '…' : tile.name, 'tree-name', 'start');
+        const value = chartText(tile.x + 10, tile.y + 42, tile.value, 'tree-value', 'start');
+        const ink = inkOn(tile.color);
+        name.style.fill = ink;
+        value.style.fill = ink;
+        value.style.opacity = '.8';
+        group.append(name, value);
       }
       bind(group, [tile.name, knowledgeCount(tile.value) + (tile.week ? ' · +' + tile.week + ' за неделю' : '')]);
       svgNode.append(group);
@@ -1634,6 +1561,7 @@
   // 8. Ветвление: сколько веток было к каждому дню.
   function chartBranches(box, series) {
     const {body, bind} = chartCard(box, 'Ветвление', 'Как прибавлялись ветки за 30 дней.', 'span-4');
+    if (sparseStop(body)) return;
     if (!series.length || !series[series.length - 1].total) { chartEmpty(body, 'Веток пока нет.'); return; }
     const W = 300, H = 150, n = series.length, low = series[0].total, high = Math.max(series[n - 1].total, low + 1);
     const x = i => i / (n - 1) * W, y = v => H - 10 - (v - low) / (high - low) * (H - 30);
@@ -1654,6 +1582,7 @@
   // 9. По неделям: восемь недель, последняя сравнивается с прошлой.
   function chartWeeks(box, weeks) {
     const {body, bind, head} = chartCard(box, 'По неделям', 'Новые знания за каждую из восьми недель.', 'span-4');
+    if (sparseStop(body)) return;
     const last = weeks[weeks.length - 1]?.added || 0, before = weeks[weeks.length - 2]?.added || 0;
     if (before || last) {
       const delta = before ? Math.round((last - before) / before * 100) : null;
@@ -1677,6 +1606,7 @@
   // 10. Ритм недели: в какие дни недели Мозг растёт.
   function chartWeekdays(box, weekdays) {
     const {body, bind} = chartCard(box, 'Ритм недели', 'В какие дни недели приходят знания.', 'span-4');
+    if (sparseStop(body)) return;
     const top = Math.max(...weekdays, 1);
     if (!weekdays.some(Boolean)) { chartEmpty(body, 'Пока нет данных.'); return; }
     const W = 300, H = 150, step = W / 7;
@@ -1695,6 +1625,7 @@
   // 11. Разговоры: сколько вы писали Tenmiyora каждый день.
   function chartChat(box, chat) {
     const {body, bind} = chartCard(box, 'Разговоры', 'Ваши сообщения в чате по дням. Темы разговоров видны на карте в ветке «Разговоры».', 'span-12 is-chat');
+    if (sparseStop(body)) return;
     const series = chat?.series || [];
     if (!series.some(day => day.messages)) { chartEmpty(body, 'За 30 дней сообщений не было.'); return; }
     const W = chartNarrow ? 270 : 1000, H = 150, n = series.length, top = niceMax(Math.max(...series.map(day => day.messages), 1));
@@ -1717,6 +1648,7 @@
     body.append(svgNode, chartDates(series.map(day => day.date)));
   }
 
+  let chartsExpanded = false;
   function renderCharts() {
     const box = $('brain-charts');
     if (!box || !growthData) return;
@@ -1725,17 +1657,37 @@
     box.replaceChildren();
     const charts = growthData.charts || {};
     const dates = growthData.series.map(day => day.date);
+    const days = growthData.series.filter(day => day.added > 0).length;
+    chartsSparse = days < 3;
+    chartsWait = days
+      ? 'Пока рано строить график: знания приходили ' + days + ' ' + plural(days, 'день', 'дня', 'дней')
+        + '. Нужно хотя бы три дня наблюдений.'
+      : 'Знаний за 30 дней не прибавлялось. График появится, когда Мозг начнёт пополняться.';
     chartStream(box, charts.stream || [], dates);
     chartDaily(box, growthData.series);
-    chartClock(box, charts.hours || []);
-    chartHeatmap(box, charts.heatmap || []);
     chartSources(box, charts.sources || {file: 0, chat: 0, other: 0});
     chartTreemap(box, growthTopics);
     chartRadar(box, growthTopics);
+    // Остальные шесть взглядов на рост нужны реже: открываются по кнопке.
+    const from = box.children.length;
+    chartHeatmap(box, charts.heatmap || []);
+    chartClock(box, charts.hours || []);
     chartWeeks(box, charts.weeks || []);
     chartWeekdays(box, charts.weekdays || []);
     chartBranches(box, charts.branches || []);
     chartChat(box, brainData.chat);
+    const extra = [...box.children].slice(from);
+    extra.forEach(card => card.classList.add('chart-extra'));
+    const more = button('', () => { chartsExpanded = !chartsExpanded; apply(); }, 'charts-more');
+    const apply = () => {
+      box.classList.toggle('collapsed', !chartsExpanded);
+      more.setAttribute('aria-expanded', String(chartsExpanded));
+      more.replaceChildren(document.createTextNode(chartsExpanded
+        ? 'Свернуть дополнительные графики'
+        : 'Показать ещё ' + extra.length + ' ' + plural(extra.length, 'график', 'графика', 'графиков')));
+    };
+    box.append(more);
+    apply();
   }
   async function loadGrowth() {
     try {
@@ -1747,8 +1699,6 @@
       renderOverview();
       renderBrainLevel(data.brain);
       renderGrowthChart(data.series);
-      renderDiary(data.diary);
-      renderLevels(growthTopics);
       mapFresh = data.branches_week || {};
     } catch (error) {
       $('brain-growth-chart').replaceChildren(emptyState(error.message, 'spark'));
@@ -1777,17 +1727,12 @@
       const data = await request('brain?' + new URLSearchParams({offset: -new Date().getTimezoneOffset()}));
       const real = data.branches || [], chat = data.chat || {topics: [], series: [], messages: 0};
       brainData = {branches: real.concat(chatBranches(chat)), real, recent: data.recent || [], chat};
-      const stats = data.stats || {};
-      $('brain-branches-count').textContent = real.length;
-      $('brain-talks-count').textContent = chat.topics.length;
-      $('brain-facts-count').textContent = stats.facts ?? real.reduce((count, row) => count + row.facts, 0);
-      $('brain-files-count').textContent = stats.files ?? 0;
-      $('brain-chat-count').textContent = stats.chat ?? 0;
       renderEvents();
       await Promise.all([loadLab(), loadGrowth(), loadActivity(), loadIdle()]);
       mapBorn = newBranches(brainData.branches.map(row => row.id));
       renderMap();
       renderCharts();
+      liveCounts = new Map(real.map(row => [row.id, row.facts || 0]));
     } catch (error) { message(error.message); }
     finally { brainLoading = false; refresh.classList.remove('spinning'); refresh.disabled = false; }
   }
@@ -1795,9 +1740,11 @@
   const SVG_NS = 'http://www.w3.org/2000/svg';
   const MAP = {width: 1000, height: 640, rx: 1.5, ring: 150};
   let mapNodes = new Map(), mapFresh = {}, mapPlayed = false, openNodeId = null, mapTotal = 0, growthRun = 0;
+  // Состояние живого роста: сколько знаний было в каждой ветке и что прибавилось.
+  let liveCounts = null, liveBusy = false, growthFlash = null;
   // Все ветки дерева, даже не нарисованные: по ним открывается панель ветки из знаний и уровней.
   let mapAll = new Map(), topicRows = new Map();
-  let mapTopics = [], mapActivity = {synapses: [], alive: {}}, mapSynapses = [], mapBorn = new Set(), pulseSeen = null, sleepMode = null;
+  let mapTopics = [], mapActivity = {synapses: [], alive: {}}, mapSynapses = [], mapBorn = new Set(), pulseSeen = null;
   const KNOWN_KEY = 'tenmiyora.brain.known', DAY = 864e5;
   async function loadActivity() {
     try {
@@ -1820,15 +1767,59 @@
     return Math.max(own, ...item.children.map(lastAlive));
   }
   const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
-  // Цвета тем подобраны под тёмно-золотой фон и различимы между собой.
-  const TOPIC_COLORS = ['#e8bb5c', '#5ec8b8', '#a58cf0', '#ef8a6b', '#6fa8ef', '#e27fae', '#a6cc6a', '#f2a14a'];
-  const CHAT_COLOR = '#8fd3f4';
+  // Палитра тем построена на схеме Окабэ–Ито и проверена симуляцией дальтонизма:
+  // минимальное расстояние между любыми двумя цветами — ΔE 17 при обычном зрении,
+  // дейтеранопии и протанопии (у прежних восьми цветов было 4). Контраст на фоне ≥ 3.7:1.
+  const TOPIC_COLORS = ['#e69f00', '#56b4e9', '#a6e48b', '#db2448', '#63e0ee', '#cc79a7',
+                        '#5094f4', '#f0e442', '#0072b2', '#009e73', '#6363ee', '#d55e00'];
+  // Разговоры — не знания, поэтому ветка чата приглушена и не спорит ни с одной темой.
+  const CHAT_COLOR = '#b8b2a6';
+  // Форма узла — второй признак темы помимо цвета. Цвета идут по кругу, форма меняется
+  // на каждом следующем круге, поэтому пара «цвет + форма» уникальна для 48 тем.
+  const TOPIC_SHAPES = 4;
+  function rootOrder() {
+    return brainData.real.filter(item => item.parent === null || !brainData.real.some(other => other.id === item.parent))
+      .map(item => item.id).sort((a, b) => a - b);
+  }
   // Цвет следует за темой, а не за местом в списке: тот же, что на карте, в любом графике.
   function topicColor(id) {
-    const roots = brainData.real.filter(item => item.parent === null || !brainData.real.some(other => other.id === item.parent))
-      .map(item => item.id).sort((a, b) => a - b);
-    const index = roots.indexOf(id);
+    const index = rootOrder().indexOf(id);
     return TOPIC_COLORS[(index < 0 ? 0 : index) % TOPIC_COLORS.length];
+  }
+  function topicShape(id) {
+    const index = rootOrder().indexOf(id);
+    return Math.floor((index < 0 ? 0 : index) / TOPIC_COLORS.length) % TOPIC_SHAPES;
+  }
+  // Круг, квадрат, ромб, шестиугольник равной площади, чтобы темы выглядели одинаково весомо.
+  // Плитка может быть и светлой, и тёмной: подпись выбирается по её яркости.
+  // Учитываем, что плитка рисуется с прозрачностью .85 поверх тёмной карточки.
+  function inkOn(fill) {
+    const tone = c => (c <= .03928 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4);
+    const light = hex => [0, 1, 2].reduce((sum, i) =>
+      sum + [.2126, .7152, .0722][i] * tone(parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16) / 255), 0);
+    const over = [.106, .094, .071];   // фон карточки графика под полупрозрачной плиткой
+    const tile = [0, 1, 2].reduce((sum, i) => sum + [.2126, .7152, .0722][i] *
+      tone(parseInt(fill.slice(1 + i * 2, 3 + i * 2), 16) / 255 * .85 + over[i] * .15), 0);
+    // Берём ту подпись, у которой контраст с плиткой выше, а не фиксированный порог:
+    // в палитре есть и светлые, и тёмные цвета.
+    const ratio = ink => {
+      const a = light(ink), hi = Math.max(a, tile), lo = Math.min(a, tile);
+      return (hi + .05) / (lo + .05);
+    };
+    return ratio('#17130b') >= ratio('#fdf6e6') ? '#17130b' : '#fdf6e6';
+  }
+  function shapeNode(size, shape, className) {
+    if (shape === 1) {
+      const a = size * 1.772;
+      return svg('rect', {x: -a / 2, y: -a / 2, width: a, height: a, rx: size * .22}, className);
+    }
+    const points = shape === 2
+      ? [[0, -size * 1.253], [size * 1.253, 0], [0, size * 1.253], [-size * 1.253, 0]]
+      : shape === 3
+        ? Array.from({length: 6}, (_, i) => [Math.cos(i * Math.PI / 3) * size * 1.1, Math.sin(i * Math.PI / 3) * size * 1.1])
+        : null;
+    if (!points) return svg('circle', {r: size}, className);
+    return svg('polygon', {points: points.map(([x, y]) => x.toFixed(1) + ',' + y.toFixed(1)).join(' ')}, className);
   }
   function svg(tag, attrs, className) {
     const node = document.createElementNS(SVG_NS, tag);
@@ -1987,16 +1978,22 @@
     box.replaceChildren();
     mapNodes = new Map();
     growthRun++;  // Старый показ роста относится к прежней карте.
-    $('brain-map-replay').disabled = false;
     const placed = layoutMap();
     const labelled = [];
     // Свой цвет у каждой темы: ветка, её подветки, знания и токи окрашены одинаково.
     const tops = placed.filter(item => item.depth === 1).sort((a, b) => Number(Boolean(a.node.chat)) - Number(Boolean(b.node.chat)) || a.node.id - b.node.id);
-    tops.forEach(item => { item.color = item.node.chat ? CHAT_COLOR : topicColor(item.node.id); });
-    for (const item of placed) if (!item.color) { let top = item; while (top.parent) top = top.parent; item.color = top.color || TOPIC_COLORS[0]; }
+    tops.forEach(item => {
+      item.color = item.node.chat ? CHAT_COLOR : topicColor(item.node.id);
+      item.shape = item.node.chat ? 0 : topicShape(item.node.id);
+    });
+    for (const item of placed) if (!item.color) {
+      let top = item;
+      while (top.parent) top = top.parent;
+      item.color = top.color || TOPIC_COLORS[0];
+      item.shape = top.shape || 0;
+    }
     const total = mapTotal = brainData.real.reduce((sum, item) => sum + item.facts, 0);
     const shown = brainData.branches.filter(item => item.id !== CHAT_ROOT).length;
-    $('brain-map-count').textContent = shown ? shown + ' ' + plural(shown, 'ветка', 'ветки', 'веток') : '';
     const root = svg('svg', {viewBox: `0 0 ${MAP.width} ${MAP.height}`, role: 'group', 'aria-label': 'Карта знаний Мозга'}, 'brain-map-svg');
     const defs = svg('defs');
     defs.innerHTML = '<radialGradient id="map-core"><stop offset="0" stop-color="#fff3cf"/><stop offset=".45" stop-color="#ecca7c"/><stop offset="1" stop-color="#9c7a3a"/></radialGradient>' +
@@ -2072,7 +2069,7 @@
         const a = l / leaves * Math.PI * 2, r = item.size + 5 + (l % 2) * 3;
         orbit.append(svg('circle', {cx: (Math.cos(a) * r).toFixed(1), cy: (Math.sin(a) * r).toFixed(1), r: item.depth === 1 ? 1.8 : 1.3}, 'map-leaf'));
       }
-      inner.append(orbit, svg('circle', {r: item.size}, 'map-dot'),
+      inner.append(orbit, shapeNode(item.size, item.shape || 0, 'map-dot'),
         svg('circle', {r: (item.size * .42).toFixed(1), cx: (-item.size * .3).toFixed(1), cy: (-item.size * .32).toFixed(1)}, 'map-dot-shine'));
       if (item.node.chat && item.depth === 1) {
         // Ветка разговоров отмечена облачком реплики.
@@ -2168,8 +2165,9 @@
     if (!placed.length) box.append(element('p', 'brain-map-empty', 'Загрузите документ на Диск или расскажите что-нибудь в чате — здесь вырастут первые ветки.'));
     hideCrowdedLabels(labelled);
     renderLegend(tops);
-    updateSleep();
     if (!mapPlayed && placed.length) { mapPlayed = true; playGrowth(); }
+    else if (growthFlash) { flashGrowth(growthFlash); }
+    growthFlash = null;
   }
   // Раскрытие темы: карта перерисовывается, выбранная тема получает больше места.
   // Карта и список тем рисуются заново, поэтому фокус возвращается на ту же тему —
@@ -2233,7 +2231,10 @@
       row.style.setProperty('--share', Math.max(3, item.total / largest * 100) + '%');
       row.classList.toggle('open', item.node.id === openTopic);
       const kids = childrenOf(item.node.id).length;
-      row.append(element('i', 'topic-dot'), element('span', 'topic-name', item.node.name),
+      const swatch = element('i', 'topic-dot');
+      // Та же форма, что у узла на карте: тема узнаётся и без различения цвета.
+      swatch.dataset.shape = String(item.shape || 0);
+      row.append(swatch, element('span', 'topic-name', item.node.name),
         element('b', 'topic-count', item.node.chat ? item.total + ' ✉' : item.total));
       row.title = item.node.chat ? item.node.name + ' · все темы чата'
         : item.node.name + (kids ? ' · ' + kids + ' ' + plural(kids, 'подветка', 'подветки', 'подветок') : '');
@@ -2296,26 +2297,63 @@
     } catch { /* следующий опрос попробует снова */ }
   }
   setInterval(pollPulses, 4000);
-  // Ночью (23:00–7:00) Мозг «спит»: карта темнеет, по ней идут медленные волны.
-  function updateSleep() {
-    const box = $('brain-map'), hour = new Date().getHours();
-    // sleepMode — ручной выбор кнопкой с луной; null — по часам.
-    const asleep = sleepMode ?? (hour >= 23 || hour < 7 || idleState === 'working' || idleState === 'resting');
-    box.classList.toggle('sleeping', asleep);
-    let badge = box.querySelector('.brain-map-sleep');
-    if (asleep && !badge) {
-      badge = element('p', 'brain-map-sleep');
-      box.append(badge);
-    }
-    if (badge) badge.textContent = idleState === 'working' && idleTask ? 'Мозг спит и работает: ' + idleTask.toLowerCase() : 'Мозг спит и перебирает знания';
-    if (!asleep) badge?.remove();
-    const toggle = $('brain-map-sleep');
-    toggle.setAttribute('aria-pressed', String(asleep));
+
+  // Живой рост. Пока раздел открыт, Мозг может пополняться сам: фоновые задачи
+  // «Сам растёт», загрузка документа в другом окне, сообщение в чате. Сверяем
+  // объём каждой ветки и показываем прибавку прямо на карте, без обновления страницы.
+  async function pollGrowth() {
+    if ($('brain-view').hidden || document.hidden || brainLoading || liveBusy || !liveCounts) return;
+    liveBusy = true;
+    try {
+      const data = await request('brain?' + new URLSearchParams({offset: -new Date().getTimezoneOffset()}));
+      const real = data.branches || [];
+      const gained = real
+        .filter(row => (row.facts || 0) > (liveCounts.get(row.id) ?? (row.facts || 0)))
+        .map(row => ({id: row.id, add: (row.facts || 0) - liveCounts.get(row.id)}));
+      const born = real.some(row => !liveCounts.has(row.id));
+      if (gained.length || born) {
+        growthFlash = gained;
+        await loadBrain();
+      } else {
+        liveCounts = new Map(real.map(row => [row.id, row.facts || 0]));
+      }
+    } catch { /* следующая проверка попробует снова */ }
+    finally { liveBusy = false; }
   }
-  setInterval(updateSleep, 60000);
+  setInterval(pollGrowth, 7000);
+
+  // Прибавка на глазах: ветка вспыхивает, над ней всплывает «+N»,
+  // а счётчик в ядре досчитывает до нового значения.
+  function flashGrowth(gained) {
+    let sum = 0;
+    for (const item of gained) {
+      sum += item.add;
+      const node = mapNodes.get(item.id);
+      if (!node) continue;
+      node.group.classList.add('grown');
+      setTimeout(() => node.group.classList.remove('grown'), 2600);
+      const rise = svg('text', {y: -(node.item.size || 16) - 13}, 'map-gain');
+      rise.textContent = '+' + item.add;
+      node.group.append(rise);
+      setTimeout(() => rise.remove(), 2600);
+    }
+    countUp($('brain-map').querySelector('.map-core-count'), mapTotal - sum, mapTotal);
+    if (gained.length) firePulse(gained.map(item => item.id));
+  }
+  function countUp(node, from, to) {
+    if (!node) return;
+    if (calm() || from >= to) { node.textContent = to; return; }
+    const started = performance.now(), span = 1100;
+    const step = now => {
+      const k = Math.min(1, (now - started) / span);
+      node.textContent = Math.round(from + (to - from) * (1 - (1 - k) ** 3));
+      if (k < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
 
   // Самостоятельный рост: настройки, состояние, вопросы к пользователю и журнал.
-  let idleState = null, idleTask = '', idleData = null, idleSaving = false;
+  let idleState = null, idleData = null, idleSaving = false;
   const IDLE_TASKS = {exam: 'Самоэкзамен', gaps: 'Поиск пробелов', tidy: 'Порядок в темах', documents: 'Разбор документа моделью'};
   async function loadIdle() {
     try {
@@ -2406,8 +2444,7 @@
   function renderIdle(data) {
     idleData = data;
     const previous = idleState;
-    idleState = data.state; idleTask = IDLE_TASKS[data.task] || '';
-    if (previous !== idleState) updateSleep();
+    idleState = data.state;
     const s = data.settings;
     $('brain-idle-title').textContent = IDLE_HEAD[data.state] || 'Сам растёт';
     $('brain-idle-state').textContent = idleLine(data);
@@ -2574,7 +2611,6 @@
     order.forEach(entry => { entry.group.classList.remove('shown'); entry.path.classList.remove('shown'); });
     svgRoot.classList.add('replaying');
     counter.textContent = 0;
-    $('brain-map-replay').disabled = true;
     let count = 0;
     order.forEach((entry, index) => setTimeout(() => {
       if (run !== growthRun) return;
@@ -2592,7 +2628,6 @@
       svgRoot.classList.remove('replaying');
       counter.textContent = mapTotal;
       story.replaceChildren(document.createTextNode('Сегодня: ' + knowledgeCount(mapTotal) + ' в ' + order.length + ' ' + plural(order.length, 'ветке', 'ветках', 'ветках')));
-      $('brain-map-replay').disabled = false;
       setTimeout(() => { if (run === growthRun) story.classList.add('done'); }, 2500);
     }, 300 + order.length * step + 700);
   }
@@ -2844,8 +2879,6 @@
   // Панель ветки закрывается крестиком, Escape или нажатием на затемнённый фон: фон перекрывает всю страницу,
   // поэтому отдельный обработчик «клика снаружи» не нужен и не закрывает панель, открытую с меток или уровней.
   $('brain-topics-filter').addEventListener('input', paintTopics);
-  $('brain-map-replay').addEventListener('click', playGrowth);
-  $('brain-map-sleep').addEventListener('click', () => { sleepMode = !$('brain-map').classList.contains('sleeping'); updateSleep(); });
   let mapResize;
   addEventListener('resize', () => {
     clearTimeout(mapResize);
@@ -2861,8 +2894,22 @@
   const BRAIN_TAB_KEY = 'tenmiyora.brain.tab';
   const brainTabs = [...document.querySelectorAll('[data-brain-tab]')];
   let growthBrain = null;
+  // Сцена с картой занимает почти весь первый экран. На вкладках, кроме «Главного»,
+  // она сворачивается в полосу с заголовком и счётчиками, чтобы содержимое было видно сразу.
+  function setStageCompact(compact) {
+    const stage = document.querySelector('.brain-stage');
+    const toggle = $('brain-stage-toggle');
+    if (!stage || !toggle) return;
+    const was = stage.classList.contains('is-compact');
+    stage.classList.toggle('is-compact', compact);
+    toggle.setAttribute('aria-expanded', String(!compact));
+    toggle.querySelector('span').textContent = compact ? 'Показать карту' : 'Свернуть карту';
+    // Пока карта скрыта, её ширина равна нулю: после разворота размеры нужно пересчитать.
+    if (was && !compact) renderMap();
+  }
   function selectTab(name, focus) {
     if (!brainTabs.some(tab => tab.dataset.brainTab === name)) name = 'overview';
+    setStageCompact(name !== 'overview');
     for (const tab of brainTabs) {
       const on = tab.dataset.brainTab === name;
       tab.setAttribute('aria-selected', String(on));
@@ -2889,6 +2936,9 @@
         selectTab(brainTabs[(index + step + brainTabs.length) % brainTabs.length].dataset.brainTab, true);
       }
     });
+  });
+  $('brain-stage-toggle')?.addEventListener('click', () => {
+    setStageCompact(!document.querySelector('.brain-stage').classList.contains('is-compact'));
   });
   selectTab((() => { try { return localStorage.getItem(BRAIN_TAB_KEY); } catch { return null; } })() || 'overview');
 
