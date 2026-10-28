@@ -7,9 +7,11 @@
   --surface-3:#26221a;
   --line:#2c271d;
   --line-strong:#4a3f29;
+  /* Граница поля ввода: декоративный --line-strong даёт 1.78:1, WCAG 1.4.11 требует 3:1. */
+  --field:#807466;
   --text:#ece5d3;
   --muted:#a59d89;
-  --faint:#7a7362;
+  --faint:#92877c;
   --gold:#d4af5f;
   --gold-bright:#ecca7c;
   --gold-deep:#9c7a3a;
@@ -102,7 +104,7 @@ h1 em{font-style:normal;color:var(--gold)}
 .window-header h2{font:22px var(--serif);letter-spacing:-.3px;margin:0;color:var(--gold-bright)}
 .window-identity{display:flex;align-items:center;gap:11px;min-width:0}
 .window-identity strong{font:19px var(--serif);color:var(--gold-bright)}
-.window-identity small{display:block;font-size:11px;color:var(--faint);margin-top:1px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.window-identity small{display:block;font-size:12px;color:var(--faint);margin-top:1px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mini-portrait{width:38px;height:38px;overflow:hidden;border-radius:50%;background:var(--surface-3);border:1px solid var(--gold-deep);position:relative;flex-shrink:0}
 .mini-portrait img{position:absolute;width:96px;max-width:none;left:-29px;top:-4px}
 .window-actions{display:flex;align-items:center;gap:4px}
@@ -120,14 +122,14 @@ h1 em{font-style:normal;color:var(--gold)}
 .chat-suggestions button:hover{border-color:var(--gold-deep);background:var(--surface-3)}
 .message{display:flex;flex-direction:column;align-items:flex-start;margin:0 0 16px}
 .message.user{align-items:flex-end}
-.message-name{font-size:11px;color:var(--faint);padding:0 2px;margin-bottom:4px}
+.message-name{font-size:12px;color:var(--faint);padding:0 2px;margin-bottom:4px}
 .message-body{max-width:94%;overflow-wrap:anywhere;font-size:14px;line-height:1.65;background:var(--surface-3);border:1px solid var(--line);border-radius:3px 12px 12px;padding:10px 13px;color:var(--text)}
 .user .message-body{white-space:pre-wrap;color:var(--on-gold);background:var(--gold);border-color:var(--gold);border-radius:12px 3px 12px 12px}
 .message.error .message-body{background:var(--danger-soft);border-color:#e3916d55;color:var(--danger)}
 .message.error .message-body,.message.pending .message-body{white-space:pre-wrap}
 .message.pending .message-body{color:var(--gold)}
-.message time{font-size:10px;color:var(--faint);margin-top:4px;padding:0 2px}
-.provider-limit-note{font-size:11px;color:var(--gold);margin-top:6px;line-height:1.6;max-width:94%}
+.message time{font-size:12px;color:var(--faint);margin-top:4px;padding:0 2px}
+.provider-limit-note{font-size:12px;color:var(--gold);margin-top:6px;line-height:1.6;max-width:94%}
 .connection-hint{padding:9px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--gold-soft);border-top:1px solid var(--line-strong);font-size:12px;color:var(--gold-bright);flex-shrink:0}
 .connection-hint .text-button{white-space:nowrap}
 .chat-composer{border:1px solid var(--line-strong);border-radius:10px;margin:12px;padding:10px 12px;background:var(--bg);flex-shrink:0}
@@ -136,7 +138,7 @@ h1 em{font-style:normal;color:var(--gold)}
 .chat-composer textarea::placeholder{color:var(--faint)}
 .chat-composer textarea:focus-visible{outline:none}
 .composer-bottom{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:6px}
-.composer-bottom>span{font-size:11px;color:var(--faint)}
+.composer-bottom>span{font-size:12px;color:var(--faint)}
 .send-button{width:32px;height:32px;background:var(--gold);color:var(--on-gold);border-radius:8px;display:flex;align-items:center;justify-content:center}
 .send-button:hover{background:var(--gold-bright)}
 .send-button svg{width:17px;height:17px}
@@ -153,29 +155,29 @@ h1 em{font-style:normal;color:var(--gold)}
 input[type=range]{width:100%;height:3px;accent-color:var(--gold);margin:8px 0 14px;cursor:pointer}
 .toggle-row{display:flex;align-items:center;justify-content:space-between;position:relative;gap:12px;padding:14px 0;border-top:1px solid var(--line);cursor:pointer}
 .toggle-row strong{display:block;font-size:13px;font-weight:500}
-.toggle-row small{display:block;color:var(--faint);font-size:11px;margin-top:3px}
+.toggle-row small{display:block;color:var(--faint);font-size:12px;margin-top:3px}
 .toggle-row input{position:absolute;right:0;opacity:0;width:34px;height:22px;margin:0}
 .toggle-ui{display:block;width:34px;height:20px;border-radius:12px;background:var(--surface-3);border:1px solid var(--line-strong);position:relative;pointer-events:none;flex-shrink:0}
 .toggle-ui:after{content:"";width:14px;height:14px;position:absolute;left:2px;top:2px;background:var(--muted);border-radius:50%;transition:transform .2s,background .2s}
 .toggle-row input:checked+.toggle-ui{background:var(--gold-deep);border-color:var(--gold)}
 .toggle-row input:checked+.toggle-ui:after{transform:translateX(14px);background:var(--gold-bright)}
 .toggle-row input:focus-visible+.toggle-ui{outline:2px solid var(--gold);outline-offset:3px}
-.settings-help{font-size:11px;line-height:1.7;color:var(--faint);margin:14px 0 0}
-.settings-footer{display:flex;align-items:center;justify-content:center;gap:6px;padding:11px;background:var(--surface-2);border-top:1px solid var(--line);font-size:11px;color:var(--muted);flex-shrink:0}
+.settings-help{font-size:12px;line-height:1.7;color:var(--faint);margin:14px 0 0}
+.settings-footer{display:flex;align-items:center;justify-content:center;gap:6px;padding:11px;background:var(--surface-2);border-top:1px solid var(--line);font-size:12px;color:var(--muted);flex-shrink:0}
 .settings-footer svg{width:13px;height:13px;color:var(--ok)}
 .provider-heading{display:flex;align-items:center;gap:12px;padding:14px;background:var(--surface-2);border:1px solid var(--line-strong);border-radius:10px;margin-bottom:14px}
 .provider-mark{font-size:26px;color:var(--gold)}
 .provider-heading strong{font:20px var(--serif);display:block;color:var(--gold-bright)}
-.provider-heading span:not(.provider-mark){display:block;font-size:11px;color:var(--muted);margin-top:2px}
+.provider-heading span:not(.provider-mark){display:block;font-size:12px;color:var(--muted);margin-top:2px}
 .connection-intro{font-size:13px;color:var(--muted);line-height:1.7;margin:0 0 18px}
 .field-label{display:block;font-size:13px;margin:14px 0 7px}
-.field-label>span{font-size:11px;color:var(--gold);float:right}
-input[type=url],input[type=password],input[type=text],input[type=search],select{display:block;width:100%;border:1px solid var(--line-strong);background:var(--bg);padding:10px;border-radius:7px;font-size:13px;color:var(--text);min-width:0}
+.field-label>span{font-size:12px;color:var(--gold);float:right}
+input[type=url],input[type=password],input[type=text],input[type=search],select{display:block;width:100%;border:1px solid var(--field);background:var(--bg);padding:10px;border-radius:7px;font-size:13px;color:var(--text);min-width:0}
 input::placeholder{color:var(--faint)}
 select{text-overflow:ellipsis}
 select option,select optgroup{background:var(--surface);color:var(--text)}
 select option:disabled{color:var(--faint)}
-.field-help{display:block;font-size:11px;color:var(--faint);line-height:1.6;margin-top:5px}
+.field-help{display:block;font-size:12px;color:var(--faint);line-height:1.6;margin-top:5px}
 .connection-buttons{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-top:18px}
 .connection-buttons .primary-button{flex:1;font-size:13px;padding:10px 14px;gap:12px}
 .connection-summary{font-size:12px;color:var(--muted);margin:16px 0 0;line-height:1.7}
@@ -282,7 +284,7 @@ select option:disabled{color:var(--faint)}
 .message-body.rich hr{border:0;border-top:1px solid var(--line-strong);margin:1em 0}
 .message-body.rich code{font:12.5px ui-monospace,Consolas,monospace;background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:1px 5px;color:var(--gold-bright)}
 .md-code{position:relative;margin:0 0 .8em;background:var(--bg);border:1px solid var(--line-strong);border-radius:9px}
-.md-code[data-lang]:before{content:attr(data-lang);position:absolute;left:12px;top:6px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.md-code[data-lang]:before{content:attr(data-lang);position:absolute;left:12px;top:6px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
 .md-code pre{margin:0;padding:26px 12px 12px;overflow-x:auto;scrollbar-width:thin;scrollbar-color:var(--line-strong) transparent}
 .md-code[data-lang] pre{padding-top:26px}
 .md-code:not([data-lang]) pre{padding-top:12px}

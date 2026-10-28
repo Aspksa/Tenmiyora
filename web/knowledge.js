@@ -1309,6 +1309,14 @@
   }
   // ---- Графики роста: одиннадцать разных взглядов на то, как растёт Мозг ----
   let growthData = null, chartNarrow = false;
+  // Пока Мозг пополнялся меньше трёх дней, график по дням — это оси и легенда вокруг
+  // одной точки. В таком случае вместо обвязки показываем строку, что данных мало.
+  let chartsSparse = false, chartsWait = '';
+  function sparseStop(body) {
+    if (!chartsSparse) return false;
+    chartEmpty(body, chartsWait);
+    return true;
+  }
   const GOLD = '#ecca7c', HEAT = ['#26221a', '#4a3c20', '#7a5e2c', '#b38a40', '#ecca7c'];
   const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
   function chartCard(box, title, note, className) {
@@ -1369,6 +1377,7 @@
   // 1. Поток тем: каждая тема — свой цветной поток, толщина — сколько узнал за день.
   function chartStream(box, stream, dates) {
     const {body, bind} = chartCard(box, 'Поток тем', 'Как каждая тема наполнялась день за днём. Толщина потока — новые знания.', 'span-12 is-stream');
+    if (sparseStop(body)) return;
     const total = stream.reduce((sum, topic) => sum + topic.days.reduce((a, b) => a + b, 0), 0);
     if (!total) { chartEmpty(body, 'За 30 дней темы не пополнялись.'); return; }
     const W = chartNarrow ? 270 : 1000, H = chartNarrow ? 170 : 220, n = dates.length;
@@ -1416,6 +1425,7 @@
   // 2. Прирост по дням: столбцы растут снизу, сегодняшний светится.
   function chartDaily(box, series) {
     const {body, bind} = chartCard(box, 'Прирост по дням', 'Сколько новых знаний Мозг получил в каждый из 30 дней.', 'span-8');
+    if (sparseStop(body)) return;
     const W = chartNarrow ? 270 : 600, H = 180, n = series.length, step = W / n, top = niceMax(Math.max(...series.map(day => day.added), 1));
     const svgNode = chartSvg(W, H + 4, 'Прирост по дням: всего ' + series.reduce((sum, day) => sum + day.added, 0));
     const defs = svgEl('defs');
@@ -1442,6 +1452,7 @@
   // 3. Часы Мозга: в какие часы суток он узнаёт новое.
   function chartClock(box, hours) {
     const {body, bind} = chartCard(box, 'Часы Мозга', 'В какое время суток приходят знания.', 'span-4');
+    if (sparseStop(body)) return;
     const total = hours.reduce((a, b) => a + b, 0);
     if (!total) { chartEmpty(body, 'Пока нет данных.'); return; }
     const S = 260, c = S / 2, inner = 42, outer = 112, top = Math.max(...hours);
@@ -1471,6 +1482,7 @@
   // 4. Календарь: 12 недель, чем ярче клетка — тем больше узнал.
   function chartHeatmap(box, days) {
     const {body, bind} = chartCard(box, 'Календарь роста', 'Двенадцать недель. Яркая клетка — день, когда Мозг узнал много.', 'span-8');
+    if (sparseStop(body)) return;
     const cell = 15, gap = 4, left = 26, topPad = 18;
     const first = new Date(days[0].date + 'T12:00:00');
     const shift = (first.getDay() + 6) % 7;
@@ -1577,8 +1589,15 @@
       const rect = svgEl('rect', {x: tile.x + 1.5, y: tile.y + 1.5, width: Math.max(0, tile.w - 3), height: Math.max(0, tile.h - 3), rx: 6, fill: tile.color});
       group.append(rect);
       if (tile.w > 70 && tile.h > 40) {
-        const name = chartText(tile.x + 10, tile.y + 22, tile.name.length > (tile.w - 16) / 7.4 ? tile.name.slice(0, Math.floor((tile.w - 16) / 7.4) - 1) + '…' : tile.name, 'tree-name', 'start');
-        group.append(name, chartText(tile.x + 10, tile.y + 42, tile.value, 'tree-value', 'start'));
+        // 8.2 px на знак: прежние 7.4 обрезали кириллицу позже, чем кончалась плитка.
+        const fit = Math.floor((tile.w - 16) / 8.2);
+        const name = chartText(tile.x + 10, tile.y + 22, tile.name.length > fit ? tile.name.slice(0, Math.max(1, fit - 1)) + '…' : tile.name, 'tree-name', 'start');
+        const value = chartText(tile.x + 10, tile.y + 42, tile.value, 'tree-value', 'start');
+        const ink = inkOn(tile.color);
+        name.style.fill = ink;
+        value.style.fill = ink;
+        value.style.opacity = '.8';
+        group.append(name, value);
       }
       bind(group, [tile.name, knowledgeCount(tile.value) + (tile.week ? ' · +' + tile.week + ' за неделю' : '')]);
       svgNode.append(group);
@@ -1622,6 +1641,7 @@
   // 8. Ветвление: сколько веток было к каждому дню.
   function chartBranches(box, series) {
     const {body, bind} = chartCard(box, 'Ветвление', 'Как прибавлялись ветки за 30 дней.', 'span-4');
+    if (sparseStop(body)) return;
     if (!series.length || !series[series.length - 1].total) { chartEmpty(body, 'Веток пока нет.'); return; }
     const W = 300, H = 150, n = series.length, low = series[0].total, high = Math.max(series[n - 1].total, low + 1);
     const x = i => i / (n - 1) * W, y = v => H - 10 - (v - low) / (high - low) * (H - 30);
@@ -1642,6 +1662,7 @@
   // 9. По неделям: восемь недель, последняя сравнивается с прошлой.
   function chartWeeks(box, weeks) {
     const {body, bind, head} = chartCard(box, 'По неделям', 'Новые знания за каждую из восьми недель.', 'span-4');
+    if (sparseStop(body)) return;
     const last = weeks[weeks.length - 1]?.added || 0, before = weeks[weeks.length - 2]?.added || 0;
     if (before || last) {
       const delta = before ? Math.round((last - before) / before * 100) : null;
@@ -1665,6 +1686,7 @@
   // 10. Ритм недели: в какие дни недели Мозг растёт.
   function chartWeekdays(box, weekdays) {
     const {body, bind} = chartCard(box, 'Ритм недели', 'В какие дни недели приходят знания.', 'span-4');
+    if (sparseStop(body)) return;
     const top = Math.max(...weekdays, 1);
     if (!weekdays.some(Boolean)) { chartEmpty(body, 'Пока нет данных.'); return; }
     const W = 300, H = 150, step = W / 7;
@@ -1683,6 +1705,7 @@
   // 11. Разговоры: сколько вы писали Tenmiyora каждый день.
   function chartChat(box, chat) {
     const {body, bind} = chartCard(box, 'Разговоры', 'Ваши сообщения в чате по дням. Темы разговоров видны на карте в ветке «Разговоры».', 'span-12 is-chat');
+    if (sparseStop(body)) return;
     const series = chat?.series || [];
     if (!series.some(day => day.messages)) { chartEmpty(body, 'За 30 дней сообщений не было.'); return; }
     const W = chartNarrow ? 270 : 1000, H = 150, n = series.length, top = niceMax(Math.max(...series.map(day => day.messages), 1));
@@ -1705,6 +1728,7 @@
     body.append(svgNode, chartDates(series.map(day => day.date)));
   }
 
+  let chartsExpanded = false;
   function renderCharts() {
     const box = $('brain-charts');
     if (!box || !growthData) return;
@@ -1713,17 +1737,37 @@
     box.replaceChildren();
     const charts = growthData.charts || {};
     const dates = growthData.series.map(day => day.date);
+    const days = growthData.series.filter(day => day.added > 0).length;
+    chartsSparse = days < 3;
+    chartsWait = days
+      ? 'Пока рано строить график: знания приходили ' + days + ' ' + plural(days, 'день', 'дня', 'дней')
+        + '. Нужно хотя бы три дня наблюдений.'
+      : 'Знаний за 30 дней не прибавлялось. График появится, когда Мозг начнёт пополняться.';
     chartStream(box, charts.stream || [], dates);
     chartDaily(box, growthData.series);
-    chartClock(box, charts.hours || []);
-    chartHeatmap(box, charts.heatmap || []);
     chartSources(box, charts.sources || {file: 0, chat: 0, other: 0});
     chartTreemap(box, growthTopics);
     chartRadar(box, growthTopics);
+    // Остальные шесть взглядов на рост нужны реже: открываются по кнопке.
+    const from = box.children.length;
+    chartHeatmap(box, charts.heatmap || []);
+    chartClock(box, charts.hours || []);
     chartWeeks(box, charts.weeks || []);
     chartWeekdays(box, charts.weekdays || []);
     chartBranches(box, charts.branches || []);
     chartChat(box, brainData.chat);
+    const extra = [...box.children].slice(from);
+    extra.forEach(card => card.classList.add('chart-extra'));
+    const more = button('', () => { chartsExpanded = !chartsExpanded; apply(); }, 'charts-more');
+    const apply = () => {
+      box.classList.toggle('collapsed', !chartsExpanded);
+      more.setAttribute('aria-expanded', String(chartsExpanded));
+      more.replaceChildren(document.createTextNode(chartsExpanded
+        ? 'Свернуть дополнительные графики'
+        : 'Показать ещё ' + extra.length + ' ' + plural(extra.length, 'график', 'графика', 'графиков')));
+    };
+    box.append(more);
+    apply();
   }
   async function loadGrowth() {
     try {
@@ -1808,15 +1852,59 @@
     return Math.max(own, ...item.children.map(lastAlive));
   }
   const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
-  // Цвета тем подобраны под тёмно-золотой фон и различимы между собой.
-  const TOPIC_COLORS = ['#e8bb5c', '#5ec8b8', '#a58cf0', '#ef8a6b', '#6fa8ef', '#e27fae', '#a6cc6a', '#f2a14a'];
-  const CHAT_COLOR = '#8fd3f4';
+  // Палитра тем построена на схеме Окабэ–Ито и проверена симуляцией дальтонизма:
+  // минимальное расстояние между любыми двумя цветами — ΔE 17 при обычном зрении,
+  // дейтеранопии и протанопии (у прежних восьми цветов было 4). Контраст на фоне ≥ 3.7:1.
+  const TOPIC_COLORS = ['#e69f00', '#56b4e9', '#a6e48b', '#db2448', '#63e0ee', '#cc79a7',
+                        '#5094f4', '#f0e442', '#0072b2', '#009e73', '#6363ee', '#d55e00'];
+  // Разговоры — не знания, поэтому ветка чата приглушена и не спорит ни с одной темой.
+  const CHAT_COLOR = '#b8b2a6';
+  // Форма узла — второй признак темы помимо цвета. Цвета идут по кругу, форма меняется
+  // на каждом следующем круге, поэтому пара «цвет + форма» уникальна для 48 тем.
+  const TOPIC_SHAPES = 4;
+  function rootOrder() {
+    return brainData.real.filter(item => item.parent === null || !brainData.real.some(other => other.id === item.parent))
+      .map(item => item.id).sort((a, b) => a - b);
+  }
   // Цвет следует за темой, а не за местом в списке: тот же, что на карте, в любом графике.
   function topicColor(id) {
-    const roots = brainData.real.filter(item => item.parent === null || !brainData.real.some(other => other.id === item.parent))
-      .map(item => item.id).sort((a, b) => a - b);
-    const index = roots.indexOf(id);
+    const index = rootOrder().indexOf(id);
     return TOPIC_COLORS[(index < 0 ? 0 : index) % TOPIC_COLORS.length];
+  }
+  function topicShape(id) {
+    const index = rootOrder().indexOf(id);
+    return Math.floor((index < 0 ? 0 : index) / TOPIC_COLORS.length) % TOPIC_SHAPES;
+  }
+  // Круг, квадрат, ромб, шестиугольник равной площади, чтобы темы выглядели одинаково весомо.
+  // Плитка может быть и светлой, и тёмной: подпись выбирается по её яркости.
+  // Учитываем, что плитка рисуется с прозрачностью .85 поверх тёмной карточки.
+  function inkOn(fill) {
+    const tone = c => (c <= .03928 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4);
+    const light = hex => [0, 1, 2].reduce((sum, i) =>
+      sum + [.2126, .7152, .0722][i] * tone(parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16) / 255), 0);
+    const over = [.106, .094, .071];   // фон карточки графика под полупрозрачной плиткой
+    const tile = [0, 1, 2].reduce((sum, i) => sum + [.2126, .7152, .0722][i] *
+      tone(parseInt(fill.slice(1 + i * 2, 3 + i * 2), 16) / 255 * .85 + over[i] * .15), 0);
+    // Берём ту подпись, у которой контраст с плиткой выше, а не фиксированный порог:
+    // в палитре есть и светлые, и тёмные цвета.
+    const ratio = ink => {
+      const a = light(ink), hi = Math.max(a, tile), lo = Math.min(a, tile);
+      return (hi + .05) / (lo + .05);
+    };
+    return ratio('#17130b') >= ratio('#fdf6e6') ? '#17130b' : '#fdf6e6';
+  }
+  function shapeNode(size, shape, className) {
+    if (shape === 1) {
+      const a = size * 1.772;
+      return svg('rect', {x: -a / 2, y: -a / 2, width: a, height: a, rx: size * .22}, className);
+    }
+    const points = shape === 2
+      ? [[0, -size * 1.253], [size * 1.253, 0], [0, size * 1.253], [-size * 1.253, 0]]
+      : shape === 3
+        ? Array.from({length: 6}, (_, i) => [Math.cos(i * Math.PI / 3) * size * 1.1, Math.sin(i * Math.PI / 3) * size * 1.1])
+        : null;
+    if (!points) return svg('circle', {r: size}, className);
+    return svg('polygon', {points: points.map(([x, y]) => x.toFixed(1) + ',' + y.toFixed(1)).join(' ')}, className);
   }
   function svg(tag, attrs, className) {
     const node = document.createElementNS(SVG_NS, tag);
@@ -1980,8 +2068,16 @@
     const labelled = [];
     // Свой цвет у каждой темы: ветка, её подветки, знания и токи окрашены одинаково.
     const tops = placed.filter(item => item.depth === 1).sort((a, b) => Number(Boolean(a.node.chat)) - Number(Boolean(b.node.chat)) || a.node.id - b.node.id);
-    tops.forEach(item => { item.color = item.node.chat ? CHAT_COLOR : topicColor(item.node.id); });
-    for (const item of placed) if (!item.color) { let top = item; while (top.parent) top = top.parent; item.color = top.color || TOPIC_COLORS[0]; }
+    tops.forEach(item => {
+      item.color = item.node.chat ? CHAT_COLOR : topicColor(item.node.id);
+      item.shape = item.node.chat ? 0 : topicShape(item.node.id);
+    });
+    for (const item of placed) if (!item.color) {
+      let top = item;
+      while (top.parent) top = top.parent;
+      item.color = top.color || TOPIC_COLORS[0];
+      item.shape = top.shape || 0;
+    }
     const total = mapTotal = brainData.real.reduce((sum, item) => sum + item.facts, 0);
     const shown = brainData.branches.filter(item => item.id !== CHAT_ROOT).length;
     $('brain-map-count').textContent = shown ? shown + ' ' + plural(shown, 'ветка', 'ветки', 'веток') : '';
@@ -2060,7 +2156,7 @@
         const a = l / leaves * Math.PI * 2, r = item.size + 5 + (l % 2) * 3;
         orbit.append(svg('circle', {cx: (Math.cos(a) * r).toFixed(1), cy: (Math.sin(a) * r).toFixed(1), r: item.depth === 1 ? 1.8 : 1.3}, 'map-leaf'));
       }
-      inner.append(orbit, svg('circle', {r: item.size}, 'map-dot'),
+      inner.append(orbit, shapeNode(item.size, item.shape || 0, 'map-dot'),
         svg('circle', {r: (item.size * .42).toFixed(1), cx: (-item.size * .3).toFixed(1), cy: (-item.size * .32).toFixed(1)}, 'map-dot-shine'));
       if (item.node.chat && item.depth === 1) {
         // Ветка разговоров отмечена облачком реплики.
@@ -2221,7 +2317,10 @@
       row.style.setProperty('--share', Math.max(3, item.total / largest * 100) + '%');
       row.classList.toggle('open', item.node.id === openTopic);
       const kids = childrenOf(item.node.id).length;
-      row.append(element('i', 'topic-dot'), element('span', 'topic-name', item.node.name),
+      const swatch = element('i', 'topic-dot');
+      // Та же форма, что у узла на карте: тема узнаётся и без различения цвета.
+      swatch.dataset.shape = String(item.shape || 0);
+      row.append(swatch, element('span', 'topic-name', item.node.name),
         element('b', 'topic-count', item.node.chat ? item.total + ' ✉' : item.total));
       row.title = item.node.chat ? item.node.name + ' · все темы чата'
         : item.node.name + (kids ? ' · ' + kids + ' ' + plural(kids, 'подветка', 'подветки', 'подветок') : '');
@@ -2849,8 +2948,22 @@
   const BRAIN_TAB_KEY = 'tenmiyora.brain.tab';
   const brainTabs = [...document.querySelectorAll('[data-brain-tab]')];
   let growthBrain = null;
+  // Сцена с картой занимает почти весь первый экран. На вкладках, кроме «Главного»,
+  // она сворачивается в полосу с заголовком и счётчиками, чтобы содержимое было видно сразу.
+  function setStageCompact(compact) {
+    const stage = document.querySelector('.brain-stage');
+    const toggle = $('brain-stage-toggle');
+    if (!stage || !toggle) return;
+    const was = stage.classList.contains('is-compact');
+    stage.classList.toggle('is-compact', compact);
+    toggle.setAttribute('aria-expanded', String(!compact));
+    toggle.querySelector('span').textContent = compact ? 'Показать карту' : 'Свернуть карту';
+    // Пока карта скрыта, её ширина равна нулю: после разворота размеры нужно пересчитать.
+    if (was && !compact) renderMap();
+  }
   function selectTab(name, focus) {
     if (!brainTabs.some(tab => tab.dataset.brainTab === name)) name = 'overview';
+    setStageCompact(name !== 'overview');
     for (const tab of brainTabs) {
       const on = tab.dataset.brainTab === name;
       tab.setAttribute('aria-selected', String(on));
@@ -2877,6 +2990,9 @@
         selectTab(brainTabs[(index + step + brainTabs.length) % brainTabs.length].dataset.brainTab, true);
       }
     });
+  });
+  $('brain-stage-toggle')?.addEventListener('click', () => {
+    setStageCompact(!document.querySelector('.brain-stage').classList.contains('is-compact'));
   });
   selectTab((() => { try { return localStorage.getItem(BRAIN_TAB_KEY); } catch { return null; } })() || 'overview');
 
