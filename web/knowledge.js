@@ -2,7 +2,7 @@
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
-  let folder = null, searchTimer, loading = false;
+  let folder = null, searchTimer, diskRequest = 0, diskFilter = 'all';
   const headers = {'X-Tenmiyora-Client': 'web'};
   function message(text) {
     const area = $('toast');
@@ -70,11 +70,12 @@
   const selected = new Map();
   const key = (kind, id) => kind + ':' + id;
   async function loadDisk() {
-    if (loading) return;
-    loading = true;
+    const ticket = ++diskRequest;
+    $('disk-list').setAttribute('aria-busy', 'true');
     try {
       const q = $('disk-search').value.trim();
       const data = await request('disk?' + new URLSearchParams({folder: folder || '', q}));
+      if (ticket !== diskRequest) return;
       const breadcrumbs = $('disk-breadcrumbs');
       const home = button('Мой диск', () => navigate(null));
       dropTarget(home, null);
@@ -89,8 +90,11 @@
       const present = new Set([...data.folders.map(x => key('folder', x.id)), ...data.files.map(x => key('file', x.id))]);
       for (const k of [...selected.keys()]) if (!present.has(k)) selected.delete(k);
       renderList();
-    } catch (error) { message(error.message); }
-    finally { loading = false; }
+    } catch (error) { if (ticket === diskRequest) message(error.message); }
+    finally { if (ticket === diskRequest) $('disk-list').removeAttribute('aria-busy'); }
+  }
+  function visibleItems() {
+    return {folders: diskFilter === 'files' ? [] : listData.folders, files: diskFilter === 'folders' ? [] : listData.files};
   }
   function renderList() {
     const list = $('disk-list');
@@ -99,18 +103,20 @@
     const sorter = sorters[prefs.sort] || sorters.new;
     // Папки по размеру не сравниваются: для них «большие/маленькие» — по имени.
     const folderSorter = prefs.sort === 'big' || prefs.sort === 'small' ? sorters.az : sorter;
-    const folders = [...listData.folders].sort(folderSorter), files = [...listData.files].sort(sorter);
+    const visible = visibleItems();
+    const folders = [...visible.folders].sort(folderSorter), files = [...visible.files].sort(sorter);
     const total = folders.length + files.length;
     $('disk-count').textContent = total + ' элементов';
     for (const item of folders) list.append(makeRow('folder', item));
     for (const item of files) list.append(makeRow('file', item));
-    if (!total) list.append(element('p', 'disk-empty', $('disk-search').value.trim() ? 'По вашему запросу ничего не найдено.' : 'Папка пуста. Перетащите сюда файлы или папки, или создайте новую.'));
+    if (!total) list.append(element('p', 'disk-empty', $('disk-search').value.trim() ? 'По вашему запросу ничего не найдено.' : diskFilter !== 'all' ? 'Нет элементов выбранного типа. Измените фильтр, чтобы увидеть остальные.' : 'Папка пуста. Перетащите сюда файлы или папки, или создайте новую.'));
     renderSelection();
   }
   function renderSelection() {
     const bar = $('disk-bulk');
     const all = $('disk-select-all');
-    const total = listData.folders.length + listData.files.length;
+    const visible = visibleItems();
+    const total = visible.folders.length + visible.files.length;
     all.checked = total > 0 && selected.size === total;
     all.indeterminate = selected.size > 0 && selected.size < total;
     bar.hidden = !selected.size;
@@ -118,6 +124,9 @@
     $('disk-bulk-download').hidden = ![...selected.values()].some(x => x.kind === 'file');
   }
   function navigate(id) {
+    ++diskRequest;
+    clearTimeout(searchTimer);
+    selected.clear();
     folder = id;
     $('disk-search').value = '';
     if (id) expandTo(id);
@@ -748,6 +757,7 @@
     if (entries.length) upload(entries);
   });
   $('disk-upload-button').addEventListener('click', () => $('disk-file-input').click());
+  $('disk-pick-files').addEventListener('click', () => $('disk-file-input').click());
   $('disk-folder-pick').addEventListener('click', event => {
     event.stopPropagation();
     $('disk-folder-input').click();
@@ -756,11 +766,6 @@
   $('disk-new-file').addEventListener('click', () => openFileDialog());
   if (matchMedia('(max-width: 960px)').matches) $('disk-tree-details').open = false;
   const dropzone = $('disk-dropzone');
-  dropzone.addEventListener('click', () => $('disk-file-input').click());
-  dropzone.addEventListener('keydown', event => {
-    if (event.target !== dropzone) return;
-    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); $('disk-file-input').click(); }
-  });
   for (const target of [dropzone, $('disk-view')]) {
     target.addEventListener('dragover', event => {
       if (!event.dataTransfer?.types.includes('Files')) return;
@@ -778,6 +783,9 @@
     });
   }
   // Сортировка, вид и массовые действия.
+  $('disk-filter').addEventListener('change', event => {
+    diskFilter = event.target.value; selected.clear(); renderList();
+  });
   $('disk-sort').value = sorters[prefs.sort] ? prefs.sort : 'new';
   $('disk-sort').addEventListener('change', event => { prefs.sort = event.target.value; savePrefs(); renderList(); });
   function syncView() {
@@ -790,8 +798,8 @@
   $('disk-select-all').addEventListener('change', event => {
     selected.clear();
     if (event.target.checked) {
-      for (const item of listData.folders) selected.set(key('folder', item.id), {kind: 'folder', id: item.id, name: item.name});
-      for (const item of listData.files) selected.set(key('file', item.id), {kind: 'file', id: item.id, name: item.name});
+      for (const item of visibleItems().folders) selected.set(key('folder', item.id), {kind: 'folder', id: item.id, name: item.name});
+      for (const item of visibleItems().files) selected.set(key('file', item.id), {kind: 'file', id: item.id, name: item.name});
     }
     renderList();
   });
@@ -802,7 +810,11 @@
   });
   $('disk-bulk-clear').addEventListener('click', () => { selected.clear(); renderList(); });
   $('disk-search').addEventListener('input', () => {
+    ++diskRequest;
     clearTimeout(searchTimer);
+    selected.clear();
+    renderList();
+    $('disk-list').setAttribute('aria-busy', 'true');
     searchTimer = setTimeout(loadDisk, 220);
   });
 
