@@ -11,6 +11,7 @@ import re
 import sqlite3
 import unicodedata
 
+import term_weights
 from knowledge import CATEGORIES, CHILDREN, SECRET_RE, categorize, chunks, now
 from semantic import normalize_label
 from topic_router import classify, choose_child
@@ -51,7 +52,17 @@ SEARCH_STOPWORDS = frozenset({
     "какой","какая","какие","мне","вам","нам","свои","свой","тогда",
     "есть","нет","про","по","из","от","до","через","также","будет",
     "расскажи","объясни","поясни","известно","информация","информации",
-    "пожалуйста","сообщи","узнай","найди","узнать","каково","почему"
+    "пожалуйста","сообщи","узнай","найди","узнать","каково","почему",
+    # Живой вопрос наполовину состоит из вежливой обвязки. Раньше она шла
+    # в счёт наравне с сутью, и правило «три четверти слов запроса» делало
+    # длинный вопрос заведомо безответным. Это слова разговора, не содержания.
+    "подскажи","подскажите","скажи","скажите","можешь","можете","хочу",
+    "знать","помнишь","помните","напомни","напомните","именно","вообще",
+    "наших","нашем","нашей","моих","моем","моём","моей","твоих",
+    "материалах","материалы","документах","документе","документы","файлах",
+    "файле","записях","памяти","базе","указано","написано","сказано",
+    "говорится","упоминается","содержится","отмечено","значится","был",
+    "была","было","были","быть","нужно","надо","должен","должна","должно"
 })
 SENSITIVE = re.compile(
     r"(?i)(?:[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}|"
@@ -134,6 +145,10 @@ class MemoryEngine:
     def __init__(self, store):
         self.store = store
         self.fts = False
+        # Веса слов, выученные Мозгом. Пустой словарь — все слова равны,
+        # и поиск ведёт себя ровно так же, как до их появления.
+        self._weights = {}
+        self._weights_stamp = None
         with store.lock, store.db() as db:
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS knowledge_items (
@@ -189,6 +204,7 @@ class MemoryEngine:
             init_suggestion_schema(db)
             init_review_schema(db)
             init_provenance_schema(db)
+            term_weights.init_schema(db)
             try:
                 db.execute("CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts USING fts5(statement, branch_name, tokenize='unicode61')")
                 self.fts = True
@@ -415,6 +431,18 @@ class MemoryEngine:
                                 (day,daily))
             return bool(update.rowcount)
 
+    def term_weights(self, db):
+        """Выученные веса слов. Перечитываются только после пересчёта."""
+        try:
+            stamp = term_weights.rebuilt_at(db)
+            if stamp != self._weights_stamp:
+                self._weights = term_weights.weights(db)
+                self._weights_stamp = stamp
+        except sqlite3.Error:
+            # Поиск важнее весов: без них он работает как прежде.
+            pass
+        return self._weights
+
     @staticmethod
     def _term_match(query_term, source_term):
         if query_term == source_term:
@@ -438,11 +466,17 @@ class MemoryEngine:
                  if term not in SEARCH_STOPWORDS][:16]
         if not terms:
             return []
-        require = max(1, (len(terms) * 3 + 3) // 4)   # >=75% значимых слов запроса
-        if len(terms) > 1:
-            require = max(2, require)
         limit = max(1, min(30, int(limit)))
         with self.store.lock, self.store.db() as db:
+            weight = self.term_weights(db)
+            # Порог допуска остаётся прежним и не зависит от весов: сколько
+            # слов запроса подтверждено, столько и подтверждено. Незнакомое
+            # слово остаётся полноценным требованием — именно оно отличает
+            # «купонный доход облигации» от «купонный доход несуществующей
+            # облигации Марса», на который отвечать нечем. Веса решают только,
+            # какой из подходящих фрагментов идёт первым.
+            total = len(terms)
+            need = total * 0.75
             matches = []
             if self.fts:
                 try:
@@ -472,17 +506,24 @@ class MemoryEngine:
                     if EXPLICITLY_DISPUTED.search(snippet):
                         continue
                     words = set(TOKEN.findall(canon(snippet)))
-                    hits = sum(any(self._term_match(term, word) for word in words)
-                               for term in terms)
-                    if hits < require:
+                    matched = [term for term in terms
+                               if any(self._term_match(term, word) for word in words)]
+                    # Дежурное слово и редкий термин больше не равны: засчитывается
+                    # вес совпавших слов. При весах по умолчанию это тот же счёт.
+                    if len(terms) > 1 and len(matched) < 2:
                         continue
+                    if len(matched) < need:
+                        continue
+                    # Редкое слово — более весомое подтверждение, чем обычное.
+                    covered = sum(weight.get(term, 1.0) for term in matched)
+                    scale = sum(weight.get(term, 1.0) for term in terms)
                     signature = (d["source_type"], d["source_id"], digest(snippet))
                     if signature in seen:
                         continue
                     seen.add(signature)
                     # Чем больше покрытие запроса, тем выше подтверждение,
                     # без искусственного повышения от названия ветки.
-                    ranked.append((hits / len(terms), hits,
+                    ranked.append((covered / scale, len(matched),
                                    float(d.get("rank", 0)), d))
                 ranked.sort(key=lambda x: (-x[0],-x[1],x[2]))
                 chosen = []
@@ -520,11 +561,12 @@ class MemoryEngine:
                     entry["indices"].update(indices)
                     if len(entry["rows"]) < 6:
                         entry["rows"].append((len(indices), d))
+                mass = lambda indices: sum(weight.get(terms[i], 1.0) for i in indices)
                 sufficient = [
                     value for value in grouped.values()
-                    if len(value["indices"]) >= require
+                    if len(value["indices"]) >= need
                 ]
-                sufficient.sort(key=lambda value: -len(value["indices"]))
+                sufficient.sort(key=lambda value: -mass(value["indices"]))
                 if sufficient:
                     supported = sorted(sufficient[0]["rows"], key=lambda x: -x[0])
                     evidence = []
@@ -538,9 +580,9 @@ class MemoryEngine:
                         covered.update(found)
                         data.pop("rank", None)
                         evidence.append(data)
-                        if len(covered) >= require or len(evidence) >= limit:
+                        if len(covered) >= need or len(evidence) >= limit:
                             break
-                    if len(covered) >= require:
+                    if len(covered) >= need:
                         return evidence[:limit]
             # Старые факты проходят РОВНО такую же проверку достаточности.
             rows = db.execute("""SELECT f.excerpt,f.locator,f.source_type,f.source_id,
