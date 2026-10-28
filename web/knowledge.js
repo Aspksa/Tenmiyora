@@ -1784,7 +1784,7 @@
   const MAP = {width: 1000, height: 640, rx: 1.5, ring: 150};
   let mapNodes = new Map(), mapFresh = {}, mapPlayed = false, openNodeId = null, mapTotal = 0, growthRun = 0;
   // Все ветки дерева, даже не нарисованные: по ним открывается панель ветки из знаний и уровней.
-  let mapAll = new Map();
+  let mapAll = new Map(), topicRows = new Map();
   let mapTopics = [], mapActivity = {synapses: [], alive: {}}, mapSynapses = [], mapBorn = new Set(), pulseSeen = null, sleepMode = null;
   const KNOWN_KEY = 'tenmiyora.brain.known', DAY = 864e5;
   async function loadActivity() {
@@ -1870,8 +1870,9 @@
         item.hidden = item.children.length;
         return;
       }
-      const shown = [...item.children].sort((a, b) => b.total - a.total)
-        .slice(0, depth === 1 ? (MAP.narrow ? 8 : 12) : 6);
+      // У ветки разговоров тем немного и другого пути к ним нет: показываем все.
+      const room = depth > 1 ? 6 : item.node.chat ? item.children.length : MAP.narrow ? 8 : 12;
+      const shown = [...item.children].sort((a, b) => b.total - a.total).slice(0, room);
       item.hidden = item.children.length - shown.length;
       const weight = shown.reduce((sum, kid) => sum + Math.sqrt(kid.total + 1), 0) || 1;
       let start = from;
@@ -2159,11 +2160,14 @@
     if (!mapPlayed && placed.length) { mapPlayed = true; playGrowth(); }
   }
   // Раскрытие темы: карта перерисовывается, выбранная тема получает больше места.
-  function toggleTopic(id) {
+  // Карта и список тем рисуются заново, поэтому фокус возвращается на ту же тему —
+  // и когда её раскрыли, и когда свернули, иначе обход с клавиатуры начинается сначала.
+  function toggleTopic(id, from) {
     openTopic = openTopic === id ? null : id;
     mapPlayed = true;  // Повтор роста при раскрытии не нужен.
     renderMap();
-    if (openTopic !== null) mapNodes.get(openTopic)?.group.focus({preventScroll: true});
+    const back = from === 'panel' ? topicRows.get(id) : mapNodes.get(id)?.group;
+    back?.focus({preventScroll: true});
     // На узком экране карта выше списка тем: показываем её, иначе раскрытие не видно.
     if (openTopic !== null && MAP.narrow) $('brain-map').scrollIntoView({block: 'center', behavior: calm() ? 'auto' : 'smooth'});
   }
@@ -2190,7 +2194,9 @@
     if (!box) return;
     mapTopics = [...tops].sort((a, b) => b.total - a.total);
     $('brain-topics-count').textContent = mapTopics.length ? mapTopics.length + ' ' + plural(mapTopics.length, 'тема', 'темы', 'тем') : '';
-    $('brain-topics-filter').hidden = mapTopics.length < 8;
+    const filter = $('brain-topics-filter');
+    // Скрытый поиск не должен втихую отфильтровывать список: прячем только пустым.
+    if (mapTopics.length < 8) { filter.value = ''; filter.hidden = true; } else filter.hidden = false;
     paintTopics();
   }
   // Список тем рядом с картой: цвет, название, доля знаний. Нажатие раскрывает тему.
@@ -2201,9 +2207,15 @@
     const shown = query ? mapTopics.filter(item => item.node.name.toLowerCase().includes(query)) : mapTopics;
     const largest = Math.max(...mapTopics.map(item => item.total), 1);
     box.replaceChildren();
+    topicRows = new Map();
     if (!shown.length) { box.append(element('p', 'module-muted topics-empty', query ? 'Такой темы нет.' : 'Темы появятся с первыми знаниями.')); return; }
     for (const item of shown) {
-      const row = button('', () => { if (childrenOf(item.node.id).length) toggleTopic(item.node.id); else openMapCard(item); }, 'topic-row');
+      // Ветка разговоров в списке открывает сводку по чату; на карте она, как и темы, раскрывается.
+      const row = button('', () => {
+        if (!item.node.chat && childrenOf(item.node.id).length) toggleTopic(item.node.id, 'panel');
+        else openMapCard(item);
+      }, 'topic-row');
+      topicRows.set(item.node.id, row);
       row.setAttribute('role', 'listitem');
       row.style.setProperty('--c', item.color);
       row.style.setProperty('--share', Math.max(3, item.total / largest * 100) + '%');
@@ -2211,7 +2223,8 @@
       const kids = childrenOf(item.node.id).length;
       row.append(element('i', 'topic-dot'), element('span', 'topic-name', item.node.name),
         element('b', 'topic-count', item.node.chat ? item.total + ' ✉' : item.total));
-      row.title = item.node.name + (kids ? ' · ' + kids + ' ' + plural(kids, 'подветка', 'подветки', 'подветок') : '');
+      row.title = item.node.chat ? item.node.name + ' · все темы чата'
+        : item.node.name + (kids ? ' · ' + kids + ' ' + plural(kids, 'подветка', 'подветки', 'подветок') : '');
       row.addEventListener('mouseenter', () => highlightChain(item, true));
       row.addEventListener('mouseleave', () => highlightChain(item, false));
       row.addEventListener('focus', () => highlightChain(item, true));
